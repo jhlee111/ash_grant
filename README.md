@@ -177,6 +177,18 @@ scope :active, [:base], expr(status == :active)
 # Result: tenant_id == actor.tenant_id AND status == :active
 ```
 
+### Example: Date-Based Scopes
+
+You can use SQL fragments for temporal filtering:
+
+```elixir
+# Records created today only
+scope :today, expr(fragment("DATE(inserted_at) = CURRENT_DATE"))
+
+# Combined with ownership
+scope :own_today, [:own], expr(fragment("DATE(inserted_at) = CURRENT_DATE"))
+```
+
 ## Deny-Wins Pattern
 
 When both allow and deny rules match, deny always takes precedence:

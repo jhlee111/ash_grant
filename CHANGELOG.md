@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AshGrant.filter_check/1` for read actions (returns filter expression)
   - `AshGrant.check/1` for write actions (returns true/false)
 - **Property-based testing**: 34 property tests for edge case discovery
-- **Comprehensive test coverage**: 113 total tests (34 properties + 79 unit tests)
+- **Comprehensive test coverage**: 211 total tests (19 doctests + 34 properties + 158 unit tests)
 
 ### DSL Configuration
 
