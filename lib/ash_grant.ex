@@ -14,6 +14,7 @@ defmodule AshGrant do
   - **Deny-wins semantics**: Deny rules always override allow rules
   - **Wildcard matching**: `*` for resources/actions, `read*` for action prefixes
   - **Scope DSL**: Define scopes inline with `expr()` expressions
+  - **Multi-tenancy Support**: Full support for `^tenant()` in scope expressions
   - **Two check types**: `filter_check/1` for reads, `check/1` for writes
   - **Default policies**: Auto-generate standard policies to reduce boilerplate
 
@@ -23,9 +24,11 @@ defmodule AshGrant do
 
       def deps do
         [
-          {:ash_grant, "~> 0.2.0"}
+          {:ash_grant, github: "jhlee111/ash_grant", tag: "v0.2.1"}
         ]
       end
+
+  > **Note**: This package is not yet published to Hex.pm.
 
   ## Quick Start
 
@@ -65,7 +68,6 @@ defmodule AshGrant do
         ash_grant do
           resolver MyApp.PermissionResolver
           resource_name "post"
-          owner_field :author_id
 
           scope :all, true
           scope :own, expr(author_id == ^actor(:id))
@@ -168,10 +170,10 @@ defmodule AshGrant do
         resolver MyApp.PermissionResolver       # Required
         default_policies true                   # Optional: auto-generate policies
         resource_name "custom_name"             # Optional
-        owner_field :user_id                    # Optional
 
         scope :all, true
-        scope :own, expr(owner_id == ^actor(:id))
+        scope :own, expr(author_id == ^actor(:id))
+        scope :same_tenant, expr(tenant_id == ^tenant())  # Multi-tenancy
       end
 
   | Option | Type | Description |
@@ -179,7 +181,6 @@ defmodule AshGrant do
   | `resolver` | module/function | **Required.** Resolves permissions for actors |
   | `default_policies` | boolean/atom | Auto-generate policies: `true`, `:all`, `:read`, `:write` |
   | `resource_name` | string | Resource name for permission matching |
-  | `owner_field` | atom | Field for "own" scope resolution |
 
   ## Related Modules
 
