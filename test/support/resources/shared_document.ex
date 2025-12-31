@@ -41,7 +41,6 @@ defmodule AshGrant.Test.SharedDocument do
     end
 
     resource_name "shared_document"
-    owner_field :created_by_id
 
     # Basic ownership scopes
     scope :all, true

@@ -32,7 +32,6 @@ defmodule AshGrant.Test.Report do
     end
 
     resource_name "report"
-    owner_field :created_by_id
 
     # Security classification scopes (hierarchical)
     scope :all, true

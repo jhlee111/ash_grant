@@ -59,6 +59,7 @@ defmodule AshGrant.Check do
   Scope filters use `Ash.Expr.eval/2` for proper Ash expression handling:
   - Full support for all Ash expression operators
   - Automatic actor template resolution (`^actor(:id)`, etc.)
+  - Automatic tenant template resolution (`^tenant()`)
   - Handles nested actor paths
 
   For **update/destroy** actions:
@@ -149,10 +150,9 @@ defmodule AshGrant.Check do
       end
 
     action_name = Keyword.get(opts, :action) || to_string(action.name)
-    owner_field = AshGrant.Info.owner_field(resource_module)
 
     # Build context
-    context = build_context(actor, resource_module, action, authorizer, owner_field)
+    context = build_context(actor, resource_module, action, authorizer)
 
     # Resolve permissions
     permissions = resolve_permissions(resolver, actor, context)
@@ -169,12 +169,11 @@ defmodule AshGrant.Check do
     end
   end
 
-  defp build_context(actor, resource, action, authorizer, owner_field) do
+  defp build_context(actor, resource, action, authorizer) do
     %{
       actor: actor,
       resource: resource,
       action: action,
-      owner_field: owner_field,
       tenant: get_tenant(authorizer),
       changeset: get_changeset(authorizer),
       query: get_query(authorizer)
@@ -305,33 +304,111 @@ defmodule AshGrant.Check do
   defp record_matches_filter?(_record, false, _context, _opts), do: false
 
   defp record_matches_filter?(record, filter, context, _opts) do
-    # Use Ash.Expr.eval/2 to properly evaluate expressions with actor references
-    # This handles all Ash expression operators and actor template resolution
+    # Use Ash.Expr.eval/2 to properly evaluate expressions with actor and tenant references
+    # This handles all Ash expression operators, actor template resolution, and ^tenant() resolution
     actor = context[:actor]
+    tenant = context[:tenant]
 
-    case Ash.Expr.eval(filter, record: record, actor: actor) do
+    case Ash.Expr.eval(filter, record: record, actor: actor, tenant: tenant) do
       {:ok, true} -> true
       {:ok, false} -> false
       {:ok, _other} -> true
-      :unknown -> fallback_evaluation(record, context)
-      {:error, _} -> fallback_evaluation(record, context)
+      :unknown -> fallback_evaluation(record, filter, context)
+      {:error, _} -> fallback_evaluation(record, filter, context)
     end
   end
 
-  # Fallback for cases where Ash.Expr.eval returns :unknown
-  # This can happen with complex expressions that require data layer evaluation
-  defp fallback_evaluation(record, context) do
-    owner_field = context[:owner_field]
-    actor = context[:actor]
+  # Fallback for cases where Ash.Expr.eval returns :unknown or errors
+  # This handles complex expressions that require data layer evaluation,
+  # including tenant-based scopes like `expr(tenant_id == ^tenant())`
+  #
+  # The fallback checks if the expression contains tenant or actor references
+  # and evaluates those specific checks.
+  defp fallback_evaluation(record, filter, context) do
+    tenant = context[:tenant]
 
-    if owner_field && actor do
-      record_owner = Map.get(record, owner_field)
-      actor_id = Map.get(actor, :id)
-      record_owner == actor_id
+    # Analyze what the filter references
+    has_tenant_ref = filter_references_tenant?(filter)
+    has_actor_ref = filter_references_actor?(filter)
+
+    # Only check what the filter actually references
+    tenant_ok = if has_tenant_ref, do: check_tenant_match(record, tenant), else: true
+    actor_ok = if has_actor_ref, do: check_actor_match(record, filter, context), else: true
+
+    tenant_ok and actor_ok
+  end
+
+  # Check if the filter expression references ^tenant()
+  defp filter_references_tenant?(filter) do
+    filter
+    |> inspect()
+    |> String.contains?(":_tenant")
+  end
+
+  # Check if the filter expression references ^actor()
+  defp filter_references_actor?(filter) do
+    filter
+    |> inspect()
+    |> String.contains?(":_actor")
+  end
+
+  defp check_tenant_match(_record, nil), do: false
+  defp check_tenant_match(record, tenant) do
+    record_tenant = Map.get(record, :tenant_id)
+    if record_tenant != nil do
+      to_string(record_tenant) == to_string(tenant)
     else
-      # Cannot evaluate - default to allowing (Ash will handle filtering)
+      # No tenant_id on record, assume it's OK
       true
     end
+  end
+
+  defp check_actor_match(record, filter, context) do
+    actor = context[:actor]
+
+    case actor do
+      nil -> false
+      _ ->
+        # Extract the field being compared to ^actor(:id) from the filter expression
+        case extract_actor_field(filter) do
+          nil -> true  # No actor field found in filter, pass
+          field ->
+            record_owner = Map.get(record, field)
+            actor_id = Map.get(actor, :id)
+            record_owner == actor_id
+        end
+    end
+  end
+
+  # Extract the field name being compared to ^actor(:id) from a filter expression
+  # This parses the filter to find patterns like `field == ^actor(:id)`
+  defp extract_actor_field(filter) do
+    filter_str = inspect(filter)
+
+    # Pattern: look for `field_name == {:_actor, :id}` or similar
+    # The filter string looks like: `(tenant_id == :_tenant) and (author_id == {:_actor, :id})`
+
+    cond do
+      # Match pattern: field_name == {:_actor, :id}
+      match = Regex.run(~r/(\w+)\s*==\s*\{:_actor,\s*:id\}/, filter_str) ->
+        [_, field_name] = match
+        String.to_existing_atom(field_name)
+
+      # Match pattern: :name, :field_name ... :_actor (for struct representations)
+      match = Regex.run(~r/:name,\s*:(\w+).*:_actor/, filter_str) ->
+        [_, field_name] = match
+        String.to_existing_atom(field_name)
+
+      # Match pattern: attribute: :field_name ... :_actor
+      match = Regex.run(~r/attribute:\s*:(\w+).*:_actor/, filter_str) ->
+        [_, field_name] = match
+        String.to_existing_atom(field_name)
+
+      true ->
+        nil
+    end
+  rescue
+    _ -> nil
   end
 
   # Helper functions to extract data from authorizer

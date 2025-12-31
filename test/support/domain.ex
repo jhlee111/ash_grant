@@ -18,5 +18,8 @@ defmodule AshGrant.Test.Domain do
 
     # Default policies test resource
     resource AshGrant.Test.Article        # Uses default_policies: true
+
+    # Multi-tenancy test resource
+    resource AshGrant.Test.TenantPost     # Uses ^tenant() scope expression
   end
 end

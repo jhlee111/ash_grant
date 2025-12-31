@@ -40,7 +40,6 @@ defmodule AshGrant.Test.Document do
     end
 
     resource_name "document"
-    owner_field :author_id
 
     # Status-based scopes
     scope :all, true

@@ -1,7 +1,7 @@
 defmodule AshGrant.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.2.1"
   @source_url "https://github.com/jhlee111/ash_grant"
 
   def project do
@@ -34,6 +34,7 @@ defmodule AshGrant.MixProject do
 
   defp deps do
     [
+      {:igniter, "~> 0.6", only: [:dev, :test]},
       {:ash, "~> 3.0"},
       {:spark, "~> 2.0"},
 

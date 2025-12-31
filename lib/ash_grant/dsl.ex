@@ -36,7 +36,6 @@ defmodule AshGrant.Dsl do
         ash_grant do
           resolver MyApp.PermissionResolver
           resource_name "post"
-          owner_field :author_id
 
           scope :all, true
           scope :own, expr(author_id == ^actor(:id))
@@ -59,11 +58,13 @@ defmodule AshGrant.Dsl do
   permission matching. If not specified, it's derived from the module
   name (e.g., `MyApp.Blog.Post` → `"post"`).
 
-  ## Owner Field
+  ## Owner Field (Deprecated)
 
-  The `owner_field` option specifies which field identifies the owner
-  of a record. This is used by scope resolvers to implement "own" scope.
-  Common values: `:user_id`, `:author_id`, `:owner_id`, `:created_by_id`.
+  The `owner_field` option is **deprecated** and will be removed in v0.3.0.
+  Use explicit scope expressions instead:
+
+      # Instead of owner_field :author_id, use:
+      scope :own, expr(author_id == ^actor(:id))
   """
 
   @scope %Spark.Dsl.Entity{
@@ -128,7 +129,6 @@ defmodule AshGrant.Dsl do
       ash_grant do
         resolver MyApp.PermissionResolver
         resource_name "blog"
-        owner_field :author_id
 
         scope :all, true
         scope :own, expr(author_id == ^actor(:id))
@@ -172,10 +172,10 @@ defmodule AshGrant.Dsl do
       owner_field: [
         type: :atom,
         doc: """
-        The field that identifies the owner of a record.
+        DEPRECATED: Use explicit `scope :own, expr(field == ^actor(:id))` instead.
 
-        Used for resolving the "own" scope. Common values are
-        `:user_id`, `:author_id`, `:owner_id`, `:created_by_id`.
+        The field that identifies the owner of a record. This option is
+        deprecated and will be removed in v0.3.0.
         """
       ],
       default_policies: [

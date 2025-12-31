@@ -60,7 +60,6 @@ defmodule AshGrant.TemporalScopeTest do
 
     ash_grant do
       resolver fn _actor, _context -> [] end
-      owner_field :user_id
 
       scope :all, true
 

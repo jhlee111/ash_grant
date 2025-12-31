@@ -66,10 +66,27 @@ defmodule AshGrant.Info do
 
   @doc """
   Gets the owner field for "own" scope resolution.
+
+  DEPRECATED: Use explicit `scope :own, expr(field == ^actor(:id))` instead.
+  This option will be removed in v0.3.0.
   """
+  @deprecated "Use explicit scope expressions instead of owner_field"
   @spec owner_field(Ash.Resource.t()) :: atom() | nil
   def owner_field(resource) do
-    Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :owner_field)
+    case Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :owner_field) do
+      nil ->
+        nil
+
+      field ->
+        IO.warn(
+          "owner_field is deprecated. Use explicit scope expressions instead:\n\n" <>
+            "    scope :own, expr(#{field} == ^actor(:id))\n\n" <>
+            "This option will be removed in v0.3.0.",
+          []
+        )
+
+        field
+    end
   end
 
   @doc """

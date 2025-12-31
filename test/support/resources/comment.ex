@@ -22,7 +22,6 @@ defmodule AshGrant.Test.Comment do
     end
 
     resource_name "comment"
-    owner_field :user_id
 
     scope :all, true
     scope :own, expr(user_id == ^actor(:id))

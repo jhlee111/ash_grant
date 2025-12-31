@@ -19,7 +19,6 @@ defmodule AshGrant.InfoTest do
       end
 
       resource_name "custom_resource"
-      owner_field :owner_id
 
       scope :all, true
       scope :own, expr(owner_id == ^actor(:id))
@@ -97,18 +96,6 @@ defmodule AshGrant.InfoTest do
     test "derives resource name from module when not configured" do
       name = Info.resource_name(MinimalConfigResource)
       assert name == "minimal_config_resource"
-    end
-  end
-
-  describe "owner_field/1" do
-    test "returns configured owner field" do
-      field = Info.owner_field(FullConfigResource)
-      assert field == :owner_id
-    end
-
-    test "returns nil when not configured" do
-      field = Info.owner_field(MinimalConfigResource)
-      assert field == nil
     end
   end
 

@@ -59,7 +59,6 @@ defmodule AshGrant.Test.Article do
 
     default_policies true
     resource_name "article"
-    owner_field :author_id
 
     scope :all, true
     scope :own, expr(author_id == ^actor(:id))

@@ -20,7 +20,7 @@ defmodule AshGrant.Test.Generator do
 
   alias AshGrant.Test.{
     Post, Comment, Document, Employee, Customer,
-    Report, Task, Payment, Journal, SharedDocument, Article
+    Report, Task, Payment, Journal, SharedDocument, Article, TenantPost
   }
 
   # ============================================
@@ -267,6 +267,29 @@ defmodule AshGrant.Test.Generator do
 
   def active_shared_document(opts \\ []), do: shared_document(Keyword.put(opts, :status, :active))
   def archived_shared_document(opts \\ []), do: shared_document(Keyword.put(opts, :status, :archived))
+
+  # ============================================
+  # 9. TenantPost Generators (Multi-tenancy with ^tenant())
+  # ============================================
+
+  def tenant_post(opts \\ []) do
+    seed_generator(
+      %TenantPost{
+        id: Ash.UUID.generate(),
+        title: sequence(:tenant_post_title, &"Tenant Post #{&1}"),
+        body: "Tenant post content",
+        status: :draft,
+        author_id: Ash.UUID.generate(),
+        tenant_id: Ash.UUID.generate(),
+        inserted_at: DateTime.utc_now(),
+        updated_at: DateTime.utc_now()
+      },
+      overrides: opts
+    )
+  end
+
+  def published_tenant_post(opts \\ []), do: tenant_post(Keyword.put(opts, :status, :published))
+  def draft_tenant_post(opts \\ []), do: tenant_post(Keyword.put(opts, :status, :draft))
 
   # ============================================
   # Actor Generators

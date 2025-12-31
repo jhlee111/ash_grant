@@ -42,7 +42,6 @@ defmodule AshGrant.Test.Journal do
     end
 
     resource_name "journal"
-    owner_field :created_by_id
 
     # Period-based scopes
     scope :all, true

@@ -147,14 +147,12 @@ defmodule AshGrant.FilterCheck do
         _module -> configured_name
       end
     action_name = Keyword.get(opts, :action) || to_string(action.name)
-    owner_field = AshGrant.Info.owner_field(resource_module)
 
     # Build context
     context = %{
       actor: actor,
       resource: resource_module,
       action: action,
-      owner_field: owner_field,
       tenant: get_tenant(authorizer)
     }
 

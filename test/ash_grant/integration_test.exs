@@ -38,7 +38,6 @@ defmodule AshGrant.IntegrationTest do
       end
 
       resource_name "post"
-      owner_field :author_id
 
       scope :all, true
       scope :own, expr(author_id == ^actor(:id))
@@ -86,7 +85,6 @@ defmodule AshGrant.IntegrationTest do
       end
 
       resource_name "comment"
-      owner_field :user_id
 
       scope :all, true
       scope :own, expr(user_id == ^actor(:id))
@@ -313,9 +311,5 @@ defmodule AshGrant.IntegrationTest do
       assert Info.resource_name(Comment) == "comment"
     end
 
-    test "owner_field is correctly configured" do
-      assert Info.owner_field(Post) == :author_id
-      assert Info.owner_field(Comment) == :user_id
-    end
   end
 end

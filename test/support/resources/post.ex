@@ -23,7 +23,6 @@ defmodule AshGrant.Test.Post do
     end
 
     resource_name "post"
-    owner_field :author_id
 
     scope :all, true
     scope :own, expr(author_id == ^actor(:id))

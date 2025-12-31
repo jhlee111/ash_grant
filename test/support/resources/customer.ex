@@ -42,7 +42,6 @@ defmodule AshGrant.Test.Customer do
     end
 
     resource_name "customer"
-    owner_field :account_manager_id
 
     # Geographic scopes
     scope :all, true

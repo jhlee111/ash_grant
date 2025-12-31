@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-01-01
+
+### Added
+
+- **Multi-tenancy Support**: Full support for Ash's `^tenant()` template in scope expressions
+  - `scope :same_tenant, expr(tenant_id == ^tenant())` now works correctly
+  - Tenant context is passed through to `Ash.Expr.eval/2`
+  - Smart fallback evaluation when Ash.Expr.eval returns `:unknown`
+- **TenantPost test resource**: Demonstrates multi-tenancy scope patterns
+
+### Deprecated
+
+- **`owner_field` DSL option**: This option is deprecated and will be removed in v0.3.0.
+  Use explicit scope expressions instead:
+  ```elixir
+  # Instead of: owner_field :author_id
+  # Use: scope :own, expr(author_id == ^actor(:id))
+  ```
+  The fallback evaluation now extracts the field from the scope expression directly.
+
+### Improved
+
+- **Fallback expression evaluation**: Smarter handling when `Ash.Expr.eval` can't evaluate
+  - Analyzes filter to detect `^tenant()` and `^actor()` references
+  - Automatically extracts actor field from the filter expression (no `owner_field` needed)
+  - Proper tenant isolation for write actions
+
 ## [0.2.0] - 2025-01-01
 
 ### Added
@@ -22,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Expression evaluation**: Now uses `Ash.Expr.eval/2` for proper Ash expression handling
   - Full support for all Ash expression operators (not just `==` and `in`)
   - Proper actor template resolution (`^actor(:id)`, `^actor(:tenant_id)`, etc.)
+  - Proper tenant template resolution (`^tenant()`)
   - Handles nested actor paths automatically
 - **Code quality**: Removed ~60 lines of custom expression handling in favor of Ash built-ins
 
@@ -32,7 +60,6 @@ ash_grant do
   resolver MyApp.PermissionResolver       # Required
   default_policies true                   # NEW: auto-generate policies
   resource_name "custom_name"             # Optional
-  owner_field :user_id                    # Optional
 
   scope :all, true
   scope :own, expr(author_id == ^actor(:id))
@@ -67,7 +94,6 @@ end
 ash_grant do
   resolver MyApp.PermissionResolver       # Required
   resource_name "custom_name"             # Optional
-  owner_field :user_id                    # Optional
 
   # Inline scope definitions (new!)
   scope :all, true
@@ -92,5 +118,6 @@ end
 | `AshGrant.Check` | SimpleCheck for write actions |
 | `AshGrant.FilterCheck` | FilterCheck for read actions |
 
+[0.2.1]: https://github.com/jhlee111/ash_grant/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.2.0
 [0.1.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.1.0

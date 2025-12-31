@@ -43,7 +43,6 @@ defmodule AshGrant.Test.Task do
     end
 
     resource_name "task"
-    owner_field :assignee_id
 
     # Project/Team scopes
     scope :all, true

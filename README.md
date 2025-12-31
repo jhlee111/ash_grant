@@ -14,6 +14,7 @@ deny-wins semantics.
 - **Deny-wins semantics**: Deny rules always override allow rules
 - **Wildcard matching**: `*` for resources/actions, `read*` for action prefixes
 - **Scope DSL**: Define scopes inline with `expr()` expressions
+- **Multi-tenancy Support**: Full support for `^tenant()` in scope expressions
 - **Two check types**: `filter_check/1` for reads, `check/1` for writes
 - **Default policies**: Auto-generate standard policies to reduce boilerplate
 
@@ -343,6 +344,62 @@ ash_grant do
   # For complex scopes requiring runtime data, use scope_resolver
 end
 ```
+
+### Multi-Tenancy Support
+
+AshGrant fully supports Ash's multi-tenancy with the `^tenant()` template:
+
+```elixir
+defmodule MyApp.Blog.Post do
+  use Ash.Resource,
+    domain: MyApp.Blog,
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshGrant]
+
+  ash_grant do
+    resolver fn actor, _context ->
+      case actor do
+        %{role: :tenant_admin} -> ["post:*:*:same_tenant"]
+        %{role: :tenant_user} -> ["post:*:read:same_tenant", "post:*:update:own_in_tenant"]
+        _ -> []
+      end
+    end
+
+    default_policies true
+    owner_field :author_id
+
+    # Tenant-based scopes using ^tenant()
+    scope :all, true
+    scope :same_tenant, expr(tenant_id == ^tenant())
+    scope :own, expr(author_id == ^actor(:id))
+    scope :own_in_tenant, [:same_tenant], expr(author_id == ^actor(:id))
+  end
+
+  # ...
+end
+```
+
+**Usage with tenant context:**
+
+```elixir
+# Read - only returns posts from the specified tenant
+posts = Post |> Ash.read!(actor: user, tenant: tenant_id)
+
+# Create - validated against tenant scope
+Ash.create(Post, %{title: "Hello", tenant_id: tenant_id},
+  actor: user,
+  tenant: tenant_id
+)
+
+# Update - must match both tenant AND ownership for own_in_tenant scope
+Ash.update(post, %{title: "Updated"}, actor: user, tenant: tenant_id)
+```
+
+**Key points:**
+- Use `^tenant()` to reference the current tenant from query/changeset context
+- Use `^actor(:tenant_id)` if tenant is stored on the actor instead
+- Scope inheritance works with tenant scopes (e.g., `[:same_tenant]`)
+- Both `filter_check` (reads) and `check` (writes) properly evaluate tenant scopes
 
 ## Business Scope Examples
 
