@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-01-01
+
+### Added
+
+- **Default Policies**: New `default_policies` DSL option to auto-generate standard policies
+  - `default_policies true` or `:all` - Generate both read and write policies
+  - `default_policies :read` - Only generate filter_check policy for read actions
+  - `default_policies :write` - Only generate check policy for write actions
+  - Eliminates boilerplate policy declarations for common use cases
+- **Transformer**: `AshGrant.Transformers.AddDefaultPolicies` generates policies at compile time
+- **Info helper**: `AshGrant.Info.default_policies/1` to query the setting
+
+### Improved
+
+- **Expression evaluation**: Now uses `Ash.Expr.eval/2` for proper Ash expression handling
+  - Full support for all Ash expression operators (not just `==` and `in`)
+  - Proper actor template resolution (`^actor(:id)`, `^actor(:tenant_id)`, etc.)
+  - Handles nested actor paths automatically
+- **Code quality**: Removed ~60 lines of custom expression handling in favor of Ash built-ins
+
+### DSL Configuration (Updated)
+
+```elixir
+ash_grant do
+  resolver MyApp.PermissionResolver       # Required
+  default_policies true                   # NEW: auto-generate policies
+  resource_name "custom_name"             # Optional
+  owner_field :user_id                    # Optional
+
+  scope :all, true
+  scope :own, expr(author_id == ^actor(:id))
+  scope :published, expr(status == :published)
+end
+```
+
 ## [0.1.0] - 2025-01-01
 
 ### Added
@@ -57,4 +92,5 @@ end
 | `AshGrant.Check` | SimpleCheck for write actions |
 | `AshGrant.FilterCheck` | FilterCheck for read actions |
 
+[0.2.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.2.0
 [0.1.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.1.0

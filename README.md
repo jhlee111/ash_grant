@@ -15,6 +15,7 @@ deny-wins semantics.
 - **Wildcard matching**: `*` for resources/actions, `read*` for action prefixes
 - **Scope DSL**: Define scopes inline with `expr()` expressions
 - **Two check types**: `filter_check/1` for reads, `check/1` for writes
+- **Default policies**: Auto-generate standard policies to reduce boilerplate
 
 ## Installation
 
@@ -23,14 +24,16 @@ Add `ash_grant` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ash_grant, "~> 0.1.0"}
+    {:ash_grant, "~> 0.2.0"}
   ]
 end
 ```
 
 ## Quick Start
 
-### 1. Add the Extension to Your Resource
+### 1. Add the Extension to Your Resource (Minimal Setup)
+
+With `default_policies: true`, you don't need to write any policy boilerplate:
 
 ```elixir
 defmodule MyApp.Blog.Post do
@@ -39,20 +42,43 @@ defmodule MyApp.Blog.Post do
     authorizers: [Ash.Policy.Authorizer],
     extensions: [AshGrant]
 
-  # Configure AshGrant with inline scopes
+  ash_grant do
+    resolver MyApp.PermissionResolver
+    default_policies true  # Auto-generates read/write policies!
+
+    scope :all, true
+    scope :own, expr(author_id == ^actor(:id))
+    scope :published, expr(status == :published)
+  end
+
+  # No policies block needed - AshGrant generates them automatically!
+  # ... attributes, actions, etc.
+end
+```
+
+### 1b. Explicit Policies (Full Control)
+
+For more control, you can disable `default_policies` and define policies explicitly:
+
+```elixir
+defmodule MyApp.Blog.Post do
+  use Ash.Resource,
+    domain: MyApp.Blog,
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshGrant]
+
   ash_grant do
     resolver MyApp.PermissionResolver
     resource_name "post"
     owner_field :author_id
 
-    # Define scopes inline - no separate ScopeResolver needed!
     scope :all, true
     scope :own, expr(author_id == ^actor(:id))
     scope :published, expr(status == :published)
-    scope :own_draft, [:own], expr(status == :draft)  # Inherits from :own
+    scope :own_draft, [:own], expr(status == :draft)
   end
 
-  # Define policies using AshGrant checks
+  # Define policies explicitly for full control
   policies do
     # Admin bypass
     bypass actor_attribute_equals(:role, :admin) do
@@ -238,6 +264,7 @@ end
 ```elixir
 ash_grant do
   resolver MyApp.PermissionResolver       # Required
+  default_policies true                   # Optional: auto-generate policies
   resource_name "custom_name"             # Optional
   owner_field :user_id                    # Optional
 
@@ -250,8 +277,34 @@ end
 | Option | Type | Description |
 |--------|------|-------------|
 | `resolver` | module or function | **Required.** Resolves permissions for actors |
+| `default_policies` | boolean or atom | Auto-generate policies: `true`, `:all`, `:read`, or `:write` |
 | `resource_name` | string | Resource name for permission matching (default: derived from module) |
 | `owner_field` | atom | Field for "own" scope resolution |
+
+### Default Policies Options
+
+The `default_policies` option controls automatic policy generation:
+
+| Value | Description |
+|-------|-------------|
+| `false` | No policies generated (default). You must define policies explicitly. |
+| `true` or `:all` | Generate both read and write policies |
+| `:read` | Only generate `filter_check()` policy for read actions |
+| `:write` | Only generate `check()` policy for write actions |
+
+**Generated policies when `default_policies: true`:**
+
+```elixir
+policies do
+  policy action_type(:read) do
+    authorize_if AshGrant.filter_check()
+  end
+
+  policy action_type([:create, :update, :destroy]) do
+    authorize_if AshGrant.check()
+  end
+end
+```
 
 ## Advanced Usage
 

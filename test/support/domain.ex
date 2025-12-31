@@ -15,5 +15,8 @@ defmodule AshGrant.Test.Domain do
     resource AshGrant.Test.Payment        # Transaction limits
     resource AshGrant.Test.Journal        # Time/Period based
     resource AshGrant.Test.SharedDocument # Complex ownership + Multi-tenant
+
+    # Default policies test resource
+    resource AshGrant.Test.Article        # Uses default_policies: true
   end
 end

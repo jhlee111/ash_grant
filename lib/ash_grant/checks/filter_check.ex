@@ -9,6 +9,12 @@ defmodule AshGrant.FilterCheck do
 
   For write actions, use `AshGrant.Check` instead.
 
+  > #### Auto-generated Policies {: .info}
+  >
+  > When using `default_policies: true` in your resource's `ash_grant` block,
+  > this check is automatically configured for read actions. You don't need
+  > to manually add it to your policies.
+
   ## When to Use
 
   Use `AshGrant.filter_check/1` for:
@@ -42,11 +48,11 @@ defmodule AshGrant.FilterCheck do
   1. **Resolve permissions**: Calls the configured `PermissionResolver` to get
      the actor's permissions
   2. **Get all scopes**: Uses `AshGrant.Evaluator.get_all_scopes/3` to find
-     all matching scopes (respecting deny-wins)
+     all matching scopes (respecting deny-wins semantics)
   3. **Check for global access**: If scopes include "all" or "global", returns
      `true` (no filter needed)
-  4. **Resolve scopes to filters**: Calls `ScopeResolver` for each scope to
-     get filter expressions
+  4. **Resolve scopes to filters**: Uses inline scope DSL or `ScopeResolver`
+     to get filter expressions
   5. **Combine filters**: Combines all filters with OR logic
 
   ## Multi-Scope Support
@@ -69,7 +75,7 @@ defmodule AshGrant.FilterCheck do
       # Returns: true (no filter)
 
       # Permission: "post:*:read:own"
-      # Returns: expr(author_id == ^actor.id)
+      # Returns: expr(author_id == ^actor(:id))
 
       # Permission: "post:*:read:published"
       # Returns: expr(status == :published)
@@ -80,15 +86,6 @@ defmodule AshGrant.FilterCheck do
       policy action(:get_by_slug) do
         authorize_if AshGrant.filter_check(action: "read")
       end
-
-  ### Multiple Scopes
-
-      # Actor has: ["post:*:read:own", "post:*:read:team"]
-      # ScopeResolver returns:
-      #   "own"  → expr(author_id == ^actor.id)
-      #   "team" → expr(team_id == ^actor.team_id)
-      #
-      # Result: expr(author_id == ^actor.id or team_id == ^actor.team_id)
 
   ## Filter Return Values
 
@@ -102,7 +99,7 @@ defmodule AshGrant.FilterCheck do
 
   - `AshGrant.Check` - For write actions
   - `AshGrant.Evaluator` - Permission evaluation logic
-  - `AshGrant.ScopeResolver` - Scope to filter translation
+  - `AshGrant.Info` - DSL introspection helpers
   """
 
   use Ash.Policy.FilterCheck

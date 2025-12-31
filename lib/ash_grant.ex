@@ -4,16 +4,18 @@ defmodule AshGrant do
 
   AshGrant provides a flexible, Apache Shiro-inspired permission system that
   integrates seamlessly with Ash's policy authorizer. It supports both
-  role-based access control (RBAC) and resource-instance permissions.
+  role-based access control (RBAC) and resource-instance permissions with
+  deny-wins semantics.
 
   ## Key Features
 
-  - **Apache Shiro-style permissions**: `resource:action:scope` format
-  - **Instance-level permissions**: `resource:instance_id:action` (like Google Docs sharing)
+  - **Unified Permission Format**: `resource:instance_id:action:scope` syntax
+  - **Instance-level permissions**: Share specific resources (like Google Docs sharing)
   - **Deny-wins semantics**: Deny rules always override allow rules
   - **Wildcard matching**: `*` for resources/actions, `read*` for action prefixes
-  - **Flexible scopes**: Define custom scopes (own, published, org_subtree, etc.)
+  - **Scope DSL**: Define scopes inline with `expr()` expressions
   - **Two check types**: `filter_check/1` for reads, `check/1` for writes
+  - **Default policies**: Auto-generate standard policies to reduce boilerplate
 
   ## Installation
 
@@ -21,13 +23,15 @@ defmodule AshGrant do
 
       def deps do
         [
-          {:ash_grant, "~> 0.1.0"}
+          {:ash_grant, "~> 0.2.0"}
         ]
       end
 
   ## Quick Start
 
-  ### Step 1: Add the Extension to Your Resource
+  ### Minimal Setup (with Default Policies)
+
+  With `default_policies: true`, you don't need to write any policy boilerplate:
 
       defmodule MyApp.Blog.Post do
         use Ash.Resource,
@@ -35,34 +39,55 @@ defmodule AshGrant do
           authorizers: [Ash.Policy.Authorizer],
           extensions: [AshGrant]
 
-        # Configure AshGrant
         ash_grant do
           resolver MyApp.PermissionResolver
-          scope_resolver MyApp.ScopeResolver
-          resource_name "post"        # Optional: defaults to "post"
-          owner_field :author_id      # Optional: for "own" scope
+          default_policies true  # Auto-generates read/write policies!
+
+          scope :all, true
+          scope :own, expr(author_id == ^actor(:id))
+          scope :published, expr(status == :published)
         end
 
-        # Define policies using AshGrant checks
+        # No policies block needed - AshGrant generates them automatically!
+        # ... attributes, actions, etc.
+      end
+
+  ### Explicit Policies (Full Control)
+
+  For more control, disable `default_policies` and define policies explicitly:
+
+      defmodule MyApp.Blog.Post do
+        use Ash.Resource,
+          domain: MyApp.Blog,
+          authorizers: [Ash.Policy.Authorizer],
+          extensions: [AshGrant]
+
+        ash_grant do
+          resolver MyApp.PermissionResolver
+          resource_name "post"
+          owner_field :author_id
+
+          scope :all, true
+          scope :own, expr(author_id == ^actor(:id))
+          scope :published, expr(status == :published)
+        end
+
         policies do
-          # Admin bypass
           bypass actor_attribute_equals(:role, :admin) do
             authorize_if always()
           end
 
-          # Read actions: use filter_check (returns filtered results)
           policy action_type(:read) do
             authorize_if AshGrant.filter_check()
           end
 
-          # Write actions: use check (returns true/false)
           policy action_type([:create, :update, :destroy]) do
             authorize_if AshGrant.check()
           end
         end
       end
 
-  ### Step 2: Implement a PermissionResolver
+  ### Implement a PermissionResolver
 
   The resolver fetches permissions for the current actor:
 
@@ -74,173 +99,102 @@ defmodule AshGrant do
 
         @impl true
         def resolve(actor, _context) do
-          # Get permissions from user's roles
           actor
           |> get_roles()
           |> Enum.flat_map(& &1.permissions)
         end
       end
 
-  ### Step 3: Implement a ScopeResolver
-
-  The resolver translates scope strings to Ash filter expressions:
-
-      defmodule MyApp.ScopeResolver do
-        @behaviour AshGrant.ScopeResolver
-        require Ash.Expr
-
-        @impl true
-        def resolve("all", _context), do: true
-
-        @impl true
-        def resolve("own", %{actor: actor, owner_field: field}) do
-          Ash.Expr.expr(^ref(field) == ^actor.id)
-        end
-
-        @impl true
-        def resolve("published", _context) do
-          Ash.Expr.expr(status == :published)
-        end
-      end
-
   ## Permission Format
 
-  ### Role-based Permissions (RBAC)
+  ### Unified 4-Part Format
 
-      [!]resource:action:scope
+      [!]resource:instance_id:action:scope
 
   | Component | Description | Examples |
   |-----------|-------------|----------|
-  | `!` | Optional deny prefix | `!blog:delete:all` |
+  | `!` | Optional deny prefix | `!blog:*:delete:all` |
   | resource | Resource type or `*` | `blog`, `post`, `*` |
+  | instance_id | Resource instance or `*` | `*`, `post_abc123xyz789ab` |
   | action | Action name or wildcard | `read`, `*`, `read*` |
-  | scope | Access scope | `all`, `own`, `published` |
+  | scope | Access scope | `all`, `own`, `published`, or empty |
 
-  **Examples:**
+  ### RBAC Permissions (instance_id = `*`)
 
-      "blog:read:all"           # Read all blogs
-      "blog:read:published"     # Read only published blogs
-      "blog:update:own"         # Update own blogs only
-      "blog:*:all"              # All actions on all blogs
-      "*:read:all"              # Read all resources
-      "blog:read*:all"          # All read-type actions (read, read_all, read_draft)
-      "!blog:delete:all"        # Deny delete on all blogs
+      "blog:*:read:all"           # Read all blogs
+      "blog:*:read:published"     # Read only published blogs
+      "blog:*:update:own"         # Update own blogs only
+      "blog:*:*:all"              # All actions on all blogs
+      "*:*:read:all"              # Read all resources
+      "blog:*:read*:all"          # All read-type actions
+      "!blog:*:delete:all"        # DENY delete on all blogs
 
-  ### Instance-level Permissions
+  ### Instance Permissions (specific instance_id)
 
-  For sharing specific resources (like Google Docs), use the prefixed ID directly:
+      "blog:post_abc123xyz789ab:read:"     # Read specific post
+      "blog:post_abc123xyz789ab:*:"        # Full access to specific post
+      "!blog:post_abc123xyz789ab:delete:"  # DENY delete on specific post
 
-      [!]prefixed_id:action
+  ## Scope DSL
 
-  The prefix of the ID (e.g., `feed` in `feed_abc123xyz789ab`) identifies the
-  resource type, so no separate resource field is needed.
+  Define scopes inline using `expr()` expressions:
 
-  **Examples:**
-
-      "feed_abc123xyz789ab:read"      # Read access to specific feed
-      "doc_xyz789abc123xy:*"          # Full access to specific document
-      "!feed_abc123xyz789ab:delete"   # Deny delete on specific feed
+      ash_grant do
+        scope :all, true
+        scope :own, expr(author_id == ^actor(:id))
+        scope :published, expr(status == :published)
+        scope :own_draft, [:own], expr(status == :draft)  # Inheritance
+      end
 
   ## Deny-Wins Pattern
 
   When both allow and deny rules match, deny always takes precedence:
 
       permissions = [
-        "blog:*:all",           # Allow all blog actions
-        "!blog:delete:all"      # Deny delete
+        "blog:*:*:all",           # Allow all blog actions
+        "!blog:*:delete:all"      # Deny delete
       ]
 
-      # Result:
-      # - blog:read   → allowed
-      # - blog:update → allowed
-      # - blog:delete → denied (deny wins)
-
-  This pattern is useful for:
-
-  - Revoking specific permissions from broad grants
-  - Creating "except" rules (e.g., "all except delete")
-  - Implementing inheritance with overrides
+      # Result: read/update allowed, delete DENIED
 
   ## Check Types
 
-  ### `filter_check/1` - For Read Actions
-
-  Returns a filter expression that limits query results to accessible records.
-  Best for `:read` action types where you want to show only permitted data.
-
-      policy action_type(:read) do
-        authorize_if AshGrant.filter_check()
-      end
-
-  ### `check/1` - For Write Actions
-
-  Returns `true` or `false` based on whether the actor has permission.
-  Best for `:create`, `:update`, `:destroy` actions.
-
-      policy action(:destroy) do
-        authorize_if AshGrant.check()
-      end
+  - `filter_check/1` - For read actions (returns filter expression)
+  - `check/1` - For write actions (returns true/false)
 
   ## DSL Configuration
 
       ash_grant do
         resolver MyApp.PermissionResolver       # Required
-        scope_resolver MyApp.ScopeResolver      # Optional
+        default_policies true                   # Optional: auto-generate policies
         resource_name "custom_name"             # Optional
         owner_field :user_id                    # Optional
+
+        scope :all, true
+        scope :own, expr(owner_id == ^actor(:id))
       end
 
   | Option | Type | Description |
   |--------|------|-------------|
-  | `resolver` | module or function | **Required.** Resolves permissions for actors |
-  | `scope_resolver` | module or function | Translates scopes to filter expressions |
-  | `resource_name` | string | Resource name for permission matching (default: derived from module) |
+  | `resolver` | module/function | **Required.** Resolves permissions for actors |
+  | `default_policies` | boolean/atom | Auto-generate policies: `true`, `:all`, `:read`, `:write` |
+  | `resource_name` | string | Resource name for permission matching |
   | `owner_field` | atom | Field for "own" scope resolution |
-
-  ## Architecture
-
-      ┌──────────────────────────────────────────────────────────────────┐
-      │                        Ash Policy Check                          │
-      └──────────────────────────────────────────────────────────────────┘
-                                    │
-                      ┌─────────────┴─────────────┐
-                      │                           │
-                ┌─────▼─────┐              ┌──────▼──────┐
-                │  Check    │              │ FilterCheck │
-                │ (writes)  │              │  (reads)    │
-                └─────┬─────┘              └──────┬──────┘
-                      │                           │
-                      └───────────┬───────────────┘
-                                  │
-                      ┌───────────▼───────────┐
-                      │ PermissionResolver    │
-                      │ (actor → permissions) │
-                      └───────────┬───────────┘
-                                  │
-                      ┌───────────▼───────────┐
-                      │ Evaluator             │
-                      │ (deny-wins matching)  │
-                      └───────────┬───────────┘
-                                  │
-                      ┌───────────▼───────────┐
-                      │ ScopeResolver         │
-                      │ (scope → filter)      │
-                      └───────────────────────┘
 
   ## Related Modules
 
   - `AshGrant.Permission` - Permission parsing and matching
   - `AshGrant.Evaluator` - Deny-wins permission evaluation
   - `AshGrant.PermissionResolver` - Behaviour for resolving permissions
-  - `AshGrant.ScopeResolver` - Behaviour for scope resolution
   - `AshGrant.Check` - SimpleCheck for write actions
   - `AshGrant.FilterCheck` - FilterCheck for read actions
   - `AshGrant.Info` - DSL introspection helpers
+  - `AshGrant.Transformers.AddDefaultPolicies` - Policy generation transformer
   """
 
   use Spark.Dsl.Extension,
     sections: AshGrant.Dsl.sections(),
-    transformers: []
+    transformers: [AshGrant.Transformers.AddDefaultPolicies]
 
   @doc """
   Creates a simple check for write actions.

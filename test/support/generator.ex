@@ -20,7 +20,7 @@ defmodule AshGrant.Test.Generator do
 
   alias AshGrant.Test.{
     Post, Comment, Document, Employee, Customer,
-    Report, Task, Payment, Journal, SharedDocument
+    Report, Task, Payment, Journal, SharedDocument, Article
   }
 
   # ============================================
@@ -44,6 +44,28 @@ defmodule AshGrant.Test.Generator do
 
   def published_post(opts \\ []), do: post(Keyword.put(opts, :status, :published))
   def draft_post(opts \\ []), do: post(Keyword.put(opts, :status, :draft))
+
+  # ============================================
+  # Article Generators (default_policies test)
+  # ============================================
+
+  def article(opts \\ []) do
+    seed_generator(
+      %Article{
+        id: Ash.UUID.generate(),
+        title: sequence(:article_title, &"Article #{&1}"),
+        body: "Test article content",
+        status: :draft,
+        author_id: Ash.UUID.generate(),
+        inserted_at: DateTime.utc_now(),
+        updated_at: DateTime.utc_now()
+      },
+      overrides: opts
+    )
+  end
+
+  def published_article(opts \\ []), do: article(Keyword.put(opts, :status, :published))
+  def draft_article(opts \\ []), do: article(Keyword.put(opts, :status, :draft))
 
   # ============================================
   # Comment Generators

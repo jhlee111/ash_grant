@@ -1,6 +1,32 @@
 defmodule AshGrant.Info do
   @moduledoc """
   Introspection helpers for AshGrant DSL configuration.
+
+  This module provides functions to query AshGrant configuration at runtime,
+  including resolvers, scopes, and the new `default_policies` setting.
+
+  ## Common Functions
+
+  | Function | Description |
+  |----------|-------------|
+  | `resolver/1` | Get the permission resolver for a resource |
+  | `default_policies/1` | Get the default_policies setting (new in v0.2.0) |
+  | `resource_name/1` | Get the resource name for permission matching |
+  | `owner_field/1` | Get the owner field for "own" scope resolution |
+  | `scopes/1` | Get all scope definitions |
+  | `get_scope/2` | Get a specific scope by name |
+  | `resolve_scope_filter/3` | Resolve a scope to its filter expression |
+
+  ## Example
+
+      iex> AshGrant.Info.default_policies(MyApp.Blog.Post)
+      true
+
+      iex> AshGrant.Info.resolver(MyApp.Blog.Post)
+      MyApp.PermissionResolver
+
+      iex> AshGrant.Info.scopes(MyApp.Blog.Post) |> Enum.map(& &1.name)
+      [:all, :own, :published]
   """
 
   use Spark.InfoGenerator, extension: AshGrant, sections: [:ash_grant]
@@ -44,6 +70,19 @@ defmodule AshGrant.Info do
   @spec owner_field(Ash.Resource.t()) :: atom() | nil
   def owner_field(resource) do
     Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :owner_field)
+  end
+
+  @doc """
+  Gets the default_policies setting.
+
+  Returns `false` if not configured, or one of:
+  - `true` or `:all` - Generate policies for both read and write
+  - `:read` - Only generate read policy
+  - `:write` - Only generate write policy
+  """
+  @spec default_policies(Ash.Resource.t()) :: boolean() | :read | :write | :all
+  def default_policies(resource) do
+    Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :default_policies, false)
   end
 
   @doc """

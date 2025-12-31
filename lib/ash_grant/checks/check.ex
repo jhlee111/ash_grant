@@ -9,6 +9,12 @@ defmodule AshGrant.Check do
   For read actions, use `AshGrant.FilterCheck` instead, which returns a filter
   expression to limit query results.
 
+  > #### Auto-generated Policies {: .info}
+  >
+  > When using `default_policies: true` in your resource's `ash_grant` block,
+  > this check is automatically configured for write actions. You don't need
+  > to manually add it to your policies.
+
   ## When to Use
 
   Use `AshGrant.check/1` for:
@@ -29,11 +35,6 @@ defmodule AshGrant.Check do
         policy action(:publish) do
           authorize_if AshGrant.check(action: "publish")
         end
-
-        # With conditional subject fields
-        policy action(:destroy) do
-          authorize_if AshGrant.check(subject: [:status])
-        end
       end
 
   ## Options
@@ -42,19 +43,23 @@ defmodule AshGrant.Check do
   |--------|------|-------------|
   | `:action` | string | Override action name for permission matching |
   | `:resource` | string | Override resource name for permission matching |
-  | `:subject` | list | Fields to include for conditional permission evaluation |
 
   ## How It Works
 
   1. **Resolve permissions**: Calls the configured `PermissionResolver` to get
      the actor's permissions
   2. **Check access**: Uses `AshGrant.Evaluator.has_access?/3` to verify
-     the actor has a matching permission (deny-wins)
+     the actor has a matching permission (deny-wins semantics)
   3. **Get scope**: Extracts the scope from the matching permission
-  4. **Verify scope**: Uses the `ScopeResolver` to check if the target
-     record (or changeset for creates) is within the allowed scope
+  4. **Verify scope**: Uses `Ash.Expr.eval/2` to evaluate the scope filter
+     against the target record
 
-  ## Scope Resolution for Write Actions
+  ## Scope Evaluation
+
+  Scope filters use `Ash.Expr.eval/2` for proper Ash expression handling:
+  - Full support for all Ash expression operators
+  - Automatic actor template resolution (`^actor(:id)`, etc.)
+  - Handles nested actor paths
 
   For **update/destroy** actions:
   - The scope filter is evaluated against the existing record (`changeset.data`)
@@ -62,7 +67,6 @@ defmodule AshGrant.Check do
   For **create** actions:
   - A "virtual record" is built from the changeset attributes
   - The scope filter is evaluated against this virtual record
-  - This allows checking if the new record will be in an allowed scope
 
   ## Examples
 
@@ -82,20 +86,11 @@ defmodule AshGrant.Check do
         authorize_if AshGrant.check(action: "update")
       end
 
-  ### Conditional Permissions
-
-      # Permission: "post:*:delete:own"
-      # Actor can only delete their own posts
-
-      policy action(:destroy) do
-        authorize_if AshGrant.check(subject: [:status])
-      end
-
   ## See Also
 
   - `AshGrant.FilterCheck` - For read actions
   - `AshGrant.Evaluator` - Permission evaluation logic
-  - `AshGrant.ScopeResolver` - Scope to filter translation
+  - `AshGrant.Info` - DSL introspection helpers
   """
 
   require Ash.Expr
@@ -309,76 +304,35 @@ defmodule AshGrant.Check do
   defp record_matches_filter?(_record, true, _context, _opts), do: true
   defp record_matches_filter?(_record, false, _context, _opts), do: false
 
-  defp record_matches_filter?(record, filter, context, opts) do
-    # Extract subject fields for condition evaluation if specified
-    subject_fields = Keyword.get(opts, :subject, [])
-    subject = build_subject(record, subject_fields)
+  defp record_matches_filter?(record, filter, context, _opts) do
+    # Use Ash.Expr.eval/2 to properly evaluate expressions with actor references
+    # This handles all Ash expression operators and actor template resolution
+    actor = context[:actor]
 
-    # For now, do a simple check - in a full implementation,
-    # we'd evaluate the Ash.Expr against the record
-    evaluate_filter(filter, record, context, subject)
+    case Ash.Expr.eval(filter, record: record, actor: actor) do
+      {:ok, true} -> true
+      {:ok, false} -> false
+      {:ok, _other} -> true
+      :unknown -> fallback_evaluation(record, context)
+      {:error, _} -> fallback_evaluation(record, context)
+    end
   end
 
-  defp build_subject(record, fields) do
-    Enum.reduce(fields, %{}, fn field, acc ->
-      Map.put(acc, field, Map.get(record, field))
-    end)
-  end
-
-  defp evaluate_filter(%Ash.Query.Call{name: :in, args: [field_ref, values]}, record, _context, _subject)
-       when is_list(values) do
-    # Handle: field in [values]
-    field_name = extract_field_name(field_ref)
-    record_value = get_record_field(record, field_name)
-    record_value in values
-  end
-
-  defp evaluate_filter(%Ash.Query.Call{name: :==, args: [field_ref, value]}, record, _context, _subject) do
-    # Handle: field == value
-    field_name = extract_field_name(field_ref)
-    record_value = get_record_field(record, field_name)
-    record_value == value
-  end
-
-  defp evaluate_filter(filter, record, context, _subject) when is_struct(filter) do
-    # This is an Ash.Expr - we need to evaluate it against the record
-    # For owner-based checks, do a simple field comparison
+  # Fallback for cases where Ash.Expr.eval returns :unknown
+  # This can happen with complex expressions that require data layer evaluation
+  defp fallback_evaluation(record, context) do
     owner_field = context[:owner_field]
-    actor_id = context[:actor] && context[:actor].id
+    actor = context[:actor]
 
-    if owner_field do
-      record_owner = get_record_field(record, owner_field)
+    if owner_field && actor do
+      record_owner = Map.get(record, owner_field)
+      actor_id = Map.get(actor, :id)
       record_owner == actor_id
     else
-      # Can't evaluate complex expressions here without more context
-      # For now, assume true and let Ash handle the filtering
+      # Cannot evaluate - default to allowing (Ash will handle filtering)
       true
     end
   end
-
-  defp evaluate_filter(_filter, _record, _context, _subject) do
-    true
-  end
-
-  defp extract_field_name(%Ash.Query.Ref{attribute: attr}), do: attr
-  defp extract_field_name(atom) when is_atom(atom), do: atom
-  defp extract_field_name(_), do: nil
-
-  defp get_record_field(record, field_name) when is_atom(field_name) do
-    case record do
-      %{^field_name => value} -> value
-      _ -> Map.get(record, field_name)
-    end
-  end
-
-  defp get_record_field(record, field_name) when is_binary(field_name) do
-    atom_key = String.to_existing_atom(field_name)
-    get_record_field(record, atom_key)
-  rescue
-    ArgumentError -> nil
-  end
-
-  defp get_record_field(_, _), do: nil
 
   # Helper functions to extract data from authorizer
 

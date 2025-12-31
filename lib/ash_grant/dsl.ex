@@ -177,6 +177,38 @@ defmodule AshGrant.Dsl do
         Used for resolving the "own" scope. Common values are
         `:user_id`, `:author_id`, `:owner_id`, `:created_by_id`.
         """
+      ],
+      default_policies: [
+        type: {:or, [:boolean, {:in, [:read, :write, :all]}]},
+        default: false,
+        doc: """
+        Automatically generate standard AshGrant policies.
+
+        When enabled, AshGrant will automatically add policies to your resource,
+        eliminating the need to manually define the `policies` block.
+
+        Options:
+        - `false` - No policies are generated (default, explicit policies required)
+        - `true` or `:all` - Generate policies for both read and write actions
+        - `:read` - Only generate policy for read actions (filter_check)
+        - `:write` - Only generate policy for write actions (check)
+
+        Generated policies:
+        ```elixir
+        policies do
+          policy action_type(:read) do
+            authorize_if AshGrant.filter_check()
+          end
+
+          policy action_type([:create, :update, :destroy]) do
+            authorize_if AshGrant.check()
+          end
+        end
+        ```
+
+        Note: When using `default_policies`, you should still add
+        `authorizers: [Ash.Policy.Authorizer]` to your resource options.
+        """
       ]
     ]
   }
