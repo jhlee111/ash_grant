@@ -25,10 +25,12 @@ Add `ash_grant` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ash_grant, "~> 0.2.0"}
+    {:ash_grant, github: "jhlee111/ash_grant", tag: "v0.2.1"}
   ]
 end
 ```
+
+> **Note**: This package is not yet published to Hex.pm. Once mature, it will be available via `{:ash_grant, "~> 0.3.0"}`.
 
 ## Quick Start
 
