@@ -1,0 +1,254 @@
+defmodule AshGrant.FilterCheck do
+  @moduledoc """
+  FilterCheck for read actions.
+
+  This check integrates with Ash's policy system to provide permission-based
+  authorization for read operations. Unlike `AshGrant.Check` which returns
+  `true`/`false`, this check returns a filter expression that limits query
+  results to records the actor has permission to access.
+
+  For write actions, use `AshGrant.Check` instead.
+
+  ## When to Use
+
+  Use `AshGrant.filter_check/1` for:
+  - `:read` actions
+  - List/index queries
+  - Any action where you want to filter results based on permissions
+
+  ## Usage in Policies
+
+      policies do
+        # For all read actions
+        policy action_type(:read) do
+          authorize_if AshGrant.filter_check()
+        end
+
+        # For specific read actions with action override
+        policy action(:list_published) do
+          authorize_if AshGrant.filter_check(action: "read")
+        end
+      end
+
+  ## Options
+
+  | Option | Type | Description |
+  |--------|------|-------------|
+  | `:action` | string | Override action name for permission matching |
+  | `:resource` | string | Override resource name for permission matching |
+
+  ## How It Works
+
+  1. **Resolve permissions**: Calls the configured `PermissionResolver` to get
+     the actor's permissions
+  2. **Get all scopes**: Uses `AshGrant.Evaluator.get_all_scopes/3` to find
+     all matching scopes (respecting deny-wins)
+  3. **Check for global access**: If scopes include "all" or "global", returns
+     `true` (no filter needed)
+  4. **Resolve scopes to filters**: Calls `ScopeResolver` for each scope to
+     get filter expressions
+  5. **Combine filters**: Combines all filters with OR logic
+
+  ## Multi-Scope Support
+
+  When an actor has permissions with multiple scopes, all scopes are combined:
+
+      # Actor has both permissions:
+      # - "post:*:read:own"       → filters to author_id == actor.id
+      # - "post:*:read:published" → filters to status == :published
+
+      # Result: author_id == actor.id OR status == :published
+
+  This allows users to see both their own posts AND all published posts.
+
+  ## Examples
+
+  ### Basic Usage
+
+      # Permission: "post:*:read:all"
+      # Returns: true (no filter)
+
+      # Permission: "post:*:read:own"
+      # Returns: expr(author_id == ^actor.id)
+
+      # Permission: "post:*:read:published"
+      # Returns: expr(status == :published)
+
+  ### With Custom Action Name
+
+      # Ash action is :get_by_slug, but we check "read" permission
+      policy action(:get_by_slug) do
+        authorize_if AshGrant.filter_check(action: "read")
+      end
+
+  ### Multiple Scopes
+
+      # Actor has: ["post:*:read:own", "post:*:read:team"]
+      # ScopeResolver returns:
+      #   "own"  → expr(author_id == ^actor.id)
+      #   "team" → expr(team_id == ^actor.team_id)
+      #
+      # Result: expr(author_id == ^actor.id or team_id == ^actor.team_id)
+
+  ## Filter Return Values
+
+  The check returns one of:
+
+  - `true` - No filtering (actor has "all" or "global" scope)
+  - `false` - Block all (no matching permissions or denied)
+  - `Ash.Expr.t()` - Filter expression to apply to the query
+
+  ## See Also
+
+  - `AshGrant.Check` - For write actions
+  - `AshGrant.Evaluator` - Permission evaluation logic
+  - `AshGrant.ScopeResolver` - Scope to filter translation
+  """
+
+  use Ash.Policy.FilterCheck
+
+  require Ash.Expr
+
+  @doc """
+  Creates a filter check tuple for use in policies.
+  """
+  def filter_check(opts \\ []) do
+    {__MODULE__, opts}
+  end
+
+  @impl true
+  def describe(opts) do
+    action = Keyword.get(opts, :action, "current action")
+    resource = Keyword.get(opts, :resource, "resource")
+    "has permission filter for #{resource}:#{action}"
+  end
+
+  @impl true
+  def filter(actor, authorizer, opts) do
+    if actor == nil do
+      false
+    else
+      do_filter(actor, authorizer, opts)
+    end
+  end
+
+  defp do_filter(actor, authorizer, opts) do
+    resource_module = authorizer.resource
+    action = authorizer.action
+
+    # Get configuration from DSL
+    resolver = AshGrant.Info.resolver(resource_module)
+    scope_resolver = AshGrant.Info.scope_resolver(resource_module)
+    configured_name = AshGrant.Info.resource_name(resource_module)
+
+    # Note: Ash passes :resource as the module, we want a string name
+    # Only use opts[:resource] if it's a string (user override)
+    resource_name =
+      case Keyword.get(opts, :resource) do
+        nil -> configured_name
+        name when is_binary(name) -> name
+        _module -> configured_name
+      end
+    action_name = Keyword.get(opts, :action) || to_string(action.name)
+    owner_field = AshGrant.Info.owner_field(resource_module)
+
+    # Build context
+    context = %{
+      actor: actor,
+      resource: resource_module,
+      action: action,
+      owner_field: owner_field,
+      tenant: get_tenant(authorizer)
+    }
+
+    # Resolve permissions
+    permissions = resolve_permissions(resolver, actor, context)
+
+    # Get all matching scopes
+    scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action_name)
+
+    cond do
+      scopes == [] ->
+        false
+
+      "all" in scopes or "global" in scopes ->
+        true
+
+      true ->
+        build_combined_filter(scopes, scope_resolver, context)
+    end
+  end
+
+  defp resolve_permissions(resolver, actor, context) when is_function(resolver, 2) do
+    resolver.(actor, context)
+  end
+
+  defp resolve_permissions(resolver, actor, context) when is_atom(resolver) do
+    resolver.resolve(actor, context)
+  end
+
+  defp build_combined_filter(scopes, nil, _context) do
+    non_all_scopes = Enum.reject(scopes, &(&1 == "all"))
+
+    if Enum.empty?(non_all_scopes) do
+      true
+    else
+      raise """
+      AshGrant: Scopes #{inspect(non_all_scopes)} require a scope_resolver to be configured.
+
+      Either configure a scope_resolver in your ash_grant block:
+
+          ash_grant do
+            resolver MyApp.PermissionResolver
+            scope_resolver MyApp.ScopeResolver
+          end
+
+      Or use only "all" scope in your permissions.
+      """
+    end
+  end
+
+  defp build_combined_filter(scopes, scope_resolver, context) do
+    filters =
+      scopes
+      |> Enum.map(&resolve_scope(scope_resolver, &1, context))
+      |> Enum.reject(&(&1 == true))
+
+    case filters do
+      [] ->
+        # All scopes resolved to true
+        true
+
+      [single] ->
+        single
+
+      multiple ->
+        # Combine with OR
+        combine_with_or(multiple)
+    end
+  end
+
+  defp resolve_scope(_resolver, "all", _context), do: true
+
+  defp resolve_scope(resolver, scope, context) when is_function(resolver, 2) do
+    resolver.(scope, context)
+  end
+
+  defp resolve_scope(resolver, scope, context) when is_atom(resolver) do
+    resolver.resolve(scope, context)
+  end
+
+  defp combine_with_or(filters) do
+    Enum.reduce(filters, fn filter, acc ->
+      Ash.Expr.expr(^acc or ^filter)
+    end)
+  end
+
+  defp get_tenant(authorizer) do
+    case authorizer do
+      %{query: %{tenant: tenant}} when not is_nil(tenant) -> tenant
+      %{changeset: %{tenant: tenant}} when not is_nil(tenant) -> tenant
+      _ -> nil
+    end
+  end
+end
