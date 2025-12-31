@@ -37,6 +37,12 @@ defmodule AshGrant.MixProject do
       {:ash, "~> 3.0"},
       {:spark, "~> 2.0"},
 
+      # DB (test only)
+      {:ash_postgres, "~> 2.0", only: :test},
+      {:ecto_sql, "~> 3.10", only: :test},
+      {:postgrex, "~> 0.17", only: :test},
+      {:simple_sat, "~> 0.1", only: :test},
+
       # Dev/Test
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -47,7 +53,9 @@ defmodule AshGrant.MixProject do
 
   defp aliases do
     [
-      test: ["test"]
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      "ecto.setup": ["ecto.create", "ecto.migrate"],
+      "ecto.reset": ["ecto.drop", "ecto.setup"]
     ]
   end
 

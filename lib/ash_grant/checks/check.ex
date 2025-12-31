@@ -204,28 +204,13 @@ defmodule AshGrant.Check do
     true
   end
 
-  defp check_scope_access(scope, nil, _context, _authorizer, _opts) do
-    # No scope resolver configured, only "all" is supported
-    raise """
-    AshGrant: Scope "#{scope}" requires a scope_resolver to be configured.
-
-    Either configure a scope_resolver in your ash_grant block:
-
-        ash_grant do
-          resolver MyApp.PermissionResolver
-          scope_resolver MyApp.ScopeResolver
-        end
-
-    Or use only "all" scope in your permissions.
-    """
-  end
-
   defp check_scope_access(scope, scope_resolver, context, authorizer, opts) do
+    resource = context.resource
     action_type = get_action_type(context[:action])
 
     case action_type do
       :create ->
-        check_create_scope(scope, scope_resolver, context, opts)
+        check_create_scope(scope, resource, scope_resolver, context, opts)
 
       _ ->
         record = get_target_record(authorizer)
@@ -233,7 +218,7 @@ defmodule AshGrant.Check do
         case record do
           nil -> false
           rec ->
-            filter = resolve_scope(scope_resolver, scope, context)
+            filter = resolve_scope(resource, scope_resolver, scope, context)
             record_matches_filter?(rec, filter, context, opts)
         end
     end
@@ -242,10 +227,10 @@ defmodule AshGrant.Check do
   defp get_action_type(%{type: type}), do: type
   defp get_action_type(_), do: nil
 
-  defp check_create_scope("all", _scope_resolver, _context, _opts), do: true
-  defp check_create_scope("global", _scope_resolver, _context, _opts), do: true
+  defp check_create_scope("all", _resource, _scope_resolver, _context, _opts), do: true
+  defp check_create_scope("global", _resource, _scope_resolver, _context, _opts), do: true
 
-  defp check_create_scope(scope, scope_resolver, context, opts) do
+  defp check_create_scope(scope, resource, scope_resolver, context, opts) do
     changeset = context[:changeset]
 
     case changeset do
@@ -254,7 +239,7 @@ defmodule AshGrant.Check do
 
       cs ->
         virtual_record = build_virtual_record(cs)
-        filter = resolve_scope(scope_resolver, scope, context)
+        filter = resolve_scope(resource, scope_resolver, scope, context)
         record_matches_filter?(virtual_record, filter, context, opts)
     end
   end
@@ -273,11 +258,51 @@ defmodule AshGrant.Check do
     _ -> %{}
   end
 
-  defp resolve_scope(resolver, scope, context) when is_function(resolver, 2) do
+  # First try inline scope DSL, then fall back to scope_resolver
+  defp resolve_scope(resource, scope_resolver, scope, context) do
+    scope_atom = if is_binary(scope), do: String.to_existing_atom(scope), else: scope
+
+    # Try inline scope DSL first
+    case AshGrant.Info.get_scope(resource, scope_atom) do
+      nil ->
+        # Fall back to legacy scope_resolver
+        resolve_with_scope_resolver(scope_resolver, scope, context)
+
+      _scope_def ->
+        # Use inline scope DSL
+        AshGrant.Info.resolve_scope_filter(resource, scope_atom, context)
+    end
+  rescue
+    ArgumentError ->
+      # String.to_existing_atom failed, try legacy resolver
+      resolve_with_scope_resolver(scope_resolver, scope, context)
+  end
+
+  defp resolve_with_scope_resolver(nil, scope, _context) do
+    raise """
+    AshGrant: Scope "#{scope}" not found in inline scope DSL and no scope_resolver configured.
+
+    Either define the scope inline in your ash_grant block:
+
+        ash_grant do
+          resolver MyApp.PermissionResolver
+          scope :#{scope}, expr(...)
+        end
+
+    Or configure a scope_resolver:
+
+        ash_grant do
+          resolver MyApp.PermissionResolver
+          scope_resolver MyApp.ScopeResolver
+        end
+    """
+  end
+
+  defp resolve_with_scope_resolver(resolver, scope, context) when is_function(resolver, 2) do
     resolver.(scope, context)
   end
 
-  defp resolve_scope(resolver, scope, context) when is_atom(resolver) do
+  defp resolve_with_scope_resolver(resolver, scope, context) when is_atom(resolver) do
     resolver.resolve(scope, context)
   end
 

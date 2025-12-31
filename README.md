@@ -291,6 +291,84 @@ ash_grant do
 end
 ```
 
+## Business Scope Examples
+
+AshGrant supports a wide variety of business scenarios. Here are common patterns:
+
+### Status-Based Workflow
+
+```elixir
+ash_grant do
+  scope :all, true
+  scope :draft, expr(status == :draft)
+  scope :pending_review, expr(status == :pending_review)
+  scope :approved, expr(status == :approved)
+  scope :editable, expr(status in [:draft, :pending_review])
+end
+```
+
+### Security Classification
+
+Hierarchical access levels:
+
+```elixir
+ash_grant do
+  scope :public, expr(classification == :public)
+  scope :internal, expr(classification in [:public, :internal])
+  scope :confidential, expr(classification in [:public, :internal, :confidential])
+  scope :top_secret, true  # Can see all
+end
+```
+
+### Transaction Limits
+
+Numeric comparisons for amount-based authorization:
+
+```elixir
+ash_grant do
+  scope :small_amount, expr(amount < 1000)
+  scope :medium_amount, expr(amount < 10000)
+  scope :large_amount, expr(amount < 100000)
+  scope :unlimited, true
+end
+```
+
+### Multi-Tenant with Inheritance
+
+Combined scopes using inheritance:
+
+```elixir
+ash_grant do
+  scope :tenant, expr(tenant_id == ^actor(:tenant_id))
+  scope :tenant_active, [:tenant], expr(status == :active)
+  scope :tenant_own, [:tenant], expr(created_by_id == ^actor(:id))
+end
+```
+
+### Time/Period Based
+
+Temporal filtering:
+
+```elixir
+ash_grant do
+  scope :current_period, expr(period_id == ^actor(:current_period_id))
+  scope :open_periods, expr(period_status == :open)
+  scope :this_fiscal_year, expr(fiscal_year == ^actor(:fiscal_year))
+end
+```
+
+### Geographic/Territory
+
+List membership for territory assignments:
+
+```elixir
+ash_grant do
+  scope :same_region, expr(region_id == ^actor(:region_id))
+  scope :assigned_territories, expr(territory_id in ^actor(:territory_ids))
+  scope :my_accounts, expr(account_manager_id == ^actor(:id))
+end
+```
+
 ### Legacy ScopeResolver
 
 For complex scopes that require runtime data fetching, you can still use
@@ -347,6 +425,32 @@ end
 | `AshGrant.Check` | SimpleCheck for write actions |
 | `AshGrant.FilterCheck` | FilterCheck for read actions |
 | `AshGrant.Info` | DSL introspection helpers |
+
+## Testing
+
+AshGrant includes comprehensive tests using `Ash.Generator` for fixture generation:
+
+```bash
+mix test
+```
+
+The test suite covers:
+
+- **Permission parsing** - All format variants and edge cases
+- **Evaluator** - Deny-wins semantics with property-based tests
+- **DB Integration** - Real database queries with scope filtering
+- **Business scenarios** - 8 different authorization patterns:
+  - Status-based workflow (Document)
+  - Organization hierarchy (Employee)
+  - Geographic/Territory (Customer)
+  - Security classification (Report)
+  - Project/Team assignment (Task)
+  - Transaction limits (Payment)
+  - Time/Period based (Journal)
+  - Complex ownership + Multi-tenant (SharedDocument)
+
+Each scenario tests both positive (can access) and negative (cannot access) cases,
+plus deny-wins semantics and edge conditions.
 
 ## License
 

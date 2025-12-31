@@ -187,31 +187,12 @@ defmodule AshGrant.FilterCheck do
     resolver.resolve(actor, context)
   end
 
-  defp build_combined_filter(scopes, nil, _context) do
-    non_all_scopes = Enum.reject(scopes, &(&1 == "all"))
-
-    if Enum.empty?(non_all_scopes) do
-      true
-    else
-      raise """
-      AshGrant: Scopes #{inspect(non_all_scopes)} require a scope_resolver to be configured.
-
-      Either configure a scope_resolver in your ash_grant block:
-
-          ash_grant do
-            resolver MyApp.PermissionResolver
-            scope_resolver MyApp.ScopeResolver
-          end
-
-      Or use only "all" scope in your permissions.
-      """
-    end
-  end
-
   defp build_combined_filter(scopes, scope_resolver, context) do
+    resource = context.resource
+
     filters =
       scopes
-      |> Enum.map(&resolve_scope(scope_resolver, &1, context))
+      |> Enum.map(&resolve_scope(resource, scope_resolver, &1, context))
       |> Enum.reject(&(&1 == true))
 
     case filters do
@@ -228,13 +209,53 @@ defmodule AshGrant.FilterCheck do
     end
   end
 
-  defp resolve_scope(_resolver, "all", _context), do: true
+  # First try inline scope DSL, then fall back to scope_resolver
+  defp resolve_scope(resource, scope_resolver, scope, context) do
+    scope_atom = if is_binary(scope), do: String.to_existing_atom(scope), else: scope
 
-  defp resolve_scope(resolver, scope, context) when is_function(resolver, 2) do
+    # Try inline scope DSL first
+    case AshGrant.Info.get_scope(resource, scope_atom) do
+      nil ->
+        # Fall back to legacy scope_resolver
+        resolve_with_scope_resolver(scope_resolver, scope, context)
+
+      _scope_def ->
+        # Use inline scope DSL
+        AshGrant.Info.resolve_scope_filter(resource, scope_atom, context)
+    end
+  rescue
+    ArgumentError ->
+      # String.to_existing_atom failed, try legacy resolver
+      resolve_with_scope_resolver(scope_resolver, scope, context)
+  end
+
+  defp resolve_with_scope_resolver(nil, "all", _context), do: true
+
+  defp resolve_with_scope_resolver(nil, scope, _context) do
+    raise """
+    AshGrant: Scope "#{scope}" not found in inline scope DSL and no scope_resolver configured.
+
+    Either define the scope inline in your ash_grant block:
+
+        ash_grant do
+          resolver MyApp.PermissionResolver
+          scope :#{scope}, expr(...)
+        end
+
+    Or configure a scope_resolver:
+
+        ash_grant do
+          resolver MyApp.PermissionResolver
+          scope_resolver MyApp.ScopeResolver
+        end
+    """
+  end
+
+  defp resolve_with_scope_resolver(resolver, scope, context) when is_function(resolver, 2) do
     resolver.(scope, context)
   end
 
-  defp resolve_scope(resolver, scope, context) when is_atom(resolver) do
+  defp resolve_with_scope_resolver(resolver, scope, context) when is_atom(resolver) do
     resolver.resolve(scope, context)
   end
 
