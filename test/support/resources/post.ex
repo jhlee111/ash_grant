@@ -30,6 +30,12 @@ defmodule AshGrant.Test.Post do
     scope(:draft, expr(status == :draft))
     scope(:own_draft, [:own], expr(status == :draft))
     scope(:today, expr(fragment("DATE(inserted_at) = CURRENT_DATE")))
+
+    # Injectable temporal scope - uses context for testability
+    scope(:today_injectable, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date))))
+
+    # Injectable parameterized scope - title length threshold
+    scope(:short_title, expr(fragment("LENGTH(title) <= ?", ^context(:max_title_length))))
   end
 
   policies do
