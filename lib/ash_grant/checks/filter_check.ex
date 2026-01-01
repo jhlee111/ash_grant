@@ -95,6 +95,22 @@ defmodule AshGrant.FilterCheck do
   - `false` - Block all (no matching permissions or denied)
   - `Ash.Expr.t()` - Filter expression to apply to the query
 
+  ## Context Injection
+
+  Scopes can use `^context(:key)` for injectable values. Pass context via
+  `Ash.Query.set_context/2`:
+
+      # Scope definition:
+      scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))
+
+      # Query with injected context:
+      Post
+      |> Ash.Query.for_read(:read)
+      |> Ash.Query.set_context(%{reference_date: ~D[2025-01-15]})
+      |> Ash.read!(actor: actor)
+
+  This enables deterministic testing of temporal and parameterized scopes.
+
   ## See Also
 
   - `AshGrant.Check` - For write actions

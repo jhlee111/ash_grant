@@ -60,6 +60,7 @@ defmodule AshGrant.Check do
   - Full support for all Ash expression operators
   - Automatic actor template resolution (`^actor(:id)`, etc.)
   - Automatic tenant template resolution (`^tenant()`)
+  - Context injection via `^context(:key)` for testable scopes
   - Handles nested actor paths
 
   For **update/destroy** actions:
