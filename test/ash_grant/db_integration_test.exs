@@ -214,19 +214,50 @@ defmodule AshGrant.DbIntegrationTest do
   end
 
   describe "scope :today - temporal filtering with SQL fragment" do
-    test "today scope only returns records created today" do
+    test "today scope only returns records created today (using injectable scope)" do
       actor_id = Ash.UUID.generate()
 
       # Create a post (will have today's inserted_at)
       today_post = create_post!(%{title: "Today Post", status: :draft, author_id: actor_id})
 
-      # Actor with today scope
-      actor = custom_perms_actor(["post:*:read:today"], actor_id)
-      posts = read_posts(actor)
+      # Get the actual date of the post
+      post_date = DateTime.to_date(today_post.inserted_at)
 
-      # Should see the post created today
+      # Actor with today_injectable scope (uses context injection)
+      actor = custom_perms_actor(["post:*:read:today_injectable"], actor_id)
+
+      # Pass the reference date via query context
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{reference_date: post_date})
+        |> Ash.read!(actor: actor)
+
+      # Should see the post created on that date
       assert length(posts) == 1
       assert hd(posts).id == today_post.id
+    end
+
+    test "today_injectable scope excludes records from different dates" do
+      actor_id = Ash.UUID.generate()
+
+      # Create a post
+      _post = create_post!(%{title: "Test Post", status: :draft, author_id: actor_id})
+
+      # Actor with today_injectable scope
+      actor = custom_perms_actor(["post:*:read:today_injectable"], actor_id)
+
+      # Pass yesterday's date - should NOT match
+      yesterday = Date.add(Date.utc_today(), -1)
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{reference_date: yesterday})
+        |> Ash.read!(actor: actor)
+
+      # Should NOT see any posts
+      assert length(posts) == 0
     end
   end
 

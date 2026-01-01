@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New Evaluator Functions**:
   - `get_instance_scope/3` - Get the scope from a matching instance permission
   - `get_all_instance_scopes/3` - Get all scopes from matching instance permissions
+- **Context Injection for Testable Scopes**: Scopes can now use `^context(:key)` for injectable values
+  - `scope :today_injectable, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))`
+  - `scope :threshold, expr(amount < ^context(:max_amount))`
+  - Enables deterministic testing of temporal and parameterized scopes
+  - Values are passed via `Ash.Query.set_context(%{reference_date: ~D[2025-01-15]})`
 
 ### Changed
 
