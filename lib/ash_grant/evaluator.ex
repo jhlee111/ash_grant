@@ -88,6 +88,8 @@ defmodule AshGrant.Evaluator do
   | `has_instance_access?/3` | Check if actor can perform action on specific instance |
   | `get_scope/3` | Get first matching scope (for SimpleCheck) |
   | `get_all_scopes/3` | Get all matching scopes (for FilterCheck) |
+  | `get_instance_scope/3` | Get scope from instance permission (for ABAC conditions) |
+  | `get_all_instance_scopes/3` | Get all scopes from instance permissions |
   | `find_matching/3` | Get all matching permissions (debug/introspection) |
   | `combine/1` | Merge multiple permission lists |
   """
@@ -135,13 +137,17 @@ defmodule AshGrant.Evaluator do
   @doc """
   Checks if the given permissions grant access to a specific resource instance.
 
-  Instance permissions use the format `resource:instance_id:action:` where
-  the scope is empty (trailing colon).
+  Instance permissions use the format `resource:instance_id:action:scope` where
+  the scope can be empty (backward compatible) or contain a scope condition.
 
   ## Examples
 
       iex> permissions = ["feed:feed_abc123xyz789ab:read:", "feed:feed_abc123xyz789ab:write:"]
       iex> AshGrant.Evaluator.has_instance_access?(permissions, "feed_abc123xyz789ab", "read")
+      true
+
+      iex> permissions = ["doc:doc_123:update:draft"]
+      iex> AshGrant.Evaluator.has_instance_access?(permissions, "doc_123", "update")
       true
 
   """
@@ -162,6 +168,95 @@ defmodule AshGrant.Evaluator do
       Enum.any?(permissions, fn perm ->
         not Permission.deny?(perm) and Permission.matches_instance?(perm, instance_id, action)
       end)
+    end
+  end
+
+  @doc """
+  Gets the scope for a matching instance permission.
+
+  Returns the scope from the first matching allow permission for the given instance.
+  Returns nil if no matching permission is found, if denied, or if the scope is empty.
+
+  This enables ABAC-style conditions on instance permissions, where the scope
+  represents an authorization condition (e.g., "draft", "business_hours", "small_amount").
+
+  ## Examples
+
+      iex> permissions = ["doc:doc_123:update:draft"]
+      iex> AshGrant.Evaluator.get_instance_scope(permissions, "doc_123", "update")
+      "draft"
+
+      iex> permissions = ["doc:doc_123:read:"]
+      iex> AshGrant.Evaluator.get_instance_scope(permissions, "doc_123", "read")
+      nil
+
+      iex> permissions = ["doc:doc_123:*:all", "!doc:doc_123:delete:all"]
+      iex> AshGrant.Evaluator.get_instance_scope(permissions, "doc_123", "delete")
+      nil
+
+  """
+  @spec get_instance_scope(permissions(), String.t(), String.t()) :: String.t() | nil
+  def get_instance_scope(permissions, instance_id, action) do
+    permissions = normalize_permissions(permissions)
+
+    # Check for deny first
+    has_deny =
+      Enum.any?(permissions, fn perm ->
+        Permission.deny?(perm) and Permission.matches_instance?(perm, instance_id, action)
+      end)
+
+    if has_deny do
+      nil
+    else
+      # Find first matching allow permission and return its scope
+      permissions
+      |> Enum.find(fn perm ->
+        not Permission.deny?(perm) and Permission.matches_instance?(perm, instance_id, action)
+      end)
+      |> case do
+        nil -> nil
+        perm -> perm.scope
+      end
+    end
+  end
+
+  @doc """
+  Gets all scopes for matching instance permissions.
+
+  Returns a list of scopes from all matching allow permissions for the given instance.
+  Useful when a user has multiple instance permissions with different scopes.
+
+  ## Examples
+
+      iex> permissions = ["doc:doc_123:read:draft", "doc:doc_123:read:internal"]
+      iex> AshGrant.Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
+      ["draft", "internal"]
+
+      iex> permissions = ["doc:doc_123:*:all", "!doc:doc_123:delete:all"]
+      iex> AshGrant.Evaluator.get_all_instance_scopes(permissions, "doc_123", "delete")
+      []
+
+  """
+  @spec get_all_instance_scopes(permissions(), String.t(), String.t()) :: [String.t()]
+  def get_all_instance_scopes(permissions, instance_id, action) do
+    permissions = normalize_permissions(permissions)
+
+    # Check for deny first
+    has_deny =
+      Enum.any?(permissions, fn perm ->
+        Permission.deny?(perm) and Permission.matches_instance?(perm, instance_id, action)
+      end)
+
+    if has_deny do
+      []
+    else
+      permissions
+      |> Enum.filter(fn perm ->
+        not Permission.deny?(perm) and Permission.matches_instance?(perm, instance_id, action)
+      end)
+      |> Enum.map(& &1.scope)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
     end
   end
 

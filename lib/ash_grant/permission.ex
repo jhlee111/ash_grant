@@ -60,12 +60,22 @@ defmodule AshGrant.Permission do
 
   For sharing specific resource instances (like Google Docs sharing):
 
-      "blog:post_abc123xyz789ab:read:"       # Read specific post
+      "blog:post_abc123xyz789ab:read:"       # Read specific post (no conditions)
       "blog:post_abc123xyz789ab:*:"          # Full access to specific post
       "!blog:post_abc123xyz789ab:delete:"    # DENY delete on specific post
 
-  Instance permissions typically have an empty scope (trailing colon) because
-  the permission is already scoped to a specific instance.
+  ### Instance Permissions with Scopes (ABAC)
+
+  Instance permissions can also include scopes for attribute-based conditions:
+
+      "doc:doc_123:update:draft"             # Update only when document is in draft
+      "doc:doc_123:read:business_hours"      # Read only during business hours
+      "invoice:inv_456:approve:small_amount" # Approve only if amount is small
+      "project:proj_789:admin:owner"         # Admin access only when owner
+
+  When a scope is provided on an instance permission, it acts as an authorization
+  condition that must be satisfied. Empty scopes (trailing colon) mean "no conditions"
+  and are backward compatible with earlier versions.
 
   ## Backward Compatibility
 
