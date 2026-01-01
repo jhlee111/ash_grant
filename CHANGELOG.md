@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Instance Permissions with Scopes (ABAC)**: Instance permissions now support scope conditions
+  - `doc:doc_123:update:draft` - Update only when document is in draft status
+  - `doc:doc_123:read:business_hours` - Access only during business hours
+  - `invoice:inv_456:approve:small_amount` - Approve only below threshold
+  - Scopes are now treated as "authorization conditions" rather than just "record filters"
+  - Empty scopes (trailing colon) remain backward compatible ("no conditions")
+- **New Evaluator Functions**:
+  - `get_instance_scope/3` - Get the scope from a matching instance permission
+  - `get_all_instance_scopes/3` - Get all scopes from matching instance permissions
+
+### Changed
+
+- **Documentation**: Clarified that scope represents an "authorization condition" that can apply
+  to both RBAC and instance permissions, enabling full ABAC (Attribute-Based Access Control)
+
 ## [0.2.1] - 2025-01-01
 
 ### Added
