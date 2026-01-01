@@ -65,6 +65,30 @@ defmodule AshGrant.Dsl do
 
       # Instead of owner_field :author_id, use:
       scope :own, expr(author_id == ^actor(:id))
+
+  ## Context Injection
+
+  Scopes can use `^context(:key)` for injectable values, enabling deterministic
+  testing of temporal and parameterized scopes:
+
+      ash_grant do
+        resolver MyApp.PermissionResolver
+
+        # Injectable temporal scope
+        scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))
+
+        # Injectable threshold scope
+        scope :small_amount, expr(amount < ^context(:max_amount))
+      end
+
+  Inject values at query/changeset time:
+
+      Post
+      |> Ash.Query.for_read(:read)
+      |> Ash.Query.set_context(%{reference_date: Date.utc_today()})
+      |> Ash.read!(actor: actor)
+
+  This is preferred over database functions like `CURRENT_DATE` for testability.
   """
 
   @scope %Spark.Dsl.Entity{
@@ -87,12 +111,19 @@ defmodule AshGrant.Dsl do
 
         # Inheritance: combines parent scope(s) with this filter
         scope :own_draft, [:own], expr(status == :draft)
+
+        # Context injection for testable temporal scopes
+        scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))
+
+        # Context injection for parameterized thresholds
+        scope :small_amount, expr(amount < ^context(:max_amount))
     """,
     examples: [
       "scope :all, true",
       "scope :own, expr(author_id == ^actor(:id))",
       "scope :published, expr(status == :published)",
-      "scope :own_draft, [:own], expr(status == :draft)"
+      "scope :own_draft, [:own], expr(status == :draft)",
+      ~s|scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))|
     ],
     target: AshGrant.Dsl.Scope,
     args: [:name, {:optional, :inherits}, :filter],

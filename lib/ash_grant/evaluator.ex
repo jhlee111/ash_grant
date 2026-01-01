@@ -80,6 +80,25 @@ defmodule AshGrant.Evaluator do
       Evaluator.has_instance_access?(permissions, "feed_abc123xyz789ab", "read")
       # => true
 
+  ### Instance Permissions with Scopes (ABAC)
+
+  Instance permissions can include scope conditions for attribute-based access:
+
+      # Instance permission with scope: resource:instance_id:action:scope
+      permissions = ["doc:doc_123:update:draft", "doc:doc_123:read:business_hours"]
+
+      # Check if access is granted
+      Evaluator.has_instance_access?(permissions, "doc_123", "update")
+      # => true
+
+      # Get the scope condition for further evaluation
+      Evaluator.get_instance_scope(permissions, "doc_123", "update")
+      # => "draft" (the application can then verify if the document is in draft status)
+
+      # Get all scopes for an action
+      Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
+      # => ["business_hours"]
+
   ## Functions Overview
 
   | Function | Purpose |

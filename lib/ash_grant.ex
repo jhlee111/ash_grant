@@ -17,9 +17,11 @@ defmodule AshGrant do
 
   - **Unified Permission Format**: `resource:instance_id:action:scope` syntax
   - **Instance-level permissions**: Share specific resources (like Google Docs sharing)
+  - **Instance permissions with scopes (ABAC)**: Conditional instance access (`doc:doc_123:update:draft`)
   - **Deny-wins semantics**: Deny rules always override allow rules
   - **Wildcard matching**: `*` for resources/actions, `read*` for action prefixes
   - **Scope DSL**: Define scopes inline with `expr()` expressions
+  - **Context injection**: Use `^context(:key)` for injectable/testable scopes
   - **Multi-tenancy Support**: Full support for `^tenant()` in scope expressions
   - **Two check types**: `filter_check/1` for reads, `check/1` for writes
   - **Default policies**: Auto-generate standard policies to reduce boilerplate
@@ -143,6 +145,16 @@ defmodule AshGrant do
       "blog:post_abc123xyz789ab:*:"        # Full access to specific post
       "!blog:post_abc123xyz789ab:delete:"  # DENY delete on specific post
 
+  ### Instance Permissions with Scopes (ABAC)
+
+  Instance permissions can include scopes for attribute-based conditions:
+
+      "doc:doc_123:update:draft"           # Update only when document is in draft
+      "doc:doc_123:read:business_hours"    # Read only during business hours
+      "invoice:inv_456:approve:small"      # Approve only if amount is small
+
+  Use `AshGrant.Evaluator.get_instance_scope/3` to retrieve the scope condition.
+
   ## Scope DSL
 
   Define scopes inline using `expr()` expressions:
@@ -153,6 +165,26 @@ defmodule AshGrant do
         scope :published, expr(status == :published)
         scope :own_draft, [:own], expr(status == :draft)  # Inheritance
       end
+
+  ### Context Injection for Testable Scopes
+
+  Use `^context(:key)` for injectable values instead of database functions:
+
+      ash_grant do
+        # Instead of: scope :today, expr(fragment("DATE(inserted_at) = CURRENT_DATE"))
+        # Use injectable context:
+        scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))
+        scope :threshold, expr(amount < ^context(:max_amount))
+      end
+
+  Inject values at query time:
+
+      Post
+      |> Ash.Query.for_read(:read)
+      |> Ash.Query.set_context(%{reference_date: Date.utc_today()})
+      |> Ash.read!(actor: actor)
+
+  This enables deterministic testing by controlling the injected values.
 
   ## Deny-Wins Pattern
 
