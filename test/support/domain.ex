@@ -3,23 +3,33 @@ defmodule AshGrant.Test.Domain do
 
   resources do
     # Basic resources
-    resource AshGrant.Test.Post
-    resource AshGrant.Test.Comment
+    resource(AshGrant.Test.Post)
+    resource(AshGrant.Test.Comment)
 
     # Business scenario resources
-    resource AshGrant.Test.Document       # Status-based workflow
-    resource AshGrant.Test.Employee       # Organization hierarchy
-    resource AshGrant.Test.Customer       # Geographic/Territory
-    resource AshGrant.Test.Report         # Security classification
-    resource AshGrant.Test.Task           # Project/Team
-    resource AshGrant.Test.Payment        # Transaction limits
-    resource AshGrant.Test.Journal        # Time/Period based
-    resource AshGrant.Test.SharedDocument # Complex ownership + Multi-tenant
+    # Status-based workflow
+    resource(AshGrant.Test.Document)
+    # Organization hierarchy
+    resource(AshGrant.Test.Employee)
+    # Geographic/Territory
+    resource(AshGrant.Test.Customer)
+    # Security classification
+    resource(AshGrant.Test.Report)
+    # Project/Team
+    resource(AshGrant.Test.Task)
+    # Transaction limits
+    resource(AshGrant.Test.Payment)
+    # Time/Period based
+    resource(AshGrant.Test.Journal)
+    # Complex ownership + Multi-tenant
+    resource(AshGrant.Test.SharedDocument)
 
     # Default policies test resource
-    resource AshGrant.Test.Article        # Uses default_policies: true
+    # Uses default_policies: true
+    resource(AshGrant.Test.Article)
 
     # Multi-tenancy test resource
-    resource AshGrant.Test.TenantPost     # Uses ^tenant() scope expression
+    # Uses ^tenant() scope expression
+    resource(AshGrant.Test.TenantPost)
   end
 end

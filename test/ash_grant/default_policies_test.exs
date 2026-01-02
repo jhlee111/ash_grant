@@ -79,7 +79,7 @@ defmodule AshGrant.DefaultPoliciesTest do
 
       # Cannot update other's article
       assert {:error, %Ash.Error.Forbidden{}} =
-        Ash.update(other_article, %{title: "Hacked"}, actor: actor)
+               Ash.update(other_article, %{title: "Hacked"}, actor: actor)
     end
 
     test "admin can do everything" do

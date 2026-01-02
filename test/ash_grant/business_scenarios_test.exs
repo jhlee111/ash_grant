@@ -16,7 +16,16 @@ defmodule AshGrant.BusinessScenariosTest do
 
   import AshGrant.Test.Generator
 
-  alias AshGrant.Test.{Document, Report, Payment, Journal, Task, Customer, Employee, SharedDocument}
+  alias AshGrant.Test.{
+    Document,
+    Report,
+    Payment,
+    Journal,
+    Task,
+    Customer,
+    Employee,
+    SharedDocument
+  }
 
   # ============================================
   # 1. Status-Based Workflow (Document)
@@ -191,9 +200,12 @@ defmodule AshGrant.BusinessScenariosTest do
       assert scenario.small.id in ids
 
       # Negative: CANNOT see payments >= 1000
-      refute scenario.medium.id in ids  # 5000 >= 1000
-      refute scenario.large.id in ids   # 50000 >= 1000
-      refute scenario.huge.id in ids    # 500000 >= 1000
+      # 5000 >= 1000
+      refute scenario.medium.id in ids
+      # 50000 >= 1000
+      refute scenario.large.id in ids
+      # 500000 >= 1000
+      refute scenario.huge.id in ids
     end
 
     test "accountant with medium_amount scope sees under 10000, not 10000+" do
@@ -205,12 +217,16 @@ defmodule AshGrant.BusinessScenariosTest do
 
       # Positive: CAN see payments < 10000
       assert length(payments) == 2
-      assert scenario.small.id in ids   # 500 < 10000
-      assert scenario.medium.id in ids  # 5000 < 10000
+      # 500 < 10000
+      assert scenario.small.id in ids
+      # 5000 < 10000
+      assert scenario.medium.id in ids
 
       # Negative: CANNOT see payments >= 10000
-      refute scenario.large.id in ids   # 50000 >= 10000
-      refute scenario.huge.id in ids    # 500000 >= 10000
+      # 50000 >= 10000
+      refute scenario.large.id in ids
+      # 500000 >= 10000
+      refute scenario.huge.id in ids
     end
 
     test "finance_manager with large_amount scope sees under 100000, not 100000+" do
@@ -222,12 +238,16 @@ defmodule AshGrant.BusinessScenariosTest do
 
       # Positive: CAN see payments < 100000
       assert length(payments) == 3
-      assert scenario.small.id in ids   # 500 < 100000
-      assert scenario.medium.id in ids  # 5000 < 100000
-      assert scenario.large.id in ids   # 50000 < 100000
+      # 500 < 100000
+      assert scenario.small.id in ids
+      # 5000 < 100000
+      assert scenario.medium.id in ids
+      # 50000 < 100000
+      assert scenario.large.id in ids
 
       # Negative: CANNOT see payments >= 100000
-      refute scenario.huge.id in ids    # 500000 >= 100000
+      # 500000 >= 100000
+      refute scenario.huge.id in ids
     end
 
     test "cfo with unlimited scope can read all payments" do
@@ -328,10 +348,12 @@ defmodule AshGrant.BusinessScenariosTest do
 
     test "accountant can read journals from this fiscal year only" do
       scenario = journal_periods_scenario()
-      actor = custom_actor(
-        permissions: ["journal:*:read:this_fiscal_year"],
-        fiscal_year: scenario.current_year
-      )
+
+      actor =
+        custom_actor(
+          permissions: ["journal:*:read:this_fiscal_year"],
+          fiscal_year: scenario.current_year
+        )
 
       journals = Journal |> Ash.read!(actor: actor)
       ids = Enum.map(journals, & &1.id)
@@ -472,11 +494,12 @@ defmodule AshGrant.BusinessScenariosTest do
       cust2 = generate(customer(territory_id: territory2))
       other_cust = generate(customer(territory_id: other_territory))
 
-      actor = custom_actor(
-        permissions: ["customer:*:read:assigned_territories"],
-        id: actor_id,
-        territory_ids: [territory1, territory2]
-      )
+      actor =
+        custom_actor(
+          permissions: ["customer:*:read:assigned_territories"],
+          id: actor_id,
+          territory_ids: [territory1, territory2]
+        )
 
       customers = Customer |> Ash.read!(actor: actor)
       ids = Enum.map(customers, & &1.id)
@@ -576,10 +599,11 @@ defmodule AshGrant.BusinessScenariosTest do
       emp3 = generate(employee(organization_unit_id: child_org2))
       unrelated_emp = generate(employee(organization_unit_id: unrelated_org))
 
-      actor = dept_manager_actor(
-        org_unit_id: parent_org,
-        subtree_org_ids: [parent_org, child_org1, child_org2]
-      )
+      actor =
+        dept_manager_actor(
+          org_unit_id: parent_org,
+          subtree_org_ids: [parent_org, child_org1, child_org2]
+        )
 
       employees = Employee |> Ash.read!(actor: actor)
       ids = Enum.map(employees, & &1.id)
@@ -634,11 +658,12 @@ defmodule AshGrant.BusinessScenariosTest do
       my_doc = generate(shared_document(created_by_id: actor_id, tenant_id: tenant_id))
       other_doc = generate(shared_document(tenant_id: tenant_id))
 
-      actor = custom_actor(
-        permissions: ["shared_document:*:read:created_by_me"],
-        id: actor_id,
-        tenant_id: tenant_id
-      )
+      actor =
+        custom_actor(
+          permissions: ["shared_document:*:read:created_by_me"],
+          id: actor_id,
+          tenant_id: tenant_id
+        )
 
       docs = SharedDocument |> Ash.read!(actor: actor)
       ids = Enum.map(docs, & &1.id)
@@ -658,12 +683,13 @@ defmodule AshGrant.BusinessScenariosTest do
       shared_doc = generate(shared_document(tenant_id: tenant_id))
       not_shared = generate(shared_document(tenant_id: tenant_id))
 
-      actor = custom_actor(
-        permissions: ["shared_document:*:read:shared_with_me"],
-        id: actor_id,
-        tenant_id: tenant_id,
-        shared_document_ids: [shared_doc.id]
-      )
+      actor =
+        custom_actor(
+          permissions: ["shared_document:*:read:shared_with_me"],
+          id: actor_id,
+          tenant_id: tenant_id,
+          shared_document_ids: [shared_doc.id]
+        )
 
       docs = SharedDocument |> Ash.read!(actor: actor)
       ids = Enum.map(docs, & &1.id)
@@ -685,15 +711,16 @@ defmodule AshGrant.BusinessScenariosTest do
       other_doc = generate(shared_document(tenant_id: tenant_id))
 
       # User with both permissions (combined with OR)
-      actor = custom_actor(
-        permissions: [
-          "shared_document:*:read:created_by_me",
-          "shared_document:*:read:shared_with_me"
-        ],
-        id: actor_id,
-        tenant_id: tenant_id,
-        shared_document_ids: [shared_doc.id]
-      )
+      actor =
+        custom_actor(
+          permissions: [
+            "shared_document:*:read:created_by_me",
+            "shared_document:*:read:shared_with_me"
+          ],
+          id: actor_id,
+          tenant_id: tenant_id,
+          shared_document_ids: [shared_doc.id]
+        )
 
       docs = SharedDocument |> Ash.read!(actor: actor)
       ids = Enum.map(docs, & &1.id)
@@ -737,10 +764,11 @@ defmodule AshGrant.BusinessScenariosTest do
       archived_doc = generate(archived_shared_document(tenant_id: tenant_id))
       other_tenant_active = generate(active_shared_document(tenant_id: other_tenant))
 
-      actor = custom_actor(
-        permissions: ["shared_document:*:read:tenant_active"],
-        tenant_id: tenant_id
-      )
+      actor =
+        custom_actor(
+          permissions: ["shared_document:*:read:tenant_active"],
+          tenant_id: tenant_id
+        )
 
       docs = SharedDocument |> Ash.read!(actor: actor)
       ids = Enum.map(docs, & &1.id)
@@ -762,13 +790,16 @@ defmodule AshGrant.BusinessScenariosTest do
 
       my_doc = generate(shared_document(created_by_id: actor_id, tenant_id: tenant_id))
       other_doc = generate(shared_document(tenant_id: tenant_id))
-      other_tenant_my_doc = generate(shared_document(created_by_id: actor_id, tenant_id: other_tenant))
 
-      actor = custom_actor(
-        permissions: ["shared_document:*:read:tenant_own"],
-        id: actor_id,
-        tenant_id: tenant_id
-      )
+      other_tenant_my_doc =
+        generate(shared_document(created_by_id: actor_id, tenant_id: other_tenant))
+
+      actor =
+        custom_actor(
+          permissions: ["shared_document:*:read:tenant_own"],
+          id: actor_id,
+          tenant_id: tenant_id
+        )
 
       docs = SharedDocument |> Ash.read!(actor: actor)
       ids = Enum.map(docs, & &1.id)
@@ -803,10 +834,15 @@ defmodule AshGrant.BusinessScenariosTest do
       _scenario = document_workflow_scenario()
 
       # Actor has "all" permission BUT also explicit deny for "read"
-      actor = custom_actor(permissions: [
-        "document:*:read:all",           # allow all
-        "!document:*:read:approved"      # deny approved
-      ])
+      actor =
+        custom_actor(
+          permissions: [
+            # allow all
+            "document:*:read:all",
+            # deny approved
+            "!document:*:read:approved"
+          ]
+        )
 
       # Deny blocks ALL access when scope matches (deny-wins at action level)
       # Because deny for approved scope exists, evaluator returns [] for all scopes
@@ -819,10 +855,15 @@ defmodule AshGrant.BusinessScenariosTest do
       _scenario = security_classification_scenario()
 
       # Allow first, then deny
-      actor = custom_actor(permissions: [
-        "report:*:read:top_secret",      # allow (sees all)
-        "!report:*:read:confidential"    # deny
-      ])
+      actor =
+        custom_actor(
+          permissions: [
+            # allow (sees all)
+            "report:*:read:top_secret",
+            # deny
+            "!report:*:read:confidential"
+          ]
+        )
 
       # Deny wins - raises Forbidden
       assert_raise Ash.Error.Forbidden, fn ->
@@ -834,10 +875,15 @@ defmodule AshGrant.BusinessScenariosTest do
       _scenario = security_classification_scenario()
 
       # Deny first, then allow
-      actor = custom_actor(permissions: [
-        "!report:*:read:confidential",   # deny
-        "report:*:read:top_secret"       # allow (sees all)
-      ])
+      actor =
+        custom_actor(
+          permissions: [
+            # deny
+            "!report:*:read:confidential",
+            # allow (sees all)
+            "report:*:read:top_secret"
+          ]
+        )
 
       # Deny wins - raises Forbidden
       assert_raise Ash.Error.Forbidden, fn ->
@@ -849,10 +895,15 @@ defmodule AshGrant.BusinessScenariosTest do
       scenario = payment_limits_scenario()
 
       # Actor can read all, but has deny for "update" action
-      actor = custom_actor(permissions: [
-        "payment:*:read:unlimited",      # allow read
-        "!payment:*:update:all"          # deny update
-      ])
+      actor =
+        custom_actor(
+          permissions: [
+            # allow read
+            "payment:*:read:unlimited",
+            # deny update
+            "!payment:*:update:all"
+          ]
+        )
 
       # Read should still work (deny only affects update)
       payments = Payment |> Ash.read!(actor: actor)
@@ -870,10 +921,15 @@ defmodule AshGrant.BusinessScenariosTest do
       _report_scenario = security_classification_scenario()
 
       # Actor can read reports, but has deny for documents
-      actor = custom_actor(permissions: [
-        "report:*:read:top_secret",      # allow all reports
-        "!document:*:read:all"           # deny all documents
-      ])
+      actor =
+        custom_actor(
+          permissions: [
+            # allow all reports
+            "report:*:read:top_secret",
+            # deny all documents
+            "!document:*:read:all"
+          ]
+        )
 
       # Reports should work
       reports = Report |> Ash.read!(actor: actor)
@@ -889,14 +945,16 @@ defmodule AshGrant.BusinessScenariosTest do
       scenario = journal_periods_scenario()
 
       # Actor has multiple allow scopes but one deny
-      actor = custom_actor(
-        permissions: [
-          "journal:*:read:open_periods",
-          "journal:*:read:this_fiscal_year",
-          "!journal:*:read:this_fiscal_year"  # deny same action
-        ],
-        fiscal_year: scenario.current_year
-      )
+      actor =
+        custom_actor(
+          permissions: [
+            "journal:*:read:open_periods",
+            "journal:*:read:this_fiscal_year",
+            # deny same action
+            "!journal:*:read:this_fiscal_year"
+          ],
+          fiscal_year: scenario.current_year
+        )
 
       # Deny-wins: any deny for the action blocks everything - raises Forbidden
       assert_raise Ash.Error.Forbidden, fn ->
@@ -910,10 +968,15 @@ defmodule AshGrant.BusinessScenariosTest do
       _task3 = generate(task())
 
       # Actor has all access but deny for specific task
-      actor = custom_actor(permissions: [
-        "task:*:read:all",               # allow all
-        "!task:#{task2.id}:read:"        # deny specific instance
-      ])
+      actor =
+        custom_actor(
+          permissions: [
+            # allow all
+            "task:*:read:all",
+            # deny specific instance
+            "!task:#{task2.id}:read:"
+          ]
+        )
 
       # NOTE: Current implementation uses deny-wins at action level
       # Instance-specific denies currently don't filter individual records
@@ -925,6 +988,7 @@ defmodule AshGrant.BusinessScenariosTest do
           # Current behavior: instance deny doesn't filter individual records
           # All tasks are still visible because "all" scope wins for read
           assert length(tasks) >= 1
+
         {:error, %Ash.Error.Forbidden{}} ->
           # If deny-wins at action level, all access is blocked
           assert true
@@ -974,10 +1038,11 @@ defmodule AshGrant.BusinessScenariosTest do
       other_task = generate(task())
 
       # Has assigned scope only
-      actor = custom_actor(
-        permissions: ["task:*:read:assigned"],
-        id: actor_id
-      )
+      actor =
+        custom_actor(
+          permissions: ["task:*:read:assigned"],
+          id: actor_id
+        )
 
       tasks = Task |> Ash.read!(actor: actor)
       ids = Enum.map(tasks, & &1.id)

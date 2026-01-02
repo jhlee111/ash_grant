@@ -112,7 +112,14 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "converts deny permission" do
-      perm = %Permission{resource: "blog", instance_id: "*", action: "delete", scope: "all", deny: true}
+      perm = %Permission{
+        resource: "blog",
+        instance_id: "*",
+        action: "delete",
+        scope: "all",
+        deny: true
+      }
+
       assert Permission.to_string(perm) == "!blog:*:delete:all"
     end
 

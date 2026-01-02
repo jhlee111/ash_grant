@@ -15,8 +15,8 @@ defmodule AshGrant.IntegrationTest do
     use Ash.Domain, validate_config_inclusion?: false
 
     resources do
-      resource AshGrant.IntegrationTest.Post
-      resource AshGrant.IntegrationTest.Comment
+      resource(AshGrant.IntegrationTest.Post)
+      resource(AshGrant.IntegrationTest.Comment)
     end
   end
 
@@ -26,7 +26,7 @@ defmodule AshGrant.IntegrationTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn actor, _context ->
+      resolver(fn actor, _context ->
         case actor do
           nil -> []
           %{permissions: perms} -> perms
@@ -35,36 +35,36 @@ defmodule AshGrant.IntegrationTest do
           %{role: :viewer} -> ["post:*:read:published"]
           _ -> []
         end
-      end
+      end)
 
-      resource_name "post"
+      resource_name("post")
 
-      scope :all, true
-      scope :own, expr(author_id == ^actor(:id))
-      scope :published, expr(status == :published)
+      scope(:all, true)
+      scope(:own, expr(author_id == ^actor(:id)))
+      scope(:published, expr(status == :published))
     end
 
     attributes do
-      uuid_primary_key :id
-      attribute :title, :string, public?: true
-      attribute :status, :atom, constraints: [one_of: [:draft, :published]], default: :draft
-      attribute :author_id, :uuid
-      create_timestamp :inserted_at
+      uuid_primary_key(:id)
+      attribute(:title, :string, public?: true)
+      attribute(:status, :atom, constraints: [one_of: [:draft, :published]], default: :draft)
+      attribute(:author_id, :uuid)
+      create_timestamp(:inserted_at)
     end
 
     actions do
-      defaults [:read, :destroy]
+      defaults([:read, :destroy])
 
       create :create do
-        accept [:title, :status, :author_id]
+        accept([:title, :status, :author_id])
       end
 
       update :update do
-        accept [:title, :status]
+        accept([:title, :status])
       end
 
       update :publish do
-        change set_attribute(:status, :published)
+        change(set_attribute(:status, :published))
       end
     end
   end
@@ -75,26 +75,26 @@ defmodule AshGrant.IntegrationTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn actor, _context ->
+      resolver(fn actor, _context ->
         case actor do
           nil -> []
           %{role: :admin} -> ["comment:*:*:all"]
           %{role: :user} -> ["comment:*:read:all", "comment:*:create:all", "comment:*:delete:own"]
           _ -> []
         end
-      end
+      end)
 
-      resource_name "comment"
+      resource_name("comment")
 
-      scope :all, true
-      scope :own, expr(user_id == ^actor(:id))
+      scope(:all, true)
+      scope(:own, expr(user_id == ^actor(:id)))
     end
 
     attributes do
-      uuid_primary_key :id
-      attribute :body, :string, public?: true
-      attribute :user_id, :uuid
-      attribute :post_id, :uuid
+      uuid_primary_key(:id)
+      attribute(:body, :string, public?: true)
+      attribute(:user_id, :uuid)
+      attribute(:post_id, :uuid)
     end
   end
 
@@ -209,10 +209,12 @@ defmodule AshGrant.IntegrationTest do
 
   describe "deny-wins integration" do
     test "deny overrides allow" do
-      actor = custom_perms_actor([
-        "post:*:*:all",
-        "!post:*:delete:all"
-      ])
+      actor =
+        custom_perms_actor([
+          "post:*:*:all",
+          "!post:*:delete:all"
+        ])
+
       resolver = Info.resolver(Post)
       permissions = resolver.(actor, %{})
 
@@ -222,11 +224,13 @@ defmodule AshGrant.IntegrationTest do
     end
 
     test "multiple deny rules" do
-      actor = custom_perms_actor([
-        "post:*:*:all",
-        "!post:*:delete:all",
-        "!post:*:update:all"
-      ])
+      actor =
+        custom_perms_actor([
+          "post:*:*:all",
+          "!post:*:delete:all",
+          "!post:*:update:all"
+        ])
+
       resolver = Info.resolver(Post)
       permissions = resolver.(actor, %{})
 
@@ -239,10 +243,12 @@ defmodule AshGrant.IntegrationTest do
 
   describe "multi-scope scenarios" do
     test "multiple scopes for same action" do
-      actor = custom_perms_actor([
-        "post:*:read:own",
-        "post:*:read:published"
-      ])
+      actor =
+        custom_perms_actor([
+          "post:*:read:own",
+          "post:*:read:published"
+        ])
+
       resolver = Info.resolver(Post)
       permissions = resolver.(actor, %{})
 
@@ -256,10 +262,12 @@ defmodule AshGrant.IntegrationTest do
     test "instance permission grants specific access" do
       post_id = "post_#{Ash.UUID.generate() |> String.replace("-", "")}"
 
-      actor = custom_perms_actor([
-        "post:#{post_id}:read:",
-        "post:#{post_id}:update:"
-      ])
+      actor =
+        custom_perms_actor([
+          "post:#{post_id}:read:",
+          "post:#{post_id}:update:"
+        ])
+
       resolver = Info.resolver(Post)
       permissions = resolver.(actor, %{})
 
@@ -271,9 +279,11 @@ defmodule AshGrant.IntegrationTest do
     test "instance permission does not grant RBAC access" do
       post_id = "post_#{Ash.UUID.generate() |> String.replace("-", "")}"
 
-      actor = custom_perms_actor([
-        "post:#{post_id}:read:"
-      ])
+      actor =
+        custom_perms_actor([
+          "post:#{post_id}:read:"
+        ])
+
       resolver = Info.resolver(Post)
       permissions = resolver.(actor, %{})
 
@@ -284,10 +294,14 @@ defmodule AshGrant.IntegrationTest do
     test "combined RBAC and instance permissions" do
       post_id = "post_#{Ash.UUID.generate() |> String.replace("-", "")}"
 
-      actor = custom_perms_actor([
-        "post:*:read:published",          # RBAC: read published posts
-        "post:#{post_id}:update:"         # Instance: update specific post
-      ])
+      actor =
+        custom_perms_actor([
+          # RBAC: read published posts
+          "post:*:read:published",
+          # Instance: update specific post
+          "post:#{post_id}:update:"
+        ])
+
       resolver = Info.resolver(Post)
       permissions = resolver.(actor, %{})
 
@@ -310,6 +324,5 @@ defmodule AshGrant.IntegrationTest do
       assert Info.resource_name(Post) == "post"
       assert Info.resource_name(Comment) == "comment"
     end
-
   end
 end

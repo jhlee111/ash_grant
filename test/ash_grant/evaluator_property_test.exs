@@ -42,8 +42,10 @@ defmodule AshGrant.EvaluatorPropertyTest do
             ) do
         # Create permissions with both allow and deny for same resource/action
         permissions = [
-          "#{resource}:*:#{action}:#{scope}",  # allow
-          "!#{resource}:*:#{action}:#{scope}"  # deny
+          # allow
+          "#{resource}:*:#{action}:#{scope}",
+          # deny
+          "!#{resource}:*:#{action}:#{scope}"
         ]
 
         # Deny should win
@@ -103,7 +105,8 @@ defmodule AshGrant.EvaluatorPropertyTest do
             ) do
         permissions = [
           "#{resource}:*:#{action}:#{scope}",
-          "!#{resource}:*:#{action}:all"  # deny
+          # deny
+          "!#{resource}:*:#{action}:all"
         ]
 
         assert Evaluator.get_scope(permissions, resource, action) == nil
@@ -147,7 +150,8 @@ defmodule AshGrant.EvaluatorPropertyTest do
         permissions = [
           "#{resource}:*:#{action}:#{scope}",
           "#{resource}:*:#{action}:#{scope}",
-          "#{resource}:*:*:#{scope}"  # wildcard action, same scope
+          # wildcard action, same scope
+          "#{resource}:*:*:#{scope}"
         ]
 
         scopes = Evaluator.get_all_scopes(permissions, resource, action)
@@ -236,8 +240,10 @@ defmodule AshGrant.EvaluatorPropertyTest do
     property "action prefix wildcard matches prefixed actions" do
       check all(
               resource <- resource_gen(),
-              prefix <- string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
-              suffix <- string(:alphanumeric, min_length: 1, max_length: 5) |> map(&String.downcase/1)
+              prefix <-
+                string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
+              suffix <-
+                string(:alphanumeric, min_length: 1, max_length: 5) |> map(&String.downcase/1)
             ) do
         permissions = ["#{resource}:*:#{prefix}*:all"]
         action = "#{prefix}#{suffix}"

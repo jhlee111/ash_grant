@@ -14,20 +14,20 @@ defmodule AshGrant.InfoTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn actor, _context ->
+      resolver(fn actor, _context ->
         if actor, do: ["resource:*:read:all"], else: []
-      end
+      end)
 
-      resource_name "custom_resource"
+      resource_name("custom_resource")
 
-      scope :all, true
-      scope :own, expr(owner_id == ^actor(:id))
+      scope(:all, true)
+      scope(:own, expr(owner_id == ^actor(:id)))
     end
 
     attributes do
-      uuid_primary_key :id
-      attribute :name, :string, public?: true
-      attribute :owner_id, :uuid
+      uuid_primary_key(:id)
+      attribute(:name, :string, public?: true)
+      attribute(:owner_id, :uuid)
     end
   end
 
@@ -39,11 +39,11 @@ defmodule AshGrant.InfoTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn _actor, _context -> [] end
+      resolver(fn _actor, _context -> [] end)
     end
 
     attributes do
-      uuid_primary_key :id
+      uuid_primary_key(:id)
     end
   end
 
@@ -62,11 +62,11 @@ defmodule AshGrant.InfoTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver AshGrant.InfoTest.TestResolver
+      resolver(AshGrant.InfoTest.TestResolver)
     end
 
     attributes do
-      uuid_primary_key :id
+      uuid_primary_key(:id)
     end
   end
 

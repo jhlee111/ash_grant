@@ -6,12 +6,12 @@ defmodule AshGrant.Test.Post do
     extensions: [AshGrant]
 
   postgres do
-    table "posts"
-    repo AshGrant.TestRepo
+    table("posts")
+    repo(AshGrant.TestRepo)
   end
 
   ash_grant do
-    resolver fn actor, _context ->
+    resolver(fn actor, _context ->
       case actor do
         nil -> []
         %{permissions: perms} -> perms
@@ -20,59 +20,61 @@ defmodule AshGrant.Test.Post do
         %{role: :viewer} -> ["post:*:read:published"]
         _ -> []
       end
-    end
+    end)
 
-    resource_name "post"
+    resource_name("post")
 
-    scope :all, true
-    scope :own, expr(author_id == ^actor(:id))
-    scope :published, expr(status == :published)
-    scope :draft, expr(status == :draft)
-    scope :own_draft, [:own], expr(status == :draft)
-    scope :today, expr(fragment("DATE(inserted_at) = CURRENT_DATE"))
+    scope(:all, true)
+    scope(:own, expr(author_id == ^actor(:id)))
+    scope(:published, expr(status == :published))
+    scope(:draft, expr(status == :draft))
+    scope(:own_draft, [:own], expr(status == :draft))
+    scope(:today, expr(fragment("DATE(inserted_at) = CURRENT_DATE")))
   end
 
   policies do
     bypass actor_attribute_equals(:role, :admin) do
-      authorize_if always()
+      authorize_if(always())
     end
 
     policy action_type(:read) do
-      authorize_if AshGrant.filter_check()
+      authorize_if(AshGrant.filter_check())
     end
 
     policy action_type([:create, :update, :destroy]) do
-      authorize_if AshGrant.check()
+      authorize_if(AshGrant.check())
     end
   end
 
   attributes do
-    uuid_primary_key :id
-    attribute :title, :string, public?: true, allow_nil?: false
-    attribute :body, :string, public?: true
+    uuid_primary_key(:id)
+    attribute(:title, :string, public?: true, allow_nil?: false)
+    attribute(:body, :string, public?: true)
+
     attribute :status, :atom do
-      constraints one_of: [:draft, :published]
-      default :draft
-      public? true
+      constraints(one_of: [:draft, :published])
+      default(:draft)
+      public?(true)
     end
-    attribute :author_id, :uuid, public?: true
-    create_timestamp :inserted_at
-    update_timestamp :updated_at
+
+    attribute(:author_id, :uuid, public?: true)
+    create_timestamp(:inserted_at)
+    update_timestamp(:updated_at)
   end
 
   actions do
-    defaults [:read, :destroy]
+    defaults([:read, :destroy])
 
     create :create do
-      accept [:title, :body, :status, :author_id]
+      accept([:title, :body, :status, :author_id])
     end
 
     update :update do
-      accept [:title, :body, :status]
+      accept([:title, :body, :status])
     end
 
     update :publish do
-      change set_attribute(:status, :published)
+      change(set_attribute(:status, :published))
     end
   end
 end

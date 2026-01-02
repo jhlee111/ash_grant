@@ -112,12 +112,13 @@ defmodule AshGrant.MultitenancyTest do
       actor = %{id: Ash.UUID.generate(), role: :tenant_admin}
 
       # Create with correct tenant context
-      {:ok, created} = Ash.create(
-        TenantPost,
-        %{title: "New Post", tenant_id: tenant_a},
-        actor: actor,
-        tenant: tenant_a
-      )
+      {:ok, created} =
+        Ash.create(
+          TenantPost,
+          %{title: "New Post", tenant_id: tenant_a},
+          actor: actor,
+          tenant: tenant_a
+        )
 
       assert created.title == "New Post"
       assert created.tenant_id == tenant_a
@@ -129,12 +130,13 @@ defmodule AshGrant.MultitenancyTest do
       actor = %{id: Ash.UUID.generate(), role: :tenant_admin}
 
       # Try to create post for tenant B while context is tenant A
-      result = Ash.create(
-        TenantPost,
-        %{title: "Cross-tenant Post", tenant_id: tenant_b},
-        actor: actor,
-        tenant: tenant_a
-      )
+      result =
+        Ash.create(
+          TenantPost,
+          %{title: "Cross-tenant Post", tenant_id: tenant_b},
+          actor: actor,
+          tenant: tenant_a
+        )
 
       assert {:error, %Ash.Error.Forbidden{}} = result
     end

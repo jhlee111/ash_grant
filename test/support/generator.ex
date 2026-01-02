@@ -19,8 +19,18 @@ defmodule AshGrant.Test.Generator do
   use Ash.Generator
 
   alias AshGrant.Test.{
-    Post, Comment, Document, Employee, Customer,
-    Report, Task, Payment, Journal, SharedDocument, Article, TenantPost
+    Post,
+    Comment,
+    Document,
+    Employee,
+    Customer,
+    Report,
+    Task,
+    Payment,
+    Journal,
+    SharedDocument,
+    Article,
+    TenantPost
   }
 
   # ============================================
@@ -171,7 +181,10 @@ defmodule AshGrant.Test.Generator do
 
   def public_report(opts \\ []), do: report(Keyword.put(opts, :classification, :public))
   def internal_report(opts \\ []), do: report(Keyword.put(opts, :classification, :internal))
-  def confidential_report(opts \\ []), do: report(Keyword.put(opts, :classification, :confidential))
+
+  def confidential_report(opts \\ []),
+    do: report(Keyword.put(opts, :classification, :confidential))
+
   def top_secret_report(opts \\ []), do: report(Keyword.put(opts, :classification, :top_secret))
 
   # ============================================
@@ -266,7 +279,9 @@ defmodule AshGrant.Test.Generator do
   end
 
   def active_shared_document(opts \\ []), do: shared_document(Keyword.put(opts, :status, :active))
-  def archived_shared_document(opts \\ []), do: shared_document(Keyword.put(opts, :status, :archived))
+
+  def archived_shared_document(opts \\ []),
+    do: shared_document(Keyword.put(opts, :status, :archived))
 
   # ============================================
   # 9. TenantPost Generators (Multi-tenancy with ^tenant())
@@ -308,44 +323,153 @@ defmodule AshGrant.Test.Generator do
   end
 
   # Document actors
-  def author_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :author}, Map.new(opts))
-  def reviewer_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :reviewer}, Map.new(opts))
-  def reader_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :reader}, Map.new(opts))
+  def author_actor(opts \\ []),
+    do:
+      Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :author}, Map.new(opts))
+
+  def reviewer_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :reviewer},
+        Map.new(opts)
+      )
+
+  def reader_actor(opts \\ []),
+    do:
+      Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :reader}, Map.new(opts))
 
   # Employee actors
-  def hr_manager_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :hr_manager}, Map.new(opts))
-  def dept_manager_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :dept_manager}, Map.new(opts))
-  def team_lead_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :team_lead}, Map.new(opts))
+  def hr_manager_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :hr_manager},
+        Map.new(opts)
+      )
+
+  def dept_manager_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :dept_manager},
+        Map.new(opts)
+      )
+
+  def team_lead_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :team_lead},
+        Map.new(opts)
+      )
 
   # Customer actors
-  def regional_manager_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :regional_manager}, Map.new(opts))
-  def sales_rep_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :sales_rep}, Map.new(opts))
-  def vip_manager_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :vip_manager}, Map.new(opts))
+  def regional_manager_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :regional_manager},
+        Map.new(opts)
+      )
+
+  def sales_rep_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :sales_rep},
+        Map.new(opts)
+      )
+
+  def vip_manager_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :vip_manager},
+        Map.new(opts)
+      )
 
   # Report actors
-  def executive_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :executive}, Map.new(opts))
-  def manager_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :manager}, Map.new(opts))
-  def employee_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :employee}, Map.new(opts))
-  def public_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :public}, Map.new(opts))
+  def executive_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :executive},
+        Map.new(opts)
+      )
+
+  def manager_actor(opts \\ []),
+    do:
+      Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :manager}, Map.new(opts))
+
+  def employee_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :employee},
+        Map.new(opts)
+      )
+
+  def public_actor(opts \\ []),
+    do:
+      Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :public}, Map.new(opts))
 
   # Task actors
-  def project_manager_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :project_manager}, Map.new(opts))
-  def team_member_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :team_member}, Map.new(opts))
-  def developer_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :developer}, Map.new(opts))
+  def project_manager_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :project_manager},
+        Map.new(opts)
+      )
+
+  def team_member_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :team_member},
+        Map.new(opts)
+      )
+
+  def developer_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :developer},
+        Map.new(opts)
+      )
 
   # Payment actors
-  def cfo_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :cfo}, Map.new(opts))
-  def finance_manager_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :finance_manager}, Map.new(opts))
-  def accountant_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :accountant}, Map.new(opts))
-  def clerk_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :clerk}, Map.new(opts))
+  def cfo_actor(opts \\ []),
+    do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :cfo}, Map.new(opts))
+
+  def finance_manager_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :finance_manager},
+        Map.new(opts)
+      )
+
+  def accountant_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :accountant},
+        Map.new(opts)
+      )
+
+  def clerk_actor(opts \\ []),
+    do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :clerk}, Map.new(opts))
 
   # Journal actors
-  def controller_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :controller}, Map.new(opts))
-  def auditor_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :auditor}, Map.new(opts))
+  def controller_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :controller},
+        Map.new(opts)
+      )
+
+  def auditor_actor(opts \\ []),
+    do:
+      Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :auditor}, Map.new(opts))
 
   # SharedDocument actors
-  def tenant_admin_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :tenant_admin}, Map.new(opts))
-  def user_actor(opts \\ []), do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :user}, Map.new(opts))
+  def tenant_admin_actor(opts \\ []),
+    do:
+      Map.merge(
+        %{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :tenant_admin},
+        Map.new(opts)
+      )
+
+  def user_actor(opts \\ []),
+    do: Map.merge(%{id: Keyword.get(opts, :id, Ash.UUID.generate()), role: :user}, Map.new(opts))
 
   # ============================================
   # Scenario Helpers
@@ -387,10 +511,14 @@ defmodule AshGrant.Test.Generator do
   """
   def payment_limits_scenario(_opts \\ []) do
     %{
-      small: generate(small_payment()),       # 500 < 1000
-      medium: generate(medium_payment()),     # 5000 < 10000
-      large: generate(large_payment()),       # 50000 < 100000
-      huge: generate(huge_payment())          # 500000 >= 100000
+      # 500 < 1000
+      small: generate(small_payment()),
+      # 5000 < 10000
+      medium: generate(medium_payment()),
+      # 50000 < 100000
+      large: generate(large_payment()),
+      # 500000 >= 100000
+      huge: generate(huge_payment())
     }
   end
 
@@ -405,10 +533,18 @@ defmodule AshGrant.Test.Generator do
     closed_period = Keyword.get(opts, :closed_period_id, Ash.UUID.generate())
 
     %{
-      open_current: generate(journal(period_id: open_period, period_status: :open, fiscal_year: current_year)),
-      open_last: generate(journal(period_id: open_period, period_status: :open, fiscal_year: last_year)),
-      closed_current: generate(journal(period_id: closed_period, period_status: :closed, fiscal_year: current_year)),
-      closed_last: generate(journal(period_id: closed_period, period_status: :closed, fiscal_year: last_year)),
+      open_current:
+        generate(journal(period_id: open_period, period_status: :open, fiscal_year: current_year)),
+      open_last:
+        generate(journal(period_id: open_period, period_status: :open, fiscal_year: last_year)),
+      closed_current:
+        generate(
+          journal(period_id: closed_period, period_status: :closed, fiscal_year: current_year)
+        ),
+      closed_last:
+        generate(
+          journal(period_id: closed_period, period_status: :closed, fiscal_year: last_year)
+        ),
       open_period_id: open_period,
       closed_period_id: closed_period,
       current_year: current_year,

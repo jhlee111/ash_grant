@@ -12,18 +12,18 @@ defmodule AshGrant.ScopeDslTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn _actor, _context -> [] end
+      resolver(fn _actor, _context -> [] end)
 
-      scope :all, true
-      scope :published, expr(status == :published)
-      scope :draft, expr(status == :draft)
+      scope(:all, true)
+      scope(:published, expr(status == :published))
+      scope(:draft, expr(status == :draft))
     end
 
     attributes do
-      uuid_primary_key :id
-      attribute :title, :string, public?: true
-      attribute :status, :atom, constraints: [one_of: [:draft, :published]]
-      attribute :author_id, :uuid
+      uuid_primary_key(:id)
+      attribute(:title, :string, public?: true)
+      attribute(:status, :atom, constraints: [one_of: [:draft, :published]])
+      attribute(:author_id, :uuid)
     end
   end
 
@@ -35,18 +35,18 @@ defmodule AshGrant.ScopeDslTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn _actor, _context -> [] end
+      resolver(fn _actor, _context -> [] end)
 
-      scope :all, true
-      scope :pending, expr(status == :pending)
-      scope :all_pending, [:all], expr(status == :pending)
+      scope(:all, true)
+      scope(:pending, expr(status == :pending))
+      scope(:all_pending, [:all], expr(status == :pending))
     end
 
     attributes do
-      uuid_primary_key :id
-      attribute :body, :string, public?: true
-      attribute :status, :atom, constraints: [one_of: [:pending, :approved]]
-      attribute :author_id, :uuid
+      uuid_primary_key(:id)
+      attribute(:body, :string, public?: true)
+      attribute(:status, :atom, constraints: [one_of: [:pending, :approved]])
+      attribute(:author_id, :uuid)
     end
   end
 

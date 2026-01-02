@@ -152,10 +152,17 @@ defmodule AshGrant.PermissionPropertyTest do
     property "exact match always succeeds for RBAC permissions" do
       check all(
               resource <- resource_gen() |> filter(&(&1 != "*")),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
               scope <- scope_gen()
             ) do
-        perm = %Permission{resource: resource, instance_id: "*", action: action, scope: scope, deny: false}
+        perm = %Permission{
+          resource: resource,
+          instance_id: "*",
+          action: action,
+          scope: scope,
+          deny: false
+        }
 
         assert Permission.matches?(perm, resource, action)
       end
@@ -163,10 +170,18 @@ defmodule AshGrant.PermissionPropertyTest do
 
     property "wildcard resource (*) matches any resource" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
-        perm = %Permission{resource: "*", instance_id: "*", action: action, scope: "all", deny: false}
+        perm = %Permission{
+          resource: "*",
+          instance_id: "*",
+          action: action,
+          scope: "all",
+          deny: false
+        }
 
         assert Permission.matches?(perm, resource, action)
       end
@@ -174,10 +189,18 @@ defmodule AshGrant.PermissionPropertyTest do
 
     property "wildcard action (*) matches any action" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
-        perm = %Permission{resource: resource, instance_id: "*", action: "*", scope: "all", deny: false}
+        perm = %Permission{
+          resource: resource,
+          instance_id: "*",
+          action: "*",
+          scope: "all",
+          deny: false
+        }
 
         assert Permission.matches?(perm, resource, action)
       end
@@ -185,11 +208,20 @@ defmodule AshGrant.PermissionPropertyTest do
 
     property "action prefix wildcard (read*) matches actions starting with prefix" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              prefix <- string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
-              suffix <- string(:alphanumeric, min_length: 0, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              prefix <-
+                string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
+              suffix <-
+                string(:alphanumeric, min_length: 0, max_length: 10) |> map(&String.downcase/1)
             ) do
-        perm = %Permission{resource: resource, instance_id: "*", action: "#{prefix}*", scope: "all", deny: false}
+        perm = %Permission{
+          resource: resource,
+          instance_id: "*",
+          action: "#{prefix}*",
+          scope: "all",
+          deny: false
+        }
 
         # Should match action that starts with prefix
         assert Permission.matches?(perm, resource, "#{prefix}#{suffix}")
@@ -198,14 +230,24 @@ defmodule AshGrant.PermissionPropertyTest do
 
     property "instance permission does not match RBAC query" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              instance_id <- tuple({
-                string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
-                string(:alphanumeric, min_length: 10, max_length: 15)
-              }) |> map(fn {p, s} -> "#{p}_#{s}" end),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              instance_id <-
+                tuple({
+                  string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
+                  string(:alphanumeric, min_length: 10, max_length: 15)
+                })
+                |> map(fn {p, s} -> "#{p}_#{s}" end),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
-        perm = %Permission{resource: resource, instance_id: instance_id, action: action, scope: nil, deny: false}
+        perm = %Permission{
+          resource: resource,
+          instance_id: instance_id,
+          action: action,
+          scope: nil,
+          deny: false
+        }
 
         # Instance permission should NOT match RBAC query
         refute Permission.matches?(perm, resource, action)
@@ -216,14 +258,24 @@ defmodule AshGrant.PermissionPropertyTest do
   describe "matches_instance?/3 correctness" do
     property "exact instance match succeeds" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              instance_id <- tuple({
-                string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
-                string(:alphanumeric, min_length: 10, max_length: 15)
-              }) |> map(fn {p, s} -> "#{p}_#{s}" end),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              instance_id <-
+                tuple({
+                  string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
+                  string(:alphanumeric, min_length: 10, max_length: 15)
+                })
+                |> map(fn {p, s} -> "#{p}_#{s}" end),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
-        perm = %Permission{resource: resource, instance_id: instance_id, action: action, scope: nil, deny: false}
+        perm = %Permission{
+          resource: resource,
+          instance_id: instance_id,
+          action: action,
+          scope: nil,
+          deny: false
+        }
 
         assert Permission.matches_instance?(perm, instance_id, action)
       end
@@ -231,14 +283,24 @@ defmodule AshGrant.PermissionPropertyTest do
 
     property "RBAC permission does not match instance query" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              instance_id <- tuple({
-                string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
-                string(:alphanumeric, min_length: 10, max_length: 15)
-              }) |> map(fn {p, s} -> "#{p}_#{s}" end),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              instance_id <-
+                tuple({
+                  string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
+                  string(:alphanumeric, min_length: 10, max_length: 15)
+                })
+                |> map(fn {p, s} -> "#{p}_#{s}" end),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
-        perm = %Permission{resource: resource, instance_id: "*", action: action, scope: "all", deny: false}
+        perm = %Permission{
+          resource: resource,
+          instance_id: "*",
+          action: action,
+          scope: "all",
+          deny: false
+        }
 
         # RBAC permission should NOT match instance query
         refute Permission.matches_instance?(perm, instance_id, action)
@@ -247,18 +309,28 @@ defmodule AshGrant.PermissionPropertyTest do
 
     property "different instance_id does not match" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              {prefix, suffix1} <- tuple({
-                string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
-                string(:alphanumeric, min_length: 10, max_length: 15)
-              }),
-              suffix2 <- string(:alphanumeric, min_length: 10, max_length: 15) |> filter(&(&1 != suffix1)),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              {prefix, suffix1} <-
+                tuple({
+                  string(:alphanumeric, min_length: 2, max_length: 5) |> map(&String.downcase/1),
+                  string(:alphanumeric, min_length: 10, max_length: 15)
+                }),
+              suffix2 <-
+                string(:alphanumeric, min_length: 10, max_length: 15) |> filter(&(&1 != suffix1)),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
         instance_id1 = "#{prefix}_#{suffix1}"
         instance_id2 = "#{prefix}_#{suffix2}"
 
-        perm = %Permission{resource: resource, instance_id: instance_id1, action: action, scope: nil, deny: false}
+        perm = %Permission{
+          resource: resource,
+          instance_id: instance_id1,
+          action: action,
+          scope: nil,
+          deny: false
+        }
 
         refute Permission.matches_instance?(perm, instance_id2, action)
       end
@@ -268,9 +340,12 @@ defmodule AshGrant.PermissionPropertyTest do
   describe "legacy format compatibility" do
     property "three-part format parses with instance_id = *" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              scope <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              scope <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
         str = "#{resource}:#{action}:#{scope}"
         {:ok, parsed} = Permission.parse(str)
@@ -284,8 +359,10 @@ defmodule AshGrant.PermissionPropertyTest do
 
     property "two-part format parses with instance_id = * and scope = nil" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
         str = "#{resource}:#{action}"
         {:ok, parsed} = Permission.parse(str)
@@ -301,9 +378,11 @@ defmodule AshGrant.PermissionPropertyTest do
   describe "edge cases" do
     property "empty scope becomes nil" do
       check all(
-              resource <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
+              resource <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1),
               instance_id <- instance_id_gen(),
-              action <- string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
+              action <-
+                string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
         str = "#{resource}:#{instance_id}:#{action}:"
         {:ok, parsed} = Permission.parse(str)
@@ -313,9 +392,7 @@ defmodule AshGrant.PermissionPropertyTest do
     end
 
     property "single part string fails to parse" do
-      check all(
-              single <- string(:alphanumeric, min_length: 1, max_length: 20)
-            ) do
+      check all(single <- string(:alphanumeric, min_length: 1, max_length: 20)) do
         assert {:error, _} = Permission.parse(single)
       end
     end

@@ -41,12 +41,12 @@ defmodule AshGrant.Test.Article do
     extensions: [AshGrant]
 
   postgres do
-    table "articles"
-    repo AshGrant.TestRepo
+    table("articles")
+    repo(AshGrant.TestRepo)
   end
 
   ash_grant do
-    resolver fn actor, _context ->
+    resolver(fn actor, _context ->
       case actor do
         nil -> []
         %{permissions: perms} -> perms
@@ -55,33 +55,35 @@ defmodule AshGrant.Test.Article do
         %{role: :viewer} -> ["article:*:read:published"]
         _ -> []
       end
-    end
+    end)
 
-    default_policies true
-    resource_name "article"
+    default_policies(true)
+    resource_name("article")
 
-    scope :all, true
-    scope :own, expr(author_id == ^actor(:id))
-    scope :published, expr(status == :published)
+    scope(:all, true)
+    scope(:own, expr(author_id == ^actor(:id)))
+    scope(:published, expr(status == :published))
   end
 
   # No policies block needed - default_policies: true generates them!
 
   attributes do
-    uuid_primary_key :id
-    attribute :title, :string, public?: true, allow_nil?: false
-    attribute :body, :string, public?: true
+    uuid_primary_key(:id)
+    attribute(:title, :string, public?: true, allow_nil?: false)
+    attribute(:body, :string, public?: true)
+
     attribute :status, :atom do
-      constraints one_of: [:draft, :published]
-      default :draft
-      public? true
+      constraints(one_of: [:draft, :published])
+      default(:draft)
+      public?(true)
     end
-    attribute :author_id, :uuid, public?: true
-    create_timestamp :inserted_at
-    update_timestamp :updated_at
+
+    attribute(:author_id, :uuid, public?: true)
+    create_timestamp(:inserted_at)
+    update_timestamp(:updated_at)
   end
 
   actions do
-    defaults [:read, :destroy, create: :*, update: :*]
+    defaults([:read, :destroy, create: :*, update: :*])
   end
 end

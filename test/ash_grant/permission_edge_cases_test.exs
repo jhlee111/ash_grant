@@ -106,7 +106,8 @@ defmodule AshGrant.PermissionEdgeCasesTest do
       # We want to ensure it doesn't crash the system
       refute Permission.matches?(perm, nil, "read")
     rescue
-      _ -> :ok  # Raising is acceptable behavior
+      # Raising is acceptable behavior
+      _ -> :ok
     end
 
     test "action prefix wildcard with exact match" do
@@ -118,14 +119,17 @@ defmodule AshGrant.PermissionEdgeCasesTest do
     test "action prefix wildcard does not match unrelated" do
       perm = Permission.parse!("blog:*:read*:all")
       refute Permission.matches?(perm, "blog", "write")
-      refute Permission.matches?(perm, "blog", "aread")  # "read" not at start
-      refute Permission.matches?(perm, "blog", "re")      # partial match
+      # "read" not at start
+      refute Permission.matches?(perm, "blog", "aread")
+      # partial match
+      refute Permission.matches?(perm, "blog", "re")
     end
 
     test "multiple asterisks in action pattern" do
       # "read*write" is treated literally, not as two wildcards
       perm = Permission.parse!("blog:*:read*:all")
-      assert Permission.matches?(perm, "blog", "read*")  # literal match
+      # literal match
+      assert Permission.matches?(perm, "blog", "read*")
     end
 
     test "case sensitivity" do
@@ -152,6 +156,7 @@ defmodule AshGrant.PermissionEdgeCasesTest do
         action: "read",
         scope: nil
       }
+
       # Direct struct usage (not from parse)
       assert Permission.matches_instance?(perm, "post:with:colons", "read")
     end
@@ -183,7 +188,14 @@ defmodule AshGrant.PermissionEdgeCasesTest do
     end
 
     test "handles deny with nil scope" do
-      perm = %Permission{resource: "blog", instance_id: "*", action: "delete", scope: nil, deny: true}
+      perm = %Permission{
+        resource: "blog",
+        instance_id: "*",
+        action: "delete",
+        scope: nil,
+        deny: true
+      }
+
       assert Permission.to_string(perm) == "!blog:*:delete:"
     end
 
@@ -199,7 +211,8 @@ defmodule AshGrant.PermissionEdgeCasesTest do
     test "new struct has correct defaults" do
       perm = %Permission{}
       assert perm.resource == nil
-      assert perm.instance_id == "*"  # Defaults to wildcard
+      # Defaults to wildcard
+      assert perm.instance_id == "*"
       assert perm.action == nil
       assert perm.scope == nil
       assert perm.deny == false
@@ -216,16 +229,19 @@ defmodule AshGrant.PermissionEdgeCasesTest do
   describe "parse/1 with maps" do
     test "parses map without instance_id" do
       {:ok, perm} = Permission.parse(%{resource: "blog", action: "read", scope: "all"})
-      assert perm.instance_id == "*"  # Should default
+      # Should default
+      assert perm.instance_id == "*"
     end
 
     test "parses map with instance_id" do
-      {:ok, perm} = Permission.parse(%{
-        resource: "blog",
-        instance_id: "post_123",
-        action: "read",
-        scope: nil
-      })
+      {:ok, perm} =
+        Permission.parse(%{
+          resource: "blog",
+          instance_id: "post_123",
+          action: "read",
+          scope: nil
+        })
+
       assert perm.instance_id == "post_123"
     end
 
@@ -246,7 +262,8 @@ defmodule AshGrant.PermissionEdgeCasesTest do
 
     test "instance_permission? with default struct" do
       perm = %Permission{}
-      refute Permission.instance_permission?(perm)  # instance_id defaults to "*"
+      # instance_id defaults to "*"
+      refute Permission.instance_permission?(perm)
     end
 
     test "instance_permission? with explicit wildcard" do

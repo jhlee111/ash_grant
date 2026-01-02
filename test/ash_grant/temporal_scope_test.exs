@@ -17,37 +17,34 @@ defmodule AshGrant.TemporalScopeTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn _actor, _context -> [] end
+      resolver(fn _actor, _context -> [] end)
 
       # Boolean scope - no filtering
-      scope :all, true
+      scope(:all, true)
 
       # Temporal scope - records from today
       # Using fragment for database-level date comparison
-      scope :today, expr(fragment("DATE(inserted_at) = CURRENT_DATE"))
+      scope(:today, expr(fragment("DATE(inserted_at) = CURRENT_DATE")))
 
       # Temporal scope - records from this week
-      scope :this_week, expr(
-        fragment("inserted_at >= DATE_TRUNC('week', CURRENT_DATE)")
-      )
+      scope(:this_week, expr(fragment("inserted_at >= DATE_TRUNC('week', CURRENT_DATE)")))
 
       # Temporal scope - records from this month
-      scope :this_month, expr(
-        fragment("DATE_TRUNC('month', inserted_at) = DATE_TRUNC('month', CURRENT_DATE)")
+      scope(
+        :this_month,
+        expr(fragment("DATE_TRUNC('month', inserted_at) = DATE_TRUNC('month', CURRENT_DATE)"))
       )
 
       # Recent records (last 7 days) - alternative approach
-      scope :recent, expr(
-        fragment("inserted_at >= CURRENT_DATE - INTERVAL '7 days'")
-      )
+      scope(:recent, expr(fragment("inserted_at >= CURRENT_DATE - INTERVAL '7 days'")))
     end
 
     attributes do
-      uuid_primary_key :id
-      attribute :description, :string, public?: true
-      attribute :amount, :decimal
-      create_timestamp :inserted_at
-      update_timestamp :updated_at
+      uuid_primary_key(:id)
+      attribute(:description, :string, public?: true)
+      attribute(:amount, :decimal)
+      create_timestamp(:inserted_at)
+      update_timestamp(:updated_at)
     end
   end
 
@@ -59,30 +56,32 @@ defmodule AshGrant.TemporalScopeTest do
       extensions: [AshGrant]
 
     ash_grant do
-      resolver fn _actor, _context -> [] end
+      resolver(fn _actor, _context -> [] end)
 
-      scope :all, true
+      scope(:all, true)
 
       # Only user's own transactions
-      scope :own, expr(user_id == ^actor(:id))
+      scope(:own, expr(user_id == ^actor(:id)))
 
       # Today's transactions
-      scope :today, expr(fragment("DATE(inserted_at) = CURRENT_DATE"))
+      scope(:today, expr(fragment("DATE(inserted_at) = CURRENT_DATE")))
 
       # Combined: own + today (using inheritance)
-      scope :own_today, [:own], expr(fragment("DATE(inserted_at) = CURRENT_DATE"))
+      scope(:own_today, [:own], expr(fragment("DATE(inserted_at) = CURRENT_DATE")))
 
       # Own transactions from this week
-      scope :own_this_week, [:own], expr(
-        fragment("inserted_at >= DATE_TRUNC('week', CURRENT_DATE)")
+      scope(
+        :own_this_week,
+        [:own],
+        expr(fragment("inserted_at >= DATE_TRUNC('week', CURRENT_DATE)"))
       )
     end
 
     attributes do
-      uuid_primary_key :id
-      attribute :amount, :decimal
-      attribute :user_id, :uuid
-      create_timestamp :inserted_at
+      uuid_primary_key(:id)
+      attribute(:amount, :decimal)
+      attribute(:user_id, :uuid)
+      create_timestamp(:inserted_at)
     end
   end
 

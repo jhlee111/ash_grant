@@ -6,12 +6,12 @@ defmodule AshGrant.Test.Comment do
     extensions: [AshGrant]
 
   postgres do
-    table "comments"
-    repo AshGrant.TestRepo
+    table("comments")
+    repo(AshGrant.TestRepo)
   end
 
   ash_grant do
-    resolver fn actor, _context ->
+    resolver(fn actor, _context ->
       case actor do
         nil -> []
         %{permissions: perms} -> perms
@@ -19,45 +19,45 @@ defmodule AshGrant.Test.Comment do
         %{role: :user} -> ["comment:*:read:all", "comment:*:create:all", "comment:*:delete:own"]
         _ -> []
       end
-    end
+    end)
 
-    resource_name "comment"
+    resource_name("comment")
 
-    scope :all, true
-    scope :own, expr(user_id == ^actor(:id))
+    scope(:all, true)
+    scope(:own, expr(user_id == ^actor(:id)))
   end
 
   policies do
     bypass actor_attribute_equals(:role, :admin) do
-      authorize_if always()
+      authorize_if(always())
     end
 
     policy action_type(:read) do
-      authorize_if AshGrant.filter_check()
+      authorize_if(AshGrant.filter_check())
     end
 
     policy action_type([:create, :update, :destroy]) do
-      authorize_if AshGrant.check()
+      authorize_if(AshGrant.check())
     end
   end
 
   attributes do
-    uuid_primary_key :id
-    attribute :body, :string, public?: true, allow_nil?: false
-    attribute :user_id, :uuid, public?: true
-    attribute :post_id, :uuid, public?: true
-    create_timestamp :inserted_at
+    uuid_primary_key(:id)
+    attribute(:body, :string, public?: true, allow_nil?: false)
+    attribute(:user_id, :uuid, public?: true)
+    attribute(:post_id, :uuid, public?: true)
+    create_timestamp(:inserted_at)
   end
 
   actions do
-    defaults [:read, :destroy]
+    defaults([:read, :destroy])
 
     create :create do
-      accept [:body, :user_id, :post_id]
+      accept([:body, :user_id, :post_id])
     end
 
     update :update do
-      accept [:body]
+      accept([:body])
     end
   end
 end

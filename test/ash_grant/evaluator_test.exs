@@ -33,6 +33,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:*:all",
         "!blog:*:delete:all"
       ]
+
       assert Evaluator.has_access?(permissions, "blog", "read")
       assert Evaluator.has_access?(permissions, "blog", "write")
       refute Evaluator.has_access?(permissions, "blog", "delete")
@@ -43,6 +44,7 @@ defmodule AshGrant.EvaluatorTest do
         "!blog:*:delete:all",
         "blog:*:*:all"
       ]
+
       refute Evaluator.has_access?(permissions, "blog", "delete")
     end
 
@@ -52,6 +54,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:write:own",
         "comment:*:read:all"
       ]
+
       assert Evaluator.has_access?(permissions, "blog", "read")
       assert Evaluator.has_access?(permissions, "blog", "write")
       assert Evaluator.has_access?(permissions, "comment", "read")
@@ -67,6 +70,7 @@ defmodule AshGrant.EvaluatorTest do
       permissions = [
         AshGrant.Permission.parse!("blog:*:read:all")
       ]
+
       assert Evaluator.has_access?(permissions, "blog", "read")
     end
 
@@ -74,6 +78,7 @@ defmodule AshGrant.EvaluatorTest do
       permissions = [
         %{resource: "blog", instance_id: "*", action: "read", scope: "all", deny: false}
       ]
+
       assert Evaluator.has_access?(permissions, "blog", "read")
     end
   end
@@ -94,6 +99,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:all",
         "!blog:delete:all"
       ]
+
       assert Evaluator.has_access?(permissions, "blog", "read")
       refute Evaluator.has_access?(permissions, "blog", "delete")
     end
@@ -121,6 +127,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:post_abc123xyz789ab:*:",
         "!blog:post_abc123xyz789ab:delete:"
       ]
+
       assert Evaluator.has_instance_access?(permissions, "post_abc123xyz789ab", "read")
       refute Evaluator.has_instance_access?(permissions, "post_abc123xyz789ab", "delete")
     end
@@ -147,6 +154,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:*:all",
         "!blog:*:delete:all"
       ]
+
       assert Evaluator.get_scope(permissions, "blog", "read") == "all"
       assert Evaluator.get_scope(permissions, "blog", "delete") == nil
     end
@@ -156,6 +164,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:read:own",
         "blog:*:read:published"
       ]
+
       assert Evaluator.get_scope(permissions, "blog", "read") == "own"
     end
 
@@ -172,6 +181,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:read:published",
         "blog:*:read:all"
       ]
+
       scopes = Evaluator.get_all_scopes(permissions, "blog", "read")
       assert "own" in scopes
       assert "published" in scopes
@@ -183,6 +193,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:*:all",
         "!blog:*:delete:all"
       ]
+
       assert Evaluator.get_all_scopes(permissions, "blog", "delete") == []
     end
 
@@ -196,6 +207,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:read:all",
         "blog:*:*:all"
       ]
+
       scopes = Evaluator.get_all_scopes(permissions, "blog", "read")
       assert scopes == ["all"]
     end
@@ -209,6 +221,7 @@ defmodule AshGrant.EvaluatorTest do
         "!blog:*:delete:all",
         "comment:*:read:all"
       ]
+
       matching = Evaluator.find_matching(permissions, "blog", "read")
       assert length(matching) == 2
     end
@@ -218,6 +231,7 @@ defmodule AshGrant.EvaluatorTest do
         "blog:*:*:all",
         "!blog:*:delete:all"
       ]
+
       matching = Evaluator.find_matching(permissions, "blog", "delete")
       assert length(matching) == 2
     end

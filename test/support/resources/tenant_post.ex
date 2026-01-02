@@ -27,58 +27,71 @@ defmodule AshGrant.Test.TenantPost do
     extensions: [AshGrant]
 
   postgres do
-    table "tenant_posts"
-    repo AshGrant.TestRepo
+    table("tenant_posts")
+    repo(AshGrant.TestRepo)
   end
 
   ash_grant do
-    resolver fn actor, _context ->
+    resolver(fn actor, _context ->
       case actor do
-        nil -> []
-        %{permissions: perms} -> perms
-        %{role: :super_admin} -> ["tenant_post:*:*:all"]
-        %{role: :tenant_admin} -> [
-          "tenant_post:*:read:same_tenant",
-          "tenant_post:*:create:same_tenant",
-          "tenant_post:*:update:same_tenant",
-          "tenant_post:*:destroy:same_tenant"
-        ]
-        %{role: :tenant_user} -> [
-          "tenant_post:*:read:same_tenant",
-          "tenant_post:*:create:same_tenant",
-          "tenant_post:*:update:own_in_tenant",
-          "tenant_post:*:destroy:own_in_tenant"
-        ]
-        _ -> []
-      end
-    end
+        nil ->
+          []
 
-    default_policies true
-    resource_name "tenant_post"
+        %{permissions: perms} ->
+          perms
+
+        %{role: :super_admin} ->
+          ["tenant_post:*:*:all"]
+
+        %{role: :tenant_admin} ->
+          [
+            "tenant_post:*:read:same_tenant",
+            "tenant_post:*:create:same_tenant",
+            "tenant_post:*:update:same_tenant",
+            "tenant_post:*:destroy:same_tenant"
+          ]
+
+        %{role: :tenant_user} ->
+          [
+            "tenant_post:*:read:same_tenant",
+            "tenant_post:*:create:same_tenant",
+            "tenant_post:*:update:own_in_tenant",
+            "tenant_post:*:destroy:own_in_tenant"
+          ]
+
+        _ ->
+          []
+      end
+    end)
+
+    default_policies(true)
+    resource_name("tenant_post")
 
     # Key scope using ^tenant() - this is what we're testing!
-    scope :all, true
-    scope :same_tenant, expr(tenant_id == ^tenant())
-    scope :own, expr(author_id == ^actor(:id))
-    scope :own_in_tenant, [:same_tenant], expr(author_id == ^actor(:id))
+    scope(:all, true)
+    scope(:same_tenant, expr(tenant_id == ^tenant()))
+    scope(:own, expr(author_id == ^actor(:id)))
+    scope(:own_in_tenant, [:same_tenant], expr(author_id == ^actor(:id)))
   end
 
   attributes do
-    uuid_primary_key :id
-    attribute :title, :string, public?: true, allow_nil?: false
-    attribute :body, :string, public?: true
+    uuid_primary_key(:id)
+    attribute(:title, :string, public?: true, allow_nil?: false)
+    attribute(:body, :string, public?: true)
+
     attribute :status, :atom do
-      constraints one_of: [:draft, :published]
-      default :draft
-      public? true
+      constraints(one_of: [:draft, :published])
+      default(:draft)
+      public?(true)
     end
-    attribute :author_id, :uuid, public?: true
-    attribute :tenant_id, :uuid, public?: true, allow_nil?: false
-    create_timestamp :inserted_at
-    update_timestamp :updated_at
+
+    attribute(:author_id, :uuid, public?: true)
+    attribute(:tenant_id, :uuid, public?: true, allow_nil?: false)
+    create_timestamp(:inserted_at)
+    update_timestamp(:updated_at)
   end
 
   actions do
-    defaults [:read, :destroy, create: :*, update: :*]
+    defaults([:read, :destroy, create: :*, update: :*])
   end
 end

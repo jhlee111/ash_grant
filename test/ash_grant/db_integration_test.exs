@@ -149,9 +149,15 @@ defmodule AshGrant.DbIntegrationTest do
       other_author = Ash.UUID.generate()
 
       own_draft = create_post!(%{title: "My Draft", status: :draft, author_id: actor_id})
-      _own_published = create_post!(%{title: "My Published", status: :published, author_id: actor_id})
-      _other_draft = create_post!(%{title: "Other Draft", status: :draft, author_id: other_author})
-      _other_published = create_post!(%{title: "Other Published", status: :published, author_id: other_author})
+
+      _own_published =
+        create_post!(%{title: "My Published", status: :published, author_id: actor_id})
+
+      _other_draft =
+        create_post!(%{title: "Other Draft", status: :draft, author_id: other_author})
+
+      _other_published =
+        create_post!(%{title: "Other Published", status: :published, author_id: other_author})
 
       # Actor with own_draft permission
       actor = custom_perms_actor(["post:*:read:own_draft"], actor_id)
@@ -169,9 +175,15 @@ defmodule AshGrant.DbIntegrationTest do
       other_author = Ash.UUID.generate()
 
       own_draft = create_post!(%{title: "My Draft", status: :draft, author_id: actor_id})
-      own_published = create_post!(%{title: "My Published", status: :published, author_id: actor_id})
-      _other_draft = create_post!(%{title: "Other Draft", status: :draft, author_id: other_author})
-      other_published = create_post!(%{title: "Other Published", status: :published, author_id: other_author})
+
+      own_published =
+        create_post!(%{title: "My Published", status: :published, author_id: actor_id})
+
+      _other_draft =
+        create_post!(%{title: "Other Draft", status: :draft, author_id: other_author})
+
+      other_published =
+        create_post!(%{title: "Other Published", status: :published, author_id: other_author})
 
       # Actor with both own and published scopes
       actor = custom_perms_actor(["post:*:read:own", "post:*:read:published"], actor_id)
@@ -194,10 +206,14 @@ defmodule AshGrant.DbIntegrationTest do
       _post = create_post!(%{title: "Test Post", status: :published, author_id: actor_id})
 
       # Actor has all access but deny for delete
-      actor = custom_perms_actor([
-        "post:*:*:all",
-        "!post:*:destroy:all"
-      ], actor_id)
+      actor =
+        custom_perms_actor(
+          [
+            "post:*:*:all",
+            "!post:*:destroy:all"
+          ],
+          actor_id
+        )
 
       # Can read
       posts = read_posts(actor)
@@ -232,7 +248,8 @@ defmodule AshGrant.DbIntegrationTest do
 
   describe "nil actor - no permissions" do
     test "nil actor cannot read any posts" do
-      _post = create_post!(%{title: "Test Post", status: :published, author_id: Ash.UUID.generate()})
+      _post =
+        create_post!(%{title: "Test Post", status: :published, author_id: Ash.UUID.generate()})
 
       # nil actor should get forbidden
       result =
