@@ -210,7 +210,9 @@ defmodule AshGrant.Check do
         record = get_target_record(authorizer)
 
         case record do
-          nil -> false
+          nil ->
+            false
+
           rec ->
             filter = resolve_scope(resource, scope_resolver, scope, context)
             record_matches_filter?(rec, filter, context, opts)
@@ -353,8 +355,10 @@ defmodule AshGrant.Check do
   end
 
   defp check_tenant_match(_record, nil), do: false
+
   defp check_tenant_match(record, tenant) do
     record_tenant = Map.get(record, :tenant_id)
+
     if record_tenant != nil do
       to_string(record_tenant) == to_string(tenant)
     else
@@ -367,11 +371,16 @@ defmodule AshGrant.Check do
     actor = context[:actor]
 
     case actor do
-      nil -> false
+      nil ->
+        false
+
       _ ->
         # Extract the field being compared to ^actor(:id) from the filter expression
         case extract_actor_field(filter) do
-          nil -> true  # No actor field found in filter, pass
+          # No actor field found in filter, pass
+          nil ->
+            true
+
           field ->
             record_owner = Map.get(record, field)
             actor_id = Map.get(actor, :id)
