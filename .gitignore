@@ -21,3 +21,4 @@ ash_grant-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+CLAUDE.md
