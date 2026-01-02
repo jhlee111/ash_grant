@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: Clarified that scope represents an "authorization condition" that can apply
   to both RBAC and instance permissions, enabling full ABAC (Attribute-Based Access Control)
 
+## [0.2.2] - 2025-01-02
+
+### Fixed
+
+- **Documentation**: Removed deprecated `owner_field` from README examples
+- **Documentation**: Added note that instance permissions currently only work with write actions (`check/1`)
+
+### Changed
+
+- **Tests**: Enabled previously skipped "own" scope update tests that now pass
+
 ## [0.2.1] - 2025-01-01
 
 ### Added

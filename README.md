@@ -79,7 +79,6 @@ defmodule MyApp.Blog.Post do
   ash_grant do
     resolver MyApp.PermissionResolver
     resource_name "post"
-    owner_field :author_id
 
     scope :all, true
     scope :own, expr(author_id == ^actor(:id))
@@ -170,6 +169,9 @@ For sharing specific resources (like Google Docs):
 
 Instance permissions have an empty scope (trailing colon) because the permission
 is already scoped to a specific instance.
+
+> **Note**: Instance permissions currently work with write actions (`check/1`).
+> Support for read actions (`filter_check/1`) is planned for a future release.
 
 ### Legacy Format Support
 
@@ -275,7 +277,6 @@ ash_grant do
   resolver MyApp.PermissionResolver       # Required
   default_policies true                   # Optional: auto-generate policies
   resource_name "custom_name"             # Optional
-  owner_field :user_id                    # Optional
 
   # Inline scopes
   scope :all, true
@@ -288,7 +289,6 @@ end
 | `resolver` | module or function | **Required.** Resolves permissions for actors |
 | `default_policies` | boolean or atom | Auto-generate policies: `true`, `:all`, `:read`, or `:write` |
 | `resource_name` | string | Resource name for permission matching (default: derived from module) |
-| `owner_field` | atom | Field for "own" scope resolution |
 
 ### Default Policies Options
 
@@ -374,7 +374,6 @@ defmodule MyApp.Blog.Post do
     end
 
     default_policies true
-    owner_field :author_id
 
     # Tenant-based scopes using ^tenant()
     scope :all, true

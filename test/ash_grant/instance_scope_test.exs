@@ -79,6 +79,7 @@ defmodule AshGrant.InstanceScopeTest do
         "doc:doc_123:*:draft",
         "!doc:doc_123:delete:draft"
       ]
+
       assert Evaluator.has_instance_access?(permissions, "doc_123", "read")
       refute Evaluator.has_instance_access?(permissions, "doc_123", "delete")
     end
@@ -105,6 +106,7 @@ defmodule AshGrant.InstanceScopeTest do
         "doc:doc_123:*:all",
         "!doc:doc_123:delete:all"
       ]
+
       assert Evaluator.get_instance_scope(permissions, "doc_123", "read") == "all"
       assert Evaluator.get_instance_scope(permissions, "doc_123", "delete") == nil
     end
@@ -114,6 +116,7 @@ defmodule AshGrant.InstanceScopeTest do
         "doc:doc_123:update:draft",
         "doc:doc_123:update:pending"
       ]
+
       assert Evaluator.get_instance_scope(permissions, "doc_123", "update") == "draft"
     end
   end
@@ -125,6 +128,7 @@ defmodule AshGrant.InstanceScopeTest do
         "doc:doc_123:read:internal",
         "doc:doc_123:read:public"
       ]
+
       scopes = Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
 
       assert "draft" in scopes
@@ -137,6 +141,7 @@ defmodule AshGrant.InstanceScopeTest do
         "doc:doc_123:*:all",
         "!doc:doc_123:delete:all"
       ]
+
       assert Evaluator.get_all_instance_scopes(permissions, "doc_123", "delete") == []
     end
 
@@ -145,6 +150,7 @@ defmodule AshGrant.InstanceScopeTest do
         "doc:doc_123:read:draft",
         "doc:doc_123:*:draft"
       ]
+
       scopes = Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
       assert scopes == ["draft"]
     end
@@ -154,6 +160,7 @@ defmodule AshGrant.InstanceScopeTest do
         "doc:doc_123:read:",
         "doc:doc_123:read:public"
       ]
+
       scopes = Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
       assert scopes == ["public"]
     end

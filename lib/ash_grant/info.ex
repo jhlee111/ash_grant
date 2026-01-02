@@ -12,10 +12,10 @@ defmodule AshGrant.Info do
   | `resolver/1` | Get the permission resolver for a resource |
   | `default_policies/1` | Get the default_policies setting (new in v0.2.0) |
   | `resource_name/1` | Get the resource name for permission matching |
-  | `owner_field/1` | Get the owner field for "own" scope resolution |
   | `scopes/1` | Get all scope definitions |
   | `get_scope/2` | Get a specific scope by name |
   | `resolve_scope_filter/3` | Resolve a scope to its filter expression |
+  | `owner_field/1` | **Deprecated.** Use explicit scope expressions instead |
 
   ## Example
 

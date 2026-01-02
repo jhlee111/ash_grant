@@ -81,7 +81,9 @@ defmodule AshGrant.ContextInjectionTest do
 
       # Create posts (using title length as a proxy for "amount" since Post doesn't have amount)
       short_post = create_post!(%{title: "Hi", status: :draft, author_id: actor_id})
-      _long_post = create_post!(%{title: "This is a very long title", status: :draft, author_id: actor_id})
+
+      _long_post =
+        create_post!(%{title: "This is a very long title", status: :draft, author_id: actor_id})
 
       # Actor with threshold scope permission
       actor = actor_with_perms(["post:*:read:short_title"], actor_id)

@@ -103,9 +103,7 @@ defmodule AshGrant.DbIntegrationTest do
       assert length(posts) == 2
     end
 
-    @tag :skip
-    # Skipped: Check module's record matching for "own" scope needs improvement
-    # The changeset.data is %Post{author_id: nil} before the record is loaded
+    # Previously skipped - now works with improved Check module
     test "editor can update own post" do
       editor_id = Ash.UUID.generate()
 
@@ -123,8 +121,7 @@ defmodule AshGrant.DbIntegrationTest do
       assert updated.title == "Updated"
     end
 
-    @tag :skip
-    # Skipped: See above - Check module's record matching needs improvement
+    # Previously skipped - now works with improved Check module
     test "editor cannot update other's post" do
       editor_id = Ash.UUID.generate()
       other_author = Ash.UUID.generate()
