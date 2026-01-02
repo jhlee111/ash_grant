@@ -2,10 +2,16 @@
 
 Permission-based authorization extension for [Ash Framework](https://ash-hq.org/).
 
-AshGrant provides a flexible, Apache Shiro-inspired permission system that
-integrates seamlessly with Ash's policy authorizer. It supports both
-role-based access control (RBAC) and resource-instance permissions with
-deny-wins semantics.
+AshGrant provides a flexible, Apache Shiro-inspired **permission string** system
+that integrates seamlessly with Ash's policy authorizer. It combines:
+
+- **Permission-based access control** with `resource:instance:action:scope` matching
+- **Attribute-based scopes** for row-level filtering (ABAC-like)
+- **Instance-level permissions** for resource sharing (ReBAC-like)
+- **Deny-wins semantics** for intuitive permission overrides
+
+AshGrant focuses on permission evaluation, not role management. It works well
+on top of RBAC systems—just resolve roles to permissions in your resolver.
 
 ## Features
 
