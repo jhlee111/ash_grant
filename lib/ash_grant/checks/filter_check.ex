@@ -146,6 +146,7 @@ defmodule AshGrant.FilterCheck do
         name when is_binary(name) -> name
         _module -> configured_name
       end
+
     action_name = Keyword.get(opts, :action) || to_string(action.name)
 
     # Build context
