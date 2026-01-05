@@ -56,6 +56,7 @@ defmodule MyApp.Blog.Post do
   ash_grant do
     resolver MyApp.PermissionResolver
     default_policies true  # Auto-generates read/write policies!
+    # resource_name defaults to "post" (derived from MyApp.Blog.Post)
 
     scope :all, true
     scope :own, expr(author_id == ^actor(:id))
@@ -80,7 +81,7 @@ defmodule MyApp.Blog.Post do
 
   ash_grant do
     resolver MyApp.PermissionResolver
-    resource_name "post"
+    resource_name "post"  # Optional: defaults to "post" from module name
 
     scope :all, true
     scope :own, expr(author_id == ^actor(:id))
@@ -362,7 +363,7 @@ end
 ash_grant do
   resolver MyApp.PermissionResolver       # Required
   default_policies true                   # Optional: auto-generate policies
-  resource_name "custom_name"             # Optional
+  resource_name "custom_name"             # Optional: defaults to module name (e.g., MyApp.Blog.Post → "post")
 
   # Inline scopes
   scope :all, true
@@ -374,7 +375,7 @@ end
 |--------|------|-------------|
 | `resolver` | module or function | **Required.** Resolves permissions for actors |
 | `default_policies` | boolean or atom | Auto-generate policies: `true`, `:all`, `:read`, or `:write` |
-| `resource_name` | string | Resource name for permission matching (default: derived from module) |
+| `resource_name` | string | Resource name for permission matching. Default: derived from module name (last segment, snake_cased). `MyApp.Blog.Post` → `"post"`, `MyApp.CustomerOrder` → `"customer_order"` |
 
 ### Default Policies Options
 
