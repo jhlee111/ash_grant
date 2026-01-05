@@ -677,6 +677,76 @@ AshGrant.Info.scope_description(MyApp.Post, :own)
 # => "Records owned by the current user"
 ```
 
+## Permission Introspection
+
+The `AshGrant.Introspect` module provides runtime helpers for querying permissions:
+
+### Admin UI: What can this user do?
+
+```elixir
+AshGrant.Introspect.actor_permissions(Post, current_user)
+# => [
+#   %{action: "read", allowed: true, scope: "all", denied: false, instance_ids: nil},
+#   %{action: "update", allowed: true, scope: "own", denied: false, instance_ids: nil},
+#   %{action: "destroy", allowed: false, scope: nil, denied: false, instance_ids: nil}
+# ]
+```
+
+### Permission Management: What permissions exist?
+
+```elixir
+AshGrant.Introspect.available_permissions(Post)
+# => [
+#   %{permission_string: "post:*:read:all", action: "read", scope: "all", scope_description: "All records"},
+#   %{permission_string: "post:*:read:own", action: "read", scope: "own", scope_description: "Own records"},
+#   ...
+# ]
+```
+
+> **Note**: `available_permissions/1` requires inline scope definitions in the DSL.
+> Resources using `scope_resolver` will return an empty list.
+
+### Debugging: Can user do this action?
+
+```elixir
+AshGrant.Introspect.can?(Post, :read, user)
+# => {:allow, %{scope: "all", instance_ids: nil}}
+
+AshGrant.Introspect.can?(Post, :destroy, user)
+# => {:deny, %{reason: :no_permission}}
+```
+
+### API Response: What actions are available?
+
+```elixir
+# Simple list
+AshGrant.Introspect.allowed_actions(Post, user)
+# => [:read, :create, :update]
+
+# With details
+AshGrant.Introspect.allowed_actions(Post, user, detailed: true)
+# => [
+#   %{action: :read, scope: "all", instance_ids: nil},
+#   %{action: :create, scope: "all", instance_ids: nil},
+#   %{action: :update, scope: "own", instance_ids: nil}
+# ]
+```
+
+### Raw Permission Access
+
+```elixir
+AshGrant.Introspect.permissions_for(Post, user)
+# => ["post:*:read:all", "post:*:update:own", "post:*:create:all"]
+```
+
+### With Context
+
+All functions accept a `:context` option for passing additional resolver context:
+
+```elixir
+AshGrant.Introspect.actor_permissions(Post, user, context: %{tenant: tenant_id})
+```
+
 ## API Reference
 
 ### Modules
@@ -684,6 +754,7 @@ AshGrant.Info.scope_description(MyApp.Post, :own)
 | Module | Description |
 |--------|-------------|
 | `AshGrant` | Main extension module with `check/1`, `filter_check/1`, and `explain/4` |
+| `AshGrant.Introspect` | Runtime permission introspection for UIs and APIs |
 | `AshGrant.Explanation` | Authorization decision explanation struct |
 | `AshGrant.Explainer` | Builds detailed authorization explanations |
 | `AshGrant.Permission` | Permission parsing and matching |
