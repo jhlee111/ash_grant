@@ -31,6 +31,57 @@ defmodule AshGrant.PermissionResolver do
         end
       end
 
+  ### With metadata for debugging
+
+  Return `AshGrant.PermissionInput` structs for enhanced debugging:
+
+      defmodule MyApp.RichPermissionResolver do
+        @behaviour AshGrant.PermissionResolver
+
+        @impl true
+        def resolve(actor, _context) do
+          actor
+          |> Map.get(:roles, [])
+          |> Enum.flat_map(fn role ->
+            Enum.map(role.permissions, fn perm ->
+              %AshGrant.PermissionInput{
+                string: perm,
+                description: "From role permissions",
+                source: "role:\#{role.name}"
+              }
+            end)
+          end)
+        end
+      end
+
+  ### Custom structs with Permissionable protocol
+
+  Implement the `AshGrant.Permissionable` protocol for your custom structs:
+
+      defmodule MyApp.RolePermission do
+        defstruct [:permission_string, :label, :role_name]
+      end
+
+      defimpl AshGrant.Permissionable, for: MyApp.RolePermission do
+        def to_permission_input(%MyApp.RolePermission{} = rp) do
+          %AshGrant.PermissionInput{
+            string: rp.permission_string,
+            description: rp.label,
+            source: "role:\#{rp.role_name}"
+          }
+        end
+      end
+
+      defmodule MyApp.PermissionResolver do
+        @behaviour AshGrant.PermissionResolver
+
+        @impl true
+        def resolve(actor, _context) do
+          # Just return your structs - AshGrant handles conversion via Protocol
+          MyApp.Accounts.get_role_permissions(actor)
+        end
+      end
+
   ### Combined: Role + Instance permissions
 
       defmodule MyApp.CombinedPermissionResolver do
@@ -61,7 +112,21 @@ defmodule AshGrant.PermissionResolver do
 
   @type actor :: any()
   @type context :: map()
-  @type permission :: String.t() | AshGrant.Permission.t() | map()
+
+  @typedoc """
+  A permission can be:
+  - A string in permission format (e.g., "blog:*:read:all")
+  - An `AshGrant.PermissionInput` struct with metadata
+  - An `AshGrant.Permission` struct
+  - A map with permission fields
+  - Any struct implementing the `AshGrant.Permissionable` protocol
+  """
+  @type permission ::
+          String.t()
+          | AshGrant.PermissionInput.t()
+          | AshGrant.Permission.t()
+          | map()
+          | AshGrant.Permissionable.t()
 
   @doc """
   Resolves permissions for the given actor.
@@ -80,8 +145,10 @@ defmodule AshGrant.PermissionResolver do
 
   A list of permissions. Each permission can be:
   - A string in permission format (e.g., "blog:*:read:all")
+  - An `AshGrant.PermissionInput` struct with metadata for debugging
   - An `AshGrant.Permission` struct
   - A map with permission fields
+  - Any struct implementing the `AshGrant.Permissionable` protocol
 
   """
   @callback resolve(actor(), context()) :: [permission()]

@@ -115,6 +115,57 @@ defmodule AshGrant do
         end
       end
 
+  ### Permissions with Metadata (for debugging)
+
+  Return `AshGrant.PermissionInput` structs for enhanced debugging and `explain/4`:
+
+      defmodule MyApp.PermissionResolver do
+        @behaviour AshGrant.PermissionResolver
+
+        @impl true
+        def resolve(actor, _context) do
+          actor
+          |> get_roles()
+          |> Enum.flat_map(fn role ->
+            Enum.map(role.permissions, fn perm ->
+              %AshGrant.PermissionInput{
+                string: perm,
+                description: "From role permissions",
+                source: "role:\#{role.name}"
+              }
+            end)
+          end)
+        end
+      end
+
+  ### Custom Structs with Permissionable Protocol
+
+  Implement the `AshGrant.Permissionable` protocol for your custom structs:
+
+      defmodule MyApp.RolePermission do
+        defstruct [:permission_string, :label, :role_name]
+      end
+
+      defimpl AshGrant.Permissionable, for: MyApp.RolePermission do
+        def to_permission_input(%MyApp.RolePermission{} = rp) do
+          %AshGrant.PermissionInput{
+            string: rp.permission_string,
+            description: rp.label,
+            source: "role:\#{rp.role_name}"
+          }
+        end
+      end
+
+      # Then just return your structs from the resolver
+      defmodule MyApp.PermissionResolver do
+        @behaviour AshGrant.PermissionResolver
+
+        @impl true
+        def resolve(actor, _context) do
+          MyApp.Accounts.get_role_permissions(actor)
+        end
+      end
+
   ## Permission Format
 
   ### Unified 4-Part Format
@@ -223,6 +274,8 @@ defmodule AshGrant do
   ## Related Modules
 
   - `AshGrant.Permission` - Permission parsing and matching
+  - `AshGrant.PermissionInput` - Permission input with metadata for debugging
+  - `AshGrant.Permissionable` - Protocol for converting custom structs to permissions
   - `AshGrant.Evaluator` - Deny-wins permission evaluation
   - `AshGrant.PermissionResolver` - Behaviour for resolving permissions
   - `AshGrant.Check` - SimpleCheck for write actions

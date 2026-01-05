@@ -400,10 +400,35 @@ defmodule AshGrant.Evaluator do
   # Private functions
 
   defp normalize_permissions(permissions) do
-    Enum.map(permissions, fn
-      %Permission{} = perm -> perm
-      str when is_binary(str) -> Permission.parse!(str)
-      map when is_map(map) -> struct(Permission, map)
-    end)
+    Enum.map(permissions, &normalize_permission/1)
+  end
+
+  defp normalize_permission(%Permission{} = perm), do: perm
+
+  defp normalize_permission(%AshGrant.PermissionInput{} = input) do
+    Permission.from_input(input)
+  end
+
+  defp normalize_permission(str) when is_binary(str) do
+    Permission.parse!(str)
+  end
+
+  defp normalize_permission(map) when is_map(map) do
+    # Check if the map implements Permissionable protocol
+    if AshGrant.Permissionable.impl_for(map) do
+      map
+      |> AshGrant.Permissionable.to_permission_input()
+      |> normalize_permission()
+    else
+      # Legacy: treat as a plain map with Permission fields
+      struct(Permission, Map.put_new(map, :instance_id, "*"))
+    end
+  end
+
+  defp normalize_permission(value) do
+    # Try the Permissionable protocol for any other type
+    value
+    |> AshGrant.Permissionable.to_permission_input()
+    |> normalize_permission()
   end
 end
