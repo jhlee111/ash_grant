@@ -14,8 +14,12 @@ defmodule AshGrant.ScopeDslTest do
     ash_grant do
       resolver(fn _actor, _context -> [] end)
 
-      scope(:all, true)
-      scope(:published, expr(status == :published))
+      scope(:all, [], true, description: "All records without restriction")
+
+      scope(:published, [], expr(status == :published),
+        description: "Published posts visible to everyone"
+      )
+
       scope(:draft, expr(status == :draft))
     end
 
@@ -67,7 +71,8 @@ defmodule AshGrant.ScopeDslTest do
 
       assert all_scope.name == :all
       assert all_scope.filter == true
-      assert all_scope.inherits == nil
+      # inherits can be nil or empty list when not specified
+      assert all_scope.inherits in [nil, []]
     end
 
     test "scope can have expression filter" do
@@ -124,6 +129,31 @@ defmodule AshGrant.ScopeDslTest do
       # :all is true, so result should just be the pending filter
       assert filter != nil
       refute filter == true
+    end
+  end
+
+  describe "scope description" do
+    test "scope can have description" do
+      scope = Info.get_scope(TestPost, :all)
+      assert scope.description == "All records without restriction"
+    end
+
+    test "scope description is optional" do
+      scope = Info.get_scope(TestPost, :draft)
+      assert scope.description == nil
+    end
+
+    test "Info.scope_description/2 returns description for existing scope" do
+      assert Info.scope_description(TestPost, :all) == "All records without restriction"
+      assert Info.scope_description(TestPost, :published) == "Published posts visible to everyone"
+    end
+
+    test "Info.scope_description/2 returns nil for scope without description" do
+      assert Info.scope_description(TestPost, :draft) == nil
+    end
+
+    test "Info.scope_description/2 returns nil for unknown scope" do
+      assert Info.scope_description(TestPost, :unknown) == nil
     end
   end
 end

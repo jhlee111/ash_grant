@@ -585,13 +585,77 @@ end
             +-----------------------+
 ```
 
+## Debugging with `explain/4`
+
+Use `AshGrant.explain/4` to understand why authorization succeeded or failed:
+
+```elixir
+# Get detailed explanation
+result = AshGrant.explain(MyApp.Post, :read, actor)
+
+# Check the decision
+result.decision  # => :allow or :deny
+
+# See matching permissions with metadata
+result.matching_permissions
+# => [%{permission: "post:*:read:all", description: "Read all posts", source: "editor_role", ...}]
+
+# See why permissions didn't match
+result.evaluated_permissions
+# => [%{permission: "post:*:update:own", matched: false, reason: "Action mismatch"}, ...]
+
+# Print human-readable output
+result |> AshGrant.Explanation.to_string() |> IO.puts()
+```
+
+**Sample output:**
+
+```
+═══════════════════════════════════════════════════════════════════
+Authorization Explanation for MyApp.Blog.Post
+═══════════════════════════════════════════════════════════════════
+Action:   read
+Decision: ✓ ALLOW
+Actor:    %{id: "user-1", role: :editor}
+
+Matching Permissions:
+  • post:*:read:all [scope: all - All records without restriction] (from: editor_role)
+    └─ Read all posts
+
+Scope Filter: true (no filtering)
+───────────────────────────────────────────────────────────────────
+```
+
+### Scope Descriptions
+
+Add descriptions to scopes for better debugging output:
+
+```elixir
+ash_grant do
+  resolver MyApp.PermissionResolver
+
+  scope :all, [], true, description: "All records without restriction"
+  scope :own, [], expr(author_id == ^actor(:id)), description: "Records owned by the current user"
+  scope :published, [], expr(status == :published), description: "Published records visible to everyone"
+end
+```
+
+Access scope descriptions programmatically:
+
+```elixir
+AshGrant.Info.scope_description(MyApp.Post, :own)
+# => "Records owned by the current user"
+```
+
 ## API Reference
 
 ### Modules
 
 | Module | Description |
 |--------|-------------|
-| `AshGrant` | Main extension module with `check/1` and `filter_check/1` |
+| `AshGrant` | Main extension module with `check/1`, `filter_check/1`, and `explain/4` |
+| `AshGrant.Explanation` | Authorization decision explanation struct |
+| `AshGrant.Explainer` | Builds detailed authorization explanations |
 | `AshGrant.Permission` | Permission parsing and matching |
 | `AshGrant.PermissionInput` | Permission input with metadata for debugging |
 | `AshGrant.Permissionable` | Protocol for converting custom structs to permissions |

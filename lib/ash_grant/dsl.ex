@@ -102,29 +102,34 @@ defmodule AshGrant.Dsl do
     ## Examples
 
         # No filtering - access to all records
-        scope :all, true
+        scope :all, true, description: "All records without restriction"
 
         # Filter to records owned by the actor
-        scope :own, expr(author_id == ^actor(:id))
+        scope :own, expr(author_id == ^actor(:id)),
+          description: "Records owned by the current user"
 
         # Filter to published records
-        scope :published, expr(status == :published)
+        scope :published, expr(status == :published),
+          description: "Published records visible to everyone"
 
         # Inheritance: combines parent scope(s) with this filter
-        scope :own_draft, [:own], expr(status == :draft)
+        scope :own_draft, [:own], expr(status == :draft),
+          description: "User's own records that are in draft status"
 
         # Context injection for testable temporal scopes
-        scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))
+        scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date))),
+          description: "Records created today"
 
-        # Context injection for parameterized thresholds
-        scope :small_amount, expr(amount < ^context(:max_amount))
+        # Description is optional - backward compatible
+        scope :archived, expr(status == :archived)
     """,
     examples: [
       "scope :all, true",
       "scope :own, expr(author_id == ^actor(:id))",
       "scope :published, expr(status == :published)",
       "scope :own_draft, [:own], expr(status == :draft)",
-      ~s|scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))|
+      ~s|scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))|,
+      ~s|scope :own, expr(author_id == ^actor(:id)), description: "Records owned by the current user"|
     ],
     target: AshGrant.Dsl.Scope,
     args: [:name, {:optional, :inherits}, :filter],
@@ -142,6 +147,11 @@ defmodule AshGrant.Dsl do
         type: {:or, [:boolean, :any]},
         required: true,
         doc: "The filter expression or `true` for no filtering"
+      ],
+      description: [
+        type: :string,
+        required: false,
+        doc: "Human-readable description of what this scope represents. Used in explain/4 output."
       ]
     ]
   }
@@ -256,14 +266,22 @@ defmodule AshGrant.Dsl.Scope do
 
   Scopes are named filter expressions that can be referenced
   in permissions to limit access to specific records.
+
+  ## Fields
+
+  - `:name` - The atom name of the scope (e.g., `:own`, `:published`)
+  - `:inherits` - List of parent scope names to inherit from
+  - `:filter` - The filter expression (`true` for no filtering, or an Ash.Expr)
+  - `:description` - Optional human-readable description for debugging/explain
   """
 
-  defstruct [:name, :inherits, :filter, :__spark_metadata__]
+  defstruct [:name, :inherits, :filter, :description, :__spark_metadata__]
 
   @type t :: %__MODULE__{
           name: atom(),
           inherits: [atom()] | nil,
           filter: boolean() | Ash.Expr.t(),
+          description: String.t() | nil,
           __spark_metadata__: map() | nil
         }
 end
