@@ -332,4 +332,58 @@ defmodule AshGrant do
 
   """
   defdelegate filter_check(opts \\ []), to: AshGrant.FilterCheck
+
+  @doc """
+  Explains an authorization decision for debugging.
+
+  Returns an `AshGrant.Explanation` struct with detailed information about
+  why access was allowed or denied, including:
+
+  - All matching permissions with their metadata (description, source)
+  - All evaluated permissions with match/no-match reasons
+  - Scope information from both permissions and DSL definitions
+  - The final decision and reason
+
+  ## Parameters
+
+  - `resource` - The Ash resource module
+  - `action` - The action atom (e.g., `:read`, `:update`)
+  - `actor` - The actor performing the action
+  - `context` - Optional context map (default: `%{}`)
+
+  ## Examples
+
+      # Basic usage
+      iex> AshGrant.explain(MyApp.Post, :read, actor)
+      %AshGrant.Explanation{
+        decision: :allow,
+        matching_permissions: [%{permission: "post:*:read:all", ...}],
+        ...
+      }
+
+      # With context
+      iex> AshGrant.explain(MyApp.Post, :read, actor, %{tenant: "acme"})
+      %AshGrant.Explanation{...}
+
+      # Print human-readable output
+      iex> AshGrant.explain(MyApp.Post, :read, actor) |> AshGrant.Explanation.to_string() |> IO.puts()
+      ═══════════════════════════════════════════════════════════════════
+      Authorization Explanation for MyApp.Post
+      ═══════════════════════════════════════════════════════════════════
+      Action:   read
+      Decision: ✓ ALLOW
+      ...
+
+  ## Use Cases
+
+  - **Debugging**: Understand why a request was denied
+  - **Testing**: Verify permissions work as expected
+  - **Auditing**: Log detailed authorization decisions
+  - **Admin tools**: Build permission debugging UIs
+
+  """
+  @spec explain(module(), atom(), term(), map()) :: AshGrant.Explanation.t()
+  def explain(resource, action, actor, context \\ %{}) do
+    AshGrant.Explainer.explain(resource, action, actor, context)
+  end
 end

@@ -129,6 +129,27 @@ defmodule AshGrant.Info do
   end
 
   @doc """
+  Gets the description for a specific scope.
+
+  Returns `nil` if the scope doesn't exist or has no description.
+
+  ## Examples
+
+      iex> AshGrant.Info.scope_description(MyApp.Blog.Post, :own)
+      "Records owned by the current user"
+
+      iex> AshGrant.Info.scope_description(MyApp.Blog.Post, :all)
+      nil
+  """
+  @spec scope_description(Ash.Resource.t(), atom()) :: String.t() | nil
+  def scope_description(resource, name) do
+    case get_scope(resource, name) do
+      nil -> nil
+      scope -> scope.description
+    end
+  end
+
+  @doc """
   Resolves a scope to its filter expression.
 
   If the scope has inheritance, the parent scopes are combined with AND.
