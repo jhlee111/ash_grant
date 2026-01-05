@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Permission Introspection Module**: New `AshGrant.Introspect` module for runtime permission queries
+  - `actor_permissions/3` - Admin UI: Display all permissions with their status for an actor
+  - `available_permissions/1` - Permission management: List all possible permission combinations
+  - `can?/4` - Debugging: Simple check returning `:allow` or `:deny` with details
+  - `allowed_actions/3` - API response: List allowed actions (with optional `:detailed` mode)
+  - `permissions_for/3` - Raw access to permission strings from resolver
+  - All functions support `:context` option for resolver context
+
 - **Instance Permission Read Support**: Instance permissions now work with read actions (`filter_check/1`)
   - `AshGrant.Evaluator.get_matching_instance_ids/3` extracts instance IDs from permissions
   - `FilterCheck` combines RBAC scopes with instance ID filters using OR logic
