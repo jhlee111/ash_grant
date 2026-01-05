@@ -80,7 +80,8 @@ defmodule AshGrant.MixProject do
       source_ref: "v#{@version}",
       extras: [
         "README.md": [title: "Home"],
-        "CHANGELOG.md": [title: "Changelog"]
+        "CHANGELOG.md": [title: "Changelog"],
+        LICENSE: [title: "License"]
       ]
     ]
   end
