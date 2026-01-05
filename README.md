@@ -25,6 +25,7 @@ on top of RBAC systems—just resolve roles to permissions in your resolver.
 - **Default policies**: Auto-generate standard policies to reduce boilerplate
 - **Permission metadata**: Optional `description` and `source` fields for debugging
 - **Permissionable protocol**: Convert custom structs to permissions with zero boilerplate
+- **Permission introspection**: Runtime helpers for querying actor permissions and available actions
 
 ## Installation
 
