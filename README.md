@@ -23,6 +23,8 @@ on top of RBAC systems—just resolve roles to permissions in your resolver.
 - **Multi-tenancy Support**: Full support for `^tenant()` in scope expressions
 - **Two check types**: `filter_check/1` for reads, `check/1` for writes
 - **Default policies**: Auto-generate standard policies to reduce boilerplate
+- **Permission metadata**: Optional `description` and `source` fields for debugging
+- **Permissionable protocol**: Convert custom structs to permissions with zero boilerplate
 
 ## Installation
 
@@ -125,6 +127,61 @@ defmodule MyApp.PermissionResolver do
     actor
     |> get_roles()
     |> Enum.flat_map(& &1.permissions)
+  end
+end
+```
+
+### 2b. Permissions with Metadata (for debugging)
+
+Return `AshGrant.PermissionInput` structs for enhanced debugging and `explain/4`:
+
+```elixir
+defmodule MyApp.PermissionResolver do
+  @behaviour AshGrant.PermissionResolver
+
+  @impl true
+  def resolve(actor, _context) do
+    actor
+    |> get_roles()
+    |> Enum.flat_map(fn role ->
+      Enum.map(role.permissions, fn perm ->
+        %AshGrant.PermissionInput{
+          string: perm,
+          description: "From role permissions",
+          source: "role:#{role.name}"
+        }
+      end)
+    end)
+  end
+end
+```
+
+### 2c. Custom Structs with Permissionable Protocol
+
+Implement the `AshGrant.Permissionable` protocol for your custom structs:
+
+```elixir
+defmodule MyApp.RolePermission do
+  defstruct [:permission_string, :label, :role_name]
+end
+
+defimpl AshGrant.Permissionable, for: MyApp.RolePermission do
+  def to_permission_input(%MyApp.RolePermission{} = rp) do
+    %AshGrant.PermissionInput{
+      string: rp.permission_string,
+      description: rp.label,
+      source: "role:#{rp.role_name}"
+    }
+  end
+end
+
+# Then just return your structs from the resolver
+defmodule MyApp.PermissionResolver do
+  @behaviour AshGrant.PermissionResolver
+
+  @impl true
+  def resolve(actor, _context) do
+    MyApp.Accounts.get_role_permissions(actor)
   end
 end
 ```
@@ -536,6 +593,8 @@ end
 |--------|-------------|
 | `AshGrant` | Main extension module with `check/1` and `filter_check/1` |
 | `AshGrant.Permission` | Permission parsing and matching |
+| `AshGrant.PermissionInput` | Permission input with metadata for debugging |
+| `AshGrant.Permissionable` | Protocol for converting custom structs to permissions |
 | `AshGrant.Evaluator` | Deny-wins permission evaluation |
 | `AshGrant.PermissionResolver` | Behaviour for resolving permissions |
 | `AshGrant.ScopeResolver` | Behaviour for scope resolution (legacy) |

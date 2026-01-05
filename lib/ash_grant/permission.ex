@@ -114,10 +114,23 @@ defmodule AshGrant.Permission do
           instance_id: String.t(),
           action: String.t(),
           scope: String.t() | nil,
-          deny: boolean()
+          deny: boolean(),
+          # Metadata fields (optional, for debugging/explain)
+          description: String.t() | nil,
+          source: String.t() | nil,
+          metadata: map() | nil
         }
 
-  defstruct [:resource, :action, :scope, instance_id: "*", deny: false]
+  defstruct [
+    :resource,
+    :action,
+    :scope,
+    :description,
+    :source,
+    :metadata,
+    instance_id: "*",
+    deny: false
+  ]
 
   @doc """
   Parses a permission string into a Permission struct.
@@ -209,6 +222,44 @@ defmodule AshGrant.Permission do
       {:ok, permission} -> permission
       {:error, message} -> raise ArgumentError, message
     end
+  end
+
+  @doc """
+  Creates a Permission struct from a PermissionInput, preserving metadata.
+
+  This function parses the permission string from the input and copies
+  over the metadata fields (description, source, metadata).
+
+  ## Examples
+
+      iex> input = %AshGrant.PermissionInput{
+      ...>   string: "blog:*:read:all",
+      ...>   description: "Read all blogs",
+      ...>   source: "editor_role"
+      ...> }
+      iex> AshGrant.Permission.from_input(input)
+      %AshGrant.Permission{
+        resource: "blog",
+        instance_id: "*",
+        action: "read",
+        scope: "all",
+        deny: false,
+        description: "Read all blogs",
+        source: "editor_role",
+        metadata: nil
+      }
+
+  """
+  @spec from_input(AshGrant.PermissionInput.t()) :: t()
+  def from_input(%AshGrant.PermissionInput{} = input) do
+    permission = parse!(input.string)
+
+    %{
+      permission
+      | description: input.description,
+        source: input.source,
+        metadata: input.metadata
+    }
   end
 
   @doc """
