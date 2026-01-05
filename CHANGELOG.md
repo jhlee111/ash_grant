@@ -7,7 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-01-05
+
 ### Added
+
+- **Scope Descriptions**: Optional `description` field for scopes in the DSL
+  - `scope :own, [], expr(author_id == ^actor(:id)), description: "Records owned by the current user"`
+  - `AshGrant.Info.scope_description/2` to retrieve scope descriptions programmatically
+  - Descriptions are displayed in `explain/4` output for better debugging
+
+- **Authorization Debugging with `explain/4`**: New `AshGrant.explain/4` function for debugging authorization decisions
+  - Returns `AshGrant.Explanation` struct with detailed decision info
+  - Shows matching permissions with metadata (description, source)
+  - Shows all evaluated permissions with match/no-match reasons
+  - Includes scope information from both permissions and DSL definitions
+  - `AshGrant.Explanation.to_string/2` for human-readable output with ANSI colors
+
+- **New Modules**:
+  - `AshGrant.Explanation` - Struct for authorization decision explanations
+  - `AshGrant.Explainer` - Builds detailed authorization explanations
+
+## [0.3.0] - 2025-01-04
+
+### Added
+
+- **Permission Metadata**: `AshGrant.PermissionInput` struct for permissions with metadata
+  - `description` - Human-readable description of the permission
+  - `source` - Where the permission came from (e.g., "role:admin")
+  - `metadata` - Additional arbitrary metadata as a map
+
+- **Permissionable Protocol**: `AshGrant.Permissionable` protocol for converting custom structs to permissions
+  - Implement for your own structs to return them directly from resolvers
+  - Default implementations for `BitString`, `PermissionInput`, and `Permission`
 
 - **Instance Permissions with Scopes (ABAC)**: Instance permissions now support scope conditions
   - `doc:doc_123:update:draft` - Update only when document is in draft status
@@ -15,9 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `invoice:inv_456:approve:small_amount` - Approve only below threshold
   - Scopes are now treated as "authorization conditions" rather than just "record filters"
   - Empty scopes (trailing colon) remain backward compatible ("no conditions")
+
 - **New Evaluator Functions**:
   - `get_instance_scope/3` - Get the scope from a matching instance permission
   - `get_all_instance_scopes/3` - Get all scopes from matching instance permissions
+
 - **Context Injection for Testable Scopes**: Scopes can now use `^context(:key)` for injectable values
   - `scope :today_injectable, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))`
   - `scope :threshold, expr(amount < ^context(:max_amount))`
@@ -153,6 +186,9 @@ end
 | `AshGrant.Check` | SimpleCheck for write actions |
 | `AshGrant.FilterCheck` | FilterCheck for read actions |
 
+[0.3.1]: https://github.com/jhlee111/ash_grant/releases/tag/v0.3.1
+[0.3.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.3.0
+[0.2.2]: https://github.com/jhlee111/ash_grant/releases/tag/v0.2.2
 [0.2.1]: https://github.com/jhlee111/ash_grant/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.2.0
 [0.1.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.1.0
