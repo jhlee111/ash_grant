@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Instance Permission Read Support**: Instance permissions now work with read actions (`filter_check/1`)
+  - `AshGrant.Evaluator.get_matching_instance_ids/3` extracts instance IDs from permissions
+  - `FilterCheck` combines RBAC scopes with instance ID filters using OR logic
+  - Enables Google Docs-style sharing where specific resources are shared with specific users
+  - Example: `"doc:doc_abc123:read:"` allows reading the specific document
+
 ## [0.3.1] - 2025-01-05
 
 ### Added
