@@ -227,8 +227,37 @@ For sharing specific resources (like Google Docs):
 Instance permissions have an empty scope (trailing colon) because the permission
 is already scoped to a specific instance.
 
-> **Note**: Instance permissions currently work with write actions (`check/1`).
-> Support for read actions (`filter_check/1`) is planned for a future release.
+Instance permissions work with both:
+- **Read actions** (`filter_check/1`) - Adds `WHERE id IN (instance_ids)` filter
+- **Write actions** (`check/1`) - Validates access to specific instance
+
+#### Instance Permission Read Example
+
+```elixir
+# Resolver returns instance permissions for shared documents
+defmodule MyApp.PermissionResolver do
+  @behaviour AshGrant.PermissionResolver
+
+  def resolve(%{shared_doc_ids: doc_ids}, _context) when is_list(doc_ids) do
+    # Generate instance permission for each shared document
+    Enum.map(doc_ids, fn doc_id ->
+      "document:#{doc_id}:read:"
+    end)
+  end
+end
+
+# User can only read documents explicitly shared with them
+actor = %{id: "user-1", shared_doc_ids: ["doc_abc", "doc_xyz"]}
+Document |> Ash.read!(actor: actor)
+# => Returns only doc_abc and doc_xyz
+```
+
+When combined with RBAC permissions, users can access:
+- All records matching their RBAC scopes (e.g., `:own`, `:published`)
+- Plus specific instances from instance permissions
+
+The filters are combined with OR logic:
+`(owner_id == actor.id) OR (id IN ["doc_abc", "doc_xyz"])`
 
 ### Legacy Format Support
 

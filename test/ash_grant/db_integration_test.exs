@@ -291,9 +291,6 @@ defmodule AshGrant.DbIntegrationTest do
   end
 
   describe "instance permissions" do
-    @tag :skip
-    # Skipped: Instance permissions in FilterCheck need to generate
-    # id == specific_id filters - not yet implemented
     test "instance permission grants access to specific record" do
       author = Ash.UUID.generate()
       actor_id = Ash.UUID.generate()

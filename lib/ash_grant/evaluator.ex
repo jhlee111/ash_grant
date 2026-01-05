@@ -376,6 +376,58 @@ defmodule AshGrant.Evaluator do
   end
 
   @doc """
+  Gets all instance IDs that the user has permission to access.
+
+  Returns a list of instance IDs from all matching instance permissions
+  (where instance_id != "*") for the given resource and action.
+
+  This is used by FilterCheck to build a `WHERE id IN (...)` filter
+  for instance-based access control.
+
+  ## Examples
+
+      iex> permissions = ["shareddoc:doc_abc:read:", "shareddoc:doc_xyz:read:"]
+      iex> AshGrant.Evaluator.get_matching_instance_ids(permissions, "shareddoc", "read")
+      ["doc_abc", "doc_xyz"]
+
+      iex> permissions = ["shareddoc:*:read:all", "otherdoc:doc_abc:read:"]
+      iex> AshGrant.Evaluator.get_matching_instance_ids(permissions, "shareddoc", "read")
+      []
+
+      iex> permissions = ["shareddoc:doc_abc:read:", "!shareddoc:doc_abc:read:"]
+      iex> AshGrant.Evaluator.get_matching_instance_ids(permissions, "shareddoc", "read")
+      []
+
+  """
+  @spec get_matching_instance_ids(permissions(), String.t(), String.t()) :: [String.t()]
+  def get_matching_instance_ids(permissions, resource, action) do
+    permissions = normalize_permissions(permissions)
+
+    # Find all instance permissions that match resource and action
+    instance_perms =
+      permissions
+      |> Enum.filter(fn perm ->
+        Permission.instance_permission?(perm) and
+          Permission.matches_resource?(perm.resource, resource) and
+          Permission.matches_action?(perm.action, action)
+      end)
+
+    # Get denied instance IDs
+    denied_ids =
+      instance_perms
+      |> Enum.filter(&Permission.deny?/1)
+      |> Enum.map(& &1.instance_id)
+      |> MapSet.new()
+
+    # Get allowed instance IDs (excluding denied ones)
+    instance_perms
+    |> Enum.reject(&Permission.deny?/1)
+    |> Enum.map(& &1.instance_id)
+    |> Enum.reject(&MapSet.member?(denied_ids, &1))
+    |> Enum.uniq()
+  end
+
+  @doc """
   Combines multiple permission lists with deny-wins semantics.
 
   This is useful when permissions come from multiple sources
