@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-05
+
 ### Added
 
 - **Permission Introspection Module**: New `AshGrant.Introspect` module for runtime permission queries
@@ -202,6 +204,7 @@ end
 | `AshGrant.Check` | SimpleCheck for write actions |
 | `AshGrant.FilterCheck` | FilterCheck for read actions |
 
+[0.4.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.4.0
 [0.3.1]: https://github.com/jhlee111/ash_grant/releases/tag/v0.3.1
 [0.3.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.3.0
 [0.2.2]: https://github.com/jhlee111/ash_grant/releases/tag/v0.2.2
