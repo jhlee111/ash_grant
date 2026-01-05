@@ -31,5 +31,8 @@ defmodule AshGrant.Test.Domain do
     # Multi-tenancy test resource
     # Uses ^tenant() scope expression
     resource(AshGrant.Test.TenantPost)
+
+    # Instance permission read test resource
+    resource(AshGrant.Test.SharedDoc)
   end
 end

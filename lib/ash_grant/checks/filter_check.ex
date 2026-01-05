@@ -176,19 +176,59 @@ defmodule AshGrant.FilterCheck do
     # Resolve permissions
     permissions = resolve_permissions(resolver, actor, context)
 
-    # Get all matching scopes
+    # Get RBAC scopes (instance_id = "*")
     scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action_name)
 
-    cond do
-      scopes == [] ->
-        false
+    # Get instance permission IDs
+    instance_ids =
+      AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action_name)
 
-      "all" in scopes or "global" in scopes ->
+    # Build combined filter from RBAC scopes + instance IDs
+    build_filter_with_instances(scopes, instance_ids, scope_resolver, context)
+  end
+
+  defp build_filter_with_instances(scopes, instance_ids, scope_resolver, context) do
+    # Check for global access from RBAC
+    has_global_access = "all" in scopes or "global" in scopes
+
+    cond do
+      has_global_access ->
+        # Global access via RBAC
         true
 
-      true ->
+      scopes == [] and instance_ids == [] ->
+        # No access at all
+        false
+
+      scopes == [] ->
+        # Only instance permissions, no RBAC
+        build_instance_filter(instance_ids)
+
+      instance_ids == [] ->
+        # Only RBAC, no instance permissions
         build_combined_filter(scopes, scope_resolver, context)
+
+      true ->
+        # Both RBAC and instance permissions - combine with OR
+        rbac_filter = build_combined_filter(scopes, scope_resolver, context)
+        instance_filter = build_instance_filter(instance_ids)
+        combine_rbac_and_instance(rbac_filter, instance_filter)
     end
+  end
+
+  defp build_instance_filter(instance_ids) do
+    # Build filter: id in ^instance_ids
+    Ash.Expr.expr(id in ^instance_ids)
+  end
+
+  defp combine_rbac_and_instance(rbac_filter, _instance_filter) when rbac_filter == true do
+    # RBAC gives full access, instance permissions are redundant
+    true
+  end
+
+  defp combine_rbac_and_instance(rbac_filter, instance_filter) do
+    # Combine RBAC scope filters with instance ID filter using OR
+    Ash.Expr.expr(^rbac_filter or ^instance_filter)
   end
 
   defp resolve_permissions(resolver, actor, context) when is_function(resolver, 2) do

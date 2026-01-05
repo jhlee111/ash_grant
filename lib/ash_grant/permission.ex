@@ -370,21 +370,47 @@ defmodule AshGrant.Permission do
   @spec resource(t()) :: String.t()
   def resource(%__MODULE__{resource: resource}), do: resource
 
-  # Private functions
+  @doc """
+  Checks if a resource pattern matches a resource name.
 
-  defp parse_deny_prefix("!" <> rest), do: {true, rest}
-  defp parse_deny_prefix(str), do: {false, str}
+  Supports wildcard matching with `"*"`.
 
-  defp normalize_scope(""), do: nil
-  defp normalize_scope(scope), do: scope
+  ## Examples
 
-  defp matches_resource?("*", _resource), do: true
-  defp matches_resource?(pattern, pattern), do: true
-  defp matches_resource?(_pattern, _resource), do: false
+      iex> AshGrant.Permission.matches_resource?("*", "blog")
+      true
+      iex> AshGrant.Permission.matches_resource?("blog", "blog")
+      true
+      iex> AshGrant.Permission.matches_resource?("blog", "post")
+      false
 
-  defp matches_action?("*", _action), do: true
+  """
+  @spec matches_resource?(String.t(), String.t()) :: boolean()
+  def matches_resource?("*", _resource), do: true
+  def matches_resource?(pattern, pattern), do: true
+  def matches_resource?(_pattern, _resource), do: false
 
-  defp matches_action?(pattern, action) do
+  @doc """
+  Checks if an action pattern matches an action name.
+
+  Supports wildcard matching with `"*"` and prefix matching with `"prefix*"`.
+
+  ## Examples
+
+      iex> AshGrant.Permission.matches_action?("*", "read")
+      true
+      iex> AshGrant.Permission.matches_action?("read", "read")
+      true
+      iex> AshGrant.Permission.matches_action?("read*", "read_all")
+      true
+      iex> AshGrant.Permission.matches_action?("read", "write")
+      false
+
+  """
+  @spec matches_action?(String.t(), String.t()) :: boolean()
+  def matches_action?("*", _action), do: true
+
+  def matches_action?(pattern, action) do
     if String.ends_with?(pattern, "*") do
       prefix = String.trim_trailing(pattern, "*")
       String.starts_with?(action, prefix)
@@ -392,6 +418,14 @@ defmodule AshGrant.Permission do
       pattern == action
     end
   end
+
+  # Private functions
+
+  defp parse_deny_prefix("!" <> rest), do: {true, rest}
+  defp parse_deny_prefix(str), do: {false, str}
+
+  defp normalize_scope(""), do: nil
+  defp normalize_scope(scope), do: scope
 end
 
 defimpl String.Chars, for: AshGrant.Permission do
