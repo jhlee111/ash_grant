@@ -36,6 +36,17 @@ defmodule AshGrant.Test.Post do
 
     # Injectable parameterized scope - title length threshold
     scope(:short_title, expr(fragment("LENGTH(title) <= ?", ^context(:max_title_length))))
+
+    # Business hours scope - using EXTRACT for hour-based filtering
+    # Non-injectable version uses NOW()
+    scope(:business_hours, expr(fragment("EXTRACT(HOUR FROM NOW()) BETWEEN 9 AND 17")))
+
+    # Injectable business hours scope for testing
+    # Allows injecting specific timestamp to verify hour extraction logic
+    scope(
+      :business_hours_injectable,
+      expr(fragment("EXTRACT(HOUR FROM ?::timestamp) BETWEEN 9 AND 17", ^context(:current_time)))
+    )
   end
 
   policies do
