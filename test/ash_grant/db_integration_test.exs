@@ -311,4 +311,141 @@ defmodule AshGrant.DbIntegrationTest do
       assert hd(posts).id == post1.id
     end
   end
+
+  describe "scope :business_hours_injectable - hour-based filtering with EXTRACT fragment" do
+    test "business_hours_injectable scope returns posts during business hours (10:00)" do
+      actor_id = Ash.UUID.generate()
+
+      # Create a post
+      post = create_post!(%{title: "Business Hours Post", status: :draft, author_id: actor_id})
+
+      # Actor with business_hours_injectable scope
+      actor = custom_perms_actor(["post:*:read:business_hours_injectable"], actor_id)
+
+      # Pass a timestamp during business hours (10:00 AM)
+      business_hour_time = ~N[2024-01-15 10:00:00]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: business_hour_time})
+        |> Ash.read!(actor: actor)
+
+      # Should see the post (10 is between 9 and 17)
+      assert length(posts) == 1
+      assert hd(posts).id == post.id
+    end
+
+    test "business_hours_injectable scope returns posts during business hours (17:00)" do
+      actor_id = Ash.UUID.generate()
+
+      # Create a post
+      post = create_post!(%{title: "Late Business Post", status: :draft, author_id: actor_id})
+
+      # Actor with business_hours_injectable scope
+      actor = custom_perms_actor(["post:*:read:business_hours_injectable"], actor_id)
+
+      # Pass a timestamp at end of business hours (5:00 PM)
+      business_hour_time = ~N[2024-01-15 17:00:00]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: business_hour_time})
+        |> Ash.read!(actor: actor)
+
+      # Should see the post (17 is included in BETWEEN 9 AND 17)
+      assert length(posts) == 1
+      assert hd(posts).id == post.id
+    end
+
+    test "business_hours_injectable scope excludes posts outside business hours (early morning)" do
+      actor_id = Ash.UUID.generate()
+
+      # Create a post
+      _post = create_post!(%{title: "Early Post", status: :draft, author_id: actor_id})
+
+      # Actor with business_hours_injectable scope
+      actor = custom_perms_actor(["post:*:read:business_hours_injectable"], actor_id)
+
+      # Pass a timestamp before business hours (6:00 AM)
+      early_time = ~N[2024-01-15 06:00:00]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: early_time})
+        |> Ash.read!(actor: actor)
+
+      # Should NOT see any posts (6 is not between 9 and 17)
+      assert length(posts) == 0
+    end
+
+    test "business_hours_injectable scope excludes posts outside business hours (late night)" do
+      actor_id = Ash.UUID.generate()
+
+      # Create a post
+      _post = create_post!(%{title: "Night Post", status: :draft, author_id: actor_id})
+
+      # Actor with business_hours_injectable scope
+      actor = custom_perms_actor(["post:*:read:business_hours_injectable"], actor_id)
+
+      # Pass a timestamp after business hours (10:00 PM / 22:00)
+      late_time = ~N[2024-01-15 22:00:00]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: late_time})
+        |> Ash.read!(actor: actor)
+
+      # Should NOT see any posts (22 is not between 9 and 17)
+      assert length(posts) == 0
+    end
+
+    test "business_hours_injectable scope boundary test at hour 9" do
+      actor_id = Ash.UUID.generate()
+
+      # Create a post
+      post = create_post!(%{title: "9AM Post", status: :draft, author_id: actor_id})
+
+      # Actor with business_hours_injectable scope
+      actor = custom_perms_actor(["post:*:read:business_hours_injectable"], actor_id)
+
+      # Pass a timestamp at start of business hours (9:00 AM)
+      start_time = ~N[2024-01-15 09:00:00]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: start_time})
+        |> Ash.read!(actor: actor)
+
+      # Should see the post (9 is included in BETWEEN 9 AND 17)
+      assert length(posts) == 1
+      assert hd(posts).id == post.id
+    end
+
+    test "business_hours_injectable scope boundary test at hour 8 (excluded)" do
+      actor_id = Ash.UUID.generate()
+
+      # Create a post
+      _post = create_post!(%{title: "8AM Post", status: :draft, author_id: actor_id})
+
+      # Actor with business_hours_injectable scope
+      actor = custom_perms_actor(["post:*:read:business_hours_injectable"], actor_id)
+
+      # Pass a timestamp just before business hours (8:59 AM -> hour 8)
+      before_start = ~N[2024-01-15 08:59:00]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: before_start})
+        |> Ash.read!(actor: actor)
+
+      # Should NOT see any posts (8 is not between 9 and 17)
+      assert length(posts) == 0
+    end
+  end
 end
