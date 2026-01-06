@@ -181,6 +181,8 @@ defmodule AshGrant.Permission do
       # Legacy three-part format: resource:action:scope
       # Convert to: resource:*:action:scope
       [resource, action, scope] ->
+        maybe_warn_ambiguous_format(permission_string, resource, action, scope)
+
         {:ok,
          %__MODULE__{
            resource: resource,
@@ -426,6 +428,44 @@ defmodule AshGrant.Permission do
 
   defp normalize_scope(""), do: nil
   defp normalize_scope(scope), do: scope
+
+  # Warns when a 3-part permission format might be ambiguous.
+  # For example, "blog:post123:read" could be mistaken for an instance permission
+  # but is parsed as "blog:*:post123:read" (with post123 as the action).
+  defp maybe_warn_ambiguous_format(original, resource, action, scope) do
+    if looks_like_instance_id?(action) do
+      IO.warn(
+        """
+        Ambiguous permission format: "#{original}"
+
+        This is parsed as: #{resource}:*:#{action}:#{scope}
+        If you meant an instance permission, use the 4-part format: #{resource}:#{action}:<action>:
+
+        Consider using the explicit 4-part format to avoid ambiguity.
+        See: https://github.com/jhlee111/ash_grant#legacy-format-support
+        """,
+        []
+      )
+    end
+  end
+
+  # Checks if a string looks like an instance ID rather than an action name.
+  # Instance IDs typically have formats like:
+  # - Prefixed IDs: post_abc123, doc_xyz789
+  # - UUIDs: 550e8400-e29b-41d4-a716-446655440000
+  # - Numeric IDs: 12345
+  defp looks_like_instance_id?(str) do
+    cond do
+      # Prefixed ID pattern: prefix_alphanumeric (e.g., post_abc123)
+      Regex.match?(~r/^[a-z]+_[a-z0-9]+$/i, str) -> true
+      # UUID pattern (partial match for first segment)
+      Regex.match?(~r/^[0-9a-f]{8}-/i, str) -> true
+      # Pure numeric ID
+      Regex.match?(~r/^\d+$/, str) -> true
+      # Default: assume it's an action name
+      true -> false
+    end
+  end
 end
 
 defimpl String.Chars, for: AshGrant.Permission do
