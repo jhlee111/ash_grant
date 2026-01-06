@@ -286,7 +286,10 @@ defmodule AshGrant do
 
   use Spark.Dsl.Extension,
     sections: AshGrant.Dsl.sections(),
-    transformers: [AshGrant.Transformers.AddDefaultPolicies]
+    transformers: [
+      AshGrant.Transformers.ValidateScopes,
+      AshGrant.Transformers.AddDefaultPolicies
+    ]
 
   @doc """
   Creates a simple check for write actions.
