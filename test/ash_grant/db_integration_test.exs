@@ -448,4 +448,201 @@ defmodule AshGrant.DbIntegrationTest do
       assert length(posts) == 0
     end
   end
+
+  describe "scope :business_hours_local - timezone-aware filtering with AT TIME ZONE" do
+    @moduledoc """
+    Tests for timezone-aware business hours filtering.
+
+    This demonstrates a common real-world pattern where:
+    - Times are stored in UTC in the database
+    - Business hours need to be evaluated in the user's local timezone
+    - The timezone can come from context (request) or actor (user profile)
+
+    Example scenarios:
+    - A user in Asia/Seoul (UTC+9) should see posts during 9-17 KST
+    - A user in America/New_York (UTC-5) should see posts during 9-17 EST
+    """
+
+    test "business_hours_local allows access during business hours in Asia/Seoul timezone" do
+      actor_id = Ash.UUID.generate()
+      post = create_post!(%{title: "Seoul Post", status: :draft, author_id: actor_id})
+
+      actor = custom_perms_actor(["post:*:read:business_hours_local"], actor_id)
+
+      # UTC time: 01:00 (1 AM UTC)
+      # In Asia/Seoul (UTC+9): 10:00 (10 AM) - WITHIN business hours
+      utc_time = ~U[2024-01-15 01:00:00Z]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time, timezone: "Asia/Seoul"})
+        |> Ash.read!(actor: actor)
+
+      # Should see the post (10 AM in Seoul is within 9-17)
+      assert length(posts) == 1
+      assert hd(posts).id == post.id
+    end
+
+    test "business_hours_local denies access outside business hours in Asia/Seoul timezone" do
+      actor_id = Ash.UUID.generate()
+      _post = create_post!(%{title: "Seoul Night Post", status: :draft, author_id: actor_id})
+
+      actor = custom_perms_actor(["post:*:read:business_hours_local"], actor_id)
+
+      # UTC time: 12:00 (noon UTC)
+      # In Asia/Seoul (UTC+9): 21:00 (9 PM) - OUTSIDE business hours
+      utc_time = ~U[2024-01-15 12:00:00Z]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time, timezone: "Asia/Seoul"})
+        |> Ash.read!(actor: actor)
+
+      # Should NOT see any posts (9 PM in Seoul is outside 9-17)
+      assert length(posts) == 0
+    end
+
+    test "business_hours_local allows access during business hours in America/New_York timezone" do
+      actor_id = Ash.UUID.generate()
+      post = create_post!(%{title: "NYC Post", status: :draft, author_id: actor_id})
+
+      actor = custom_perms_actor(["post:*:read:business_hours_local"], actor_id)
+
+      # UTC time: 15:00 (3 PM UTC)
+      # In America/New_York (UTC-5 in winter): 10:00 (10 AM) - WITHIN business hours
+      utc_time = ~U[2024-01-15 15:00:00Z]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time, timezone: "America/New_York"})
+        |> Ash.read!(actor: actor)
+
+      # Should see the post (10 AM in NYC is within 9-17)
+      assert length(posts) == 1
+      assert hd(posts).id == post.id
+    end
+
+    test "business_hours_local denies access outside business hours in America/New_York timezone" do
+      actor_id = Ash.UUID.generate()
+      _post = create_post!(%{title: "NYC Night Post", status: :draft, author_id: actor_id})
+
+      actor = custom_perms_actor(["post:*:read:business_hours_local"], actor_id)
+
+      # UTC time: 03:00 (3 AM UTC)
+      # In America/New_York (UTC-5 in winter): 22:00 (10 PM) - OUTSIDE business hours
+      utc_time = ~U[2024-01-15 03:00:00Z]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time, timezone: "America/New_York"})
+        |> Ash.read!(actor: actor)
+
+      # Should NOT see any posts (10 PM in NYC is outside 9-17)
+      assert length(posts) == 0
+    end
+
+    test "same UTC time yields different results for different timezones" do
+      actor_id = Ash.UUID.generate()
+      post = create_post!(%{title: "Global Post", status: :draft, author_id: actor_id})
+
+      actor = custom_perms_actor(["post:*:read:business_hours_local"], actor_id)
+
+      # UTC time: 00:00 (midnight UTC)
+      # In Asia/Seoul (UTC+9): 09:00 (9 AM) - START of business hours
+      # In America/New_York (UTC-5): 19:00 (7 PM) - OUTSIDE business hours
+      utc_time = ~U[2024-01-15 00:00:00Z]
+
+      # Seoul user - should see the post
+      seoul_posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time, timezone: "Asia/Seoul"})
+        |> Ash.read!(actor: actor)
+
+      assert length(seoul_posts) == 1
+      assert hd(seoul_posts).id == post.id
+
+      # NYC user - should NOT see the post
+      nyc_posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time, timezone: "America/New_York"})
+        |> Ash.read!(actor: actor)
+
+      assert length(nyc_posts) == 0
+    end
+  end
+
+  describe "scope :business_hours_actor_tz - actor's timezone from profile" do
+    test "uses actor's timezone for business hours check" do
+      actor_id = Ash.UUID.generate()
+      post = create_post!(%{title: "Actor TZ Post", status: :draft, author_id: actor_id})
+
+      # Actor has timezone stored in their profile
+      actor = %{
+        id: actor_id,
+        permissions: ["post:*:read:business_hours_actor_tz"],
+        timezone: "Asia/Seoul"
+      }
+
+      # UTC time: 01:00 (1 AM UTC)
+      # In Asia/Seoul (UTC+9): 10:00 (10 AM) - WITHIN business hours
+      utc_time = ~U[2024-01-15 01:00:00Z]
+
+      posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time})
+        |> Ash.read!(actor: actor)
+
+      # Should see the post (actor's timezone is Seoul, 10 AM is within 9-17)
+      assert length(posts) == 1
+      assert hd(posts).id == post.id
+    end
+
+    test "different actors with different timezones see different results" do
+      author_id = Ash.UUID.generate()
+      post = create_post!(%{title: "Multi-TZ Post", status: :draft, author_id: author_id})
+
+      # UTC time: 00:00 (midnight UTC)
+      # In Asia/Seoul (UTC+9): 09:00 (9 AM) - START of business hours
+      # In America/New_York (UTC-5): 19:00 (7 PM) - OUTSIDE business hours
+      utc_time = ~U[2024-01-15 00:00:00Z]
+
+      # Seoul user
+      seoul_actor = %{
+        id: Ash.UUID.generate(),
+        permissions: ["post:*:read:business_hours_actor_tz"],
+        timezone: "Asia/Seoul"
+      }
+
+      seoul_posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time})
+        |> Ash.read!(actor: seoul_actor)
+
+      assert length(seoul_posts) == 1
+      assert hd(seoul_posts).id == post.id
+
+      # NYC user
+      nyc_actor = %{
+        id: Ash.UUID.generate(),
+        permissions: ["post:*:read:business_hours_actor_tz"],
+        timezone: "America/New_York"
+      }
+
+      nyc_posts =
+        Post
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.set_context(%{current_time: utc_time})
+        |> Ash.read!(actor: nyc_actor)
+
+      assert length(nyc_posts) == 0
+    end
+  end
 end

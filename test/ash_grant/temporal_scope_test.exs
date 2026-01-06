@@ -49,6 +49,50 @@ defmodule AshGrant.TemporalScopeTest do
           fragment("EXTRACT(HOUR FROM ?::timestamp) BETWEEN 9 AND 17", ^context(:current_time))
         )
       )
+
+      # ============================================================
+      # Local Timezone Business Hours Scopes
+      # ============================================================
+      # These demonstrate how to handle timezone-aware business hours
+      # which is a common real-world requirement.
+
+      # Option 1: Database timezone conversion (using AT TIME ZONE)
+      # Converts UTC to local timezone for comparison
+      # Good when database stores UTC and you need local time filtering
+      scope(
+        :business_hours_timezone,
+        expr(
+          fragment(
+            "EXTRACT(HOUR FROM NOW() AT TIME ZONE ?) BETWEEN 9 AND 17",
+            ^context(:timezone)
+          )
+        )
+      )
+
+      # Option 2: Injectable with both timestamp and timezone
+      # Most flexible - allows full control in tests
+      scope(
+        :business_hours_local,
+        expr(
+          fragment(
+            "EXTRACT(HOUR FROM ?::timestamptz AT TIME ZONE ?) BETWEEN 9 AND 17",
+            ^context(:current_time),
+            ^context(:timezone)
+          )
+        )
+      )
+
+      # Option 3: Actor's timezone (stored on user)
+      # Common pattern when each user has their own timezone preference
+      scope(
+        :business_hours_actor_tz,
+        expr(
+          fragment(
+            "EXTRACT(HOUR FROM NOW() AT TIME ZONE ?) BETWEEN 9 AND 17",
+            ^actor(:timezone)
+          )
+        )
+      )
     end
 
     attributes do
@@ -253,6 +297,82 @@ defmodule AshGrant.TemporalScopeTest do
 
       # Should be an expression, not a boolean
       refute is_boolean(filter)
+    end
+  end
+
+  describe "local timezone business hours scope definition" do
+    test "defines timezone-aware business hours scopes" do
+      scopes = Info.scopes(Ledger)
+      scope_names = Enum.map(scopes, & &1.name)
+
+      assert :business_hours_timezone in scope_names
+      assert :business_hours_local in scope_names
+      assert :business_hours_actor_tz in scope_names
+    end
+
+    test "business_hours_timezone scope has fragment filter with context" do
+      scope = Info.get_scope(Ledger, :business_hours_timezone)
+
+      assert scope != nil
+      assert scope.name == :business_hours_timezone
+      refute scope.filter == true
+    end
+
+    test "business_hours_local scope has fragment filter with multiple context params" do
+      scope = Info.get_scope(Ledger, :business_hours_local)
+
+      assert scope != nil
+      assert scope.name == :business_hours_local
+      refute scope.filter == true
+    end
+
+    test "business_hours_actor_tz scope has fragment filter with actor param" do
+      scope = Info.get_scope(Ledger, :business_hours_actor_tz)
+
+      assert scope != nil
+      assert scope.name == :business_hours_actor_tz
+      refute scope.filter == true
+    end
+  end
+
+  describe "local timezone business hours scope resolution" do
+    test "resolves business_hours_timezone scope to expression" do
+      filter = Info.resolve_scope_filter(Ledger, :business_hours_timezone, %{})
+
+      # Should be an expression, not a boolean
+      refute is_boolean(filter)
+    end
+
+    test "resolves business_hours_local scope to expression" do
+      filter = Info.resolve_scope_filter(Ledger, :business_hours_local, %{})
+
+      refute is_boolean(filter)
+    end
+
+    test "resolves business_hours_actor_tz scope to expression" do
+      filter = Info.resolve_scope_filter(Ledger, :business_hours_actor_tz, %{})
+
+      refute is_boolean(filter)
+    end
+  end
+
+  describe "local timezone permission string integration" do
+    test "timezone-aware business_hours scopes work with permission format" do
+      permissions = [
+        "ledger:*:read:business_hours_timezone",
+        "ledger:*:update:business_hours_local",
+        "ledger:*:delete:business_hours_actor_tz"
+      ]
+
+      alias AshGrant.Evaluator
+
+      assert Evaluator.has_access?(permissions, "ledger", "read")
+      assert Evaluator.has_access?(permissions, "ledger", "update")
+      assert Evaluator.has_access?(permissions, "ledger", "delete")
+
+      assert Evaluator.get_scope(permissions, "ledger", "read") == "business_hours_timezone"
+      assert Evaluator.get_scope(permissions, "ledger", "update") == "business_hours_local"
+      assert Evaluator.get_scope(permissions, "ledger", "delete") == "business_hours_actor_tz"
     end
   end
 end
