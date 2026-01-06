@@ -133,6 +133,43 @@ defmodule MyApp.PermissionResolver do
 end
 ```
 
+#### Resolver Context
+
+The `context` parameter passed to your resolver contains:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `:actor` | term | The actor performing the action |
+| `:resource` | module | The Ash resource module |
+| `:action` | Ash.Action.t | The action struct |
+| `:tenant` | term \| nil | Current tenant (from query/changeset) |
+| `:changeset` | Ash.Changeset.t \| nil | For write actions |
+| `:query` | Ash.Query.t \| nil | For read actions |
+
+**Example usage:**
+
+```elixir
+defmodule MyApp.PermissionResolver do
+  @behaviour AshGrant.PermissionResolver
+
+  @impl true
+  def resolve(actor, context) do
+    base_permissions = get_role_permissions(actor)
+
+    # Add instance permissions based on context
+    case context do
+      %{resource: MyApp.Document, action: %{name: :read}} ->
+        shared_docs = get_shared_document_ids(actor)
+        instance_perms = Enum.map(shared_docs, &"document:#{&1}:read:")
+        base_permissions ++ instance_perms
+
+      _ ->
+        base_permissions
+    end
+  end
+end
+```
+
 ### 2b. Permissions with Metadata (for debugging)
 
 Return `AshGrant.PermissionInput` structs for enhanced debugging and `explain/4`:
@@ -204,6 +241,24 @@ end
 | action | Action name or wildcard | `read`, `*`, `read*` |
 | scope | Access scope | `all`, `own`, `published`, or empty |
 
+### Wildcard Matching Rules
+
+| Component | `*` (all) | `prefix*` | Exact match |
+|-----------|-----------|-----------|-------------|
+| resource | Yes | No | Yes |
+| instance_id | Yes | No | Yes |
+| action | Yes | Yes | Yes |
+| scope | No | No | Yes |
+
+**Examples:**
+
+```elixir
+"*:*:read:all"       # All resources, read action
+"blog*:*:read:all"   # Invalid - resource doesn't support prefix
+"blog:*:read*:all"   # Valid - action supports prefix (read, read_all, etc.)
+"blog:post_*:read:"  # Invalid - instance_id doesn't support prefix
+```
+
 ### RBAC Permissions (instance_id = `*`)
 
 ```elixir
@@ -228,6 +283,42 @@ For sharing specific resources (like Google Docs):
 
 Instance permissions have an empty scope (trailing colon) because the permission
 is already scoped to a specific instance.
+
+#### Instance Permissions with Scopes (ABAC)
+
+Instance permissions can include scope conditions for attribute-based access control:
+
+```elixir
+# Permission format: resource:instance_id:action:scope
+"doc:doc_123:update:draft"    # Can update doc_123 only when in draft status
+"doc:doc_123:read:"           # Can read doc_123 unconditionally (empty scope)
+```
+
+**Define the scope in your resource:**
+
+```elixir
+ash_grant do
+  resolver MyApp.PermissionResolver
+
+  scope :draft, expr(status == :draft)
+  scope :business_hours, expr(fragment("EXTRACT(HOUR FROM NOW()) BETWEEN 9 AND 17"))
+end
+```
+
+**How it works:**
+
+1. For **read** actions: `filter_check` adds the scope filter to the query
+2. For **write** actions: `check` evaluates the scope against the target record
+
+```elixir
+# User has: "doc:doc_123:update:draft"
+
+# This succeeds (doc is in draft)
+Ash.update!(draft_doc, %{title: "New"}, actor: user)
+
+# This fails (doc is published, not draft)
+Ash.update!(published_doc, %{title: "New"}, actor: user)
+```
 
 Instance permissions work with both:
 - **Read actions** (`filter_check/1`) - Adds `WHERE id IN (instance_ids)` filter
@@ -263,11 +354,23 @@ The filters are combined with OR logic:
 
 ### Legacy Format Support
 
-For backward compatibility, shorter formats are still supported:
+For backward compatibility, shorter formats are supported but **use with caution**:
+
+| Input | Parsed As | Notes |
+|-------|-----------|-------|
+| `"blog:read:all"` | `blog:*:read:all` | Safe - 3rd part is clearly a scope |
+| `"blog:read"` | `blog:*:read:` | Safe - 2-part format |
+| `"blog:post123:read"` | `blog:*:post123:read` | Ambiguous! `post123` becomes action |
+
+**Recommendation:** Always use the full 4-part format to avoid ambiguity:
 
 ```elixir
-"blog:read:all"    # Parsed as blog:*:read:all
-"blog:read"        # Parsed as blog:*:read:
+# RBAC permissions
+"blog:*:read:all"       # Explicit 4-part format (recommended)
+"blog:read:all"         # Legacy 3-part format (works but discouraged)
+
+# Instance permissions
+"blog:post123:read:"    # Explicit instance permission (recommended)
 ```
 
 ## Scope DSL
@@ -416,14 +519,39 @@ policy action([:read, :get_by_id, :list]) do
 end
 ```
 
-### Multiple Scopes
+### Scope Combination Rules
 
-When an actor has permissions with multiple scopes, they're combined with OR:
+#### Multiple Permissions = OR
+
+When an actor has **multiple permissions** with different scopes for the same action,
+they are combined with **OR**:
 
 ```elixir
-# Actor has: ["post:*:read:own", "post:*:read:published"]
-# Result filter: author_id == actor.id OR status == :published
+# Actor has both permissions:
+["post:*:read:own", "post:*:read:published"]
+
+# Result filter: (author_id == actor.id) OR (status == :published)
+# Actor can see their own posts AND all published posts
 ```
+
+#### Scope Inheritance = AND
+
+When a scope **inherits** from parent scopes, they are combined with **AND**:
+
+```elixir
+ash_grant do
+  scope :own, expr(author_id == ^actor(:id))
+  scope :draft, expr(status == :draft)
+  scope :own_draft, [:own], expr(status == :draft)
+  # Inheritance: [:own] + expr(status == :draft)
+end
+
+# :own_draft filter: (author_id == actor.id) AND (status == :draft)
+# NOT the same as having two separate permissions!
+```
+
+> **Key difference:** Multiple permissions expand access (OR),
+> scope inheritance restricts access (AND).
 
 ### Organization Hierarchy Scopes
 
@@ -489,6 +617,42 @@ Ash.create(Post, %{title: "Hello", tenant_id: tenant_id},
 # Update - must match both tenant AND ownership for own_in_tenant scope
 Ash.update(post, %{title: "Updated"}, actor: user, tenant: tenant_id)
 ```
+
+#### Multi-Tenancy: Two Approaches
+
+| Approach | Use When |
+|----------|----------|
+| `^tenant()` | Using Ash's multi-tenancy features, tenant can change per-request |
+| `^actor(:tenant_id)` | Tenant is fixed per user, simpler setup |
+
+**Option 1: `^tenant()` - Context-based (Recommended)**
+
+Uses Ash's built-in tenant context, passed via query/changeset options:
+
+```elixir
+ash_grant do
+  scope :same_tenant, expr(tenant_id == ^tenant())
+end
+
+# Usage - tenant comes from Ash context
+Post |> Ash.read!(actor: user, tenant: "acme_corp")
+```
+
+**Option 2: `^actor(:tenant_id)` - Actor-based**
+
+Uses a tenant_id field stored on the actor:
+
+```elixir
+ash_grant do
+  scope :same_tenant, expr(tenant_id == ^actor(:tenant_id))
+end
+
+# Usage - tenant comes from actor struct
+actor = %User{id: 1, tenant_id: "acme_corp"}
+Post |> Ash.read!(actor: actor)
+```
+
+> **Warning:** Don't mix approaches in the same resource. Pick one and be consistent.
 
 **Key points:**
 - Use `^tenant()` to reference the current tenant from query/changeset context
@@ -585,6 +749,58 @@ ash_grant do
   scope_resolver MyApp.ScopeResolver  # Deprecated
 end
 ```
+
+#### Scope Resolution Priority
+
+When both inline scopes and `scope_resolver` are configured:
+
+1. **Inline scope DSL** is checked first
+2. **scope_resolver** is used as fallback for scopes not defined inline
+3. Error is raised if scope is found in neither
+
+```elixir
+ash_grant do
+  resolver MyApp.PermissionResolver
+  scope_resolver MyApp.LegacyScopeResolver  # Fallback only
+
+  # These take priority over scope_resolver
+  scope :all, true
+  scope :own, expr(author_id == ^actor(:id))
+  # :legacy_scope will use scope_resolver
+end
+```
+
+> **Note:** `scope_resolver` is deprecated. Migrate all scopes to inline definitions.
+
+### Combining default_policies with Custom Policies
+
+`default_policies` **adds** policies, it doesn't replace existing ones.
+You can combine them:
+
+```elixir
+ash_grant do
+  resolver MyApp.PermissionResolver
+  default_policies true  # Adds filter_check for read, check for write
+end
+
+policies do
+  # This bypass runs BEFORE the default policies
+  bypass actor_attribute_equals(:role, :admin) do
+    authorize_if always()
+  end
+
+  # You can add more custom policies too
+  policy action(:special_action) do
+    authorize_if MyCustomCheck
+  end
+end
+```
+
+**Evaluation order:**
+
+1. Bypass policies (if any)
+2. Custom policies defined in `policies do`
+3. Default policies from `default_policies: true`
 
 ## Architecture
 
