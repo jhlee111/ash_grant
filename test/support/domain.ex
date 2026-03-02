@@ -40,5 +40,10 @@ defmodule AshGrant.Test.Domain do
 
     # Field masking test resource
     resource(AshGrant.Test.MaskedRecord)
+
+    # Bulk operations test resources (exists() scope crash fix)
+    resource(AshGrant.Test.BulkTeam)
+    resource(AshGrant.Test.BulkMembership)
+    resource(AshGrant.Test.BulkItem)
   end
 end

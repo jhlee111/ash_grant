@@ -249,6 +249,15 @@ defmodule AshGrant do
   - `filter_check/1` - For read actions (returns filter expression)
   - `check/1` - For write actions (returns true/false)
 
+  > #### `exists()` scopes and write actions {: .warning}
+  >
+  > Scopes using `exists()` are only fully enforced for read actions, where
+  > `FilterCheck` converts them to SQL EXISTS subqueries. For write actions,
+  > `Check` evaluates scopes in-memory and cannot resolve `exists()` — the
+  > relational condition is replaced with `true`. Attribute-based conditions
+  > in the same scope are still checked. A compile-time warning is emitted
+  > for affected scopes. See `AshGrant.Check` for details.
+
   ## DSL Configuration
 
       ash_grant do

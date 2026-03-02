@@ -592,6 +592,33 @@ Post |> Ash.read!(actor: actor)
 - Scope inheritance works with tenant scopes (e.g., `[:same_tenant]`)
 - Both `filter_check` (reads) and `check` (writes) properly evaluate tenant scopes
 
+### Relational Scopes (`exists()`)
+
+You can use `exists()` in scope expressions for relationship-based filtering:
+
+```elixir
+ash_grant do
+  scope :team_member, expr(exists(team.memberships, user_id == ^actor(:id)))
+  scope :own_in_team, expr(author_id == ^actor(:id) and exists(team.memberships, user_id == ^actor(:id)))
+end
+```
+
+> **Important: `exists()` scopes and write actions**
+>
+> `exists()` is only fully enforced for **read** actions, where `FilterCheck` converts it
+> to a SQL EXISTS subquery. For **write** actions (create, update, destroy), `Check`
+> evaluates scopes in-memory and cannot resolve `exists()` — the relational condition
+> is replaced with `true`. Attribute-based conditions in the same scope are still checked.
+>
+> For example, with `expr(author_id == ^actor(:id) and exists(team.memberships, ...))`:
+> - **Read**: Both `author_id` check and `exists()` are enforced as SQL
+> - **Write**: Only `author_id` check is enforced; `exists()` is treated as `true`
+>
+> A compile-time warning is emitted when `exists()` scopes are detected on resources
+> with write policies enabled. If you need relational authorization for writes, use a
+> custom `Ash.Policy.Check` that queries the database, or move the check to a
+> change/validation on the action.
+
 ### Business Scope Examples
 
 AshGrant supports a wide variety of business scenarios. Here are common patterns:
@@ -790,7 +817,8 @@ field_group :sensitive, [:public], [:phone, :address],
 
 ### `filter_check/1` - For Read Actions
 
-Returns a filter expression that limits query results to accessible records:
+Returns a filter expression that limits query results to accessible records.
+All scope types including `exists()` are fully supported (converted to SQL).
 
 ```elixir
 policy action_type(:read) do
@@ -800,7 +828,12 @@ end
 
 ### `check/1` - For Write Actions
 
-Returns `true` or `false` based on whether the actor has permission:
+Returns `true` or `false` based on whether the actor has permission.
+Scopes are evaluated in-memory against the target record or changeset attributes.
+
+> **Note:** Scopes using `exists()` cannot be evaluated in-memory — the relational
+> condition is replaced with `true`. Attribute-based conditions are still enforced.
+> See [Relational Scopes](#relational-scopes-exists) for details.
 
 ```elixir
 policy action(:destroy) do

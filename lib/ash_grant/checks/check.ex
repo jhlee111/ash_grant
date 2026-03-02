@@ -70,6 +70,31 @@ defmodule AshGrant.Check do
   - A "virtual record" is built from the changeset attributes
   - The scope filter is evaluated against this virtual record
 
+  ## Relational Scopes (`exists()`) Limitation
+
+  Scopes using `exists()` (e.g., `expr(exists(team.memberships, user_id == ^actor(:id)))`)
+  cannot be fully evaluated in-memory for write actions. The `exists()` condition
+  requires database queries (SQL EXISTS subquery) which are not available during
+  in-memory evaluation.
+
+  **Behavior:**
+  - `exists()` nodes are replaced with `true` before in-memory evaluation
+  - Attribute-based conditions in the same scope are still enforced
+  - A compile-time warning is emitted when `exists()` scopes are detected
+    with write policies (see `AshGrant.Transformers.ValidateScopes`)
+
+  **Example:** For a mixed scope like
+  `expr(author_id == ^actor(:id) and exists(team.memberships, user_id == ^actor(:id)))`:
+  - The `author_id == ^actor(:id)` check is preserved and enforced
+  - The `exists(...)` condition is treated as `true` (not enforced)
+
+  For read actions, `exists()` works correctly via `AshGrant.FilterCheck`,
+  which converts it to a SQL EXISTS subquery in the database query.
+
+  If you need relational authorization for write actions, consider:
+  - Using a custom `Ash.Policy.Check` that queries the database
+  - Moving the relational check to a change or validation on the action
+
   ## Examples
 
   ### Basic Usage
@@ -369,13 +394,33 @@ defmodule AshGrant.Check do
     actor = context[:actor]
     tenant = context[:tenant]
 
-    case Ash.Expr.eval(filter, record: record, actor: actor, tenant: tenant) do
+    # Replace exists() nodes with true before in-memory evaluation.
+    # Ash.Expr.eval cannot resolve exists() in-memory (requires DB queries).
+    # - For create: exists() is meaningless (record doesn't exist yet)
+    # - For update/destroy: exists() requires data layer queries that can't run in-memory
+    # Attribute-based checks (e.g., author_id == ^actor(:id)) are preserved.
+    simplified = simplify_exists_for_eval(filter)
+
+    case Ash.Expr.eval(simplified, record: record, actor: actor, tenant: tenant) do
       {:ok, true} -> true
       {:ok, false} -> false
       {:ok, _other} -> true
       :unknown -> fallback_evaluation(record, filter, context)
       {:error, _} -> fallback_evaluation(record, filter, context)
     end
+  end
+
+  # Replace exists() nodes with true for in-memory evaluation.
+  # Ash.Expr.eval cannot resolve exists() without DB queries, causing a crash:
+  # `nil.persisted(:relationships_by_name)` (ArgumentError)
+  defp simplify_exists_for_eval(true), do: true
+  defp simplify_exists_for_eval(false), do: false
+
+  defp simplify_exists_for_eval(filter) do
+    Ash.Filter.map(filter, fn
+      %Ash.Query.Exists{} -> true
+      other -> other
+    end)
   end
 
   # Fallback for cases where Ash.Expr.eval returns :unknown or errors
