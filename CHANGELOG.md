@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-01
+
+### Fixed
+
+- **Bulk operations crash with `exists()` scopes**: `Ash.bulk_create/4` (and bulk_update/bulk_destroy) crashed with `nil.persisted(:relationships_by_name)` when the resource had an `exists()` scope expression. The fix replaces `exists()` nodes with `true` before in-memory evaluation. Attribute-based conditions in the same scope are still enforced. (#23)
+
+### Added
+
+- **Compile-time warning for `exists()` scopes**: Resources with `default_policies` including write actions now emit a warning when scopes contain `exists()`, informing users that the relational condition is not enforced for writes
+- **Documentation**: Added "Relational Scopes" section to README and moduledocs explaining the `exists()` limitation for write actions
+
 ## [0.6.0] - 2026-02-19
 
 ### Added
@@ -295,7 +306,8 @@ end
 | `AshGrant.Check` | SimpleCheck for write actions |
 | `AshGrant.FilterCheck` | FilterCheck for read actions |
 
-[Unreleased]: https://github.com/jhlee111/ash_grant/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/jhlee111/ash_grant/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/jhlee111/ash_grant/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.6.0
 [0.5.0]: https://github.com/jhlee111/ash_grant/releases/tag/v0.5.0
 [0.4.1]: https://github.com/jhlee111/ash_grant/releases/tag/v0.4.1
