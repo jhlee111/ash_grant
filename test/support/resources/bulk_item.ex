@@ -36,7 +36,6 @@ defmodule AshGrant.Test.BulkItem do
       end
     end)
 
-    default_policies(true)
     resource_name("item")
 
     scope(:all, true)
@@ -62,6 +61,16 @@ defmodule AshGrant.Test.BulkItem do
       public?(true)
       allow_nil?(true)
       attribute_writable?(true)
+    end
+  end
+
+  policies do
+    policy action_type(:read) do
+      authorize_if(AshGrant.filter_check())
+    end
+
+    policy action_type([:create, :update, :destroy]) do
+      authorize_if(AshGrant.check())
     end
   end
 
