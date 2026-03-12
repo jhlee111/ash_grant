@@ -34,8 +34,8 @@ defmodule AshGrant.Test.SensitiveRecord do
     scope(:all, true)
 
     field_group(:public, [:name, :department, :position])
-    field_group(:sensitive, [:public], [:phone, :address])
-    field_group(:confidential, [:sensitive], [:salary, :email])
+    field_group(:sensitive, [:phone, :address], inherits: [:public])
+    field_group(:confidential, [:salary, :email], inherits: [:sensitive])
   end
 
   attributes do

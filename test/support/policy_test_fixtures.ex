@@ -248,7 +248,7 @@ defmodule AshGrant.PolicyTest.Fixtures.FieldVisibilityTest do
 
   resource(AshGrant.Test.ExceptRecord)
 
-  # Actor with :public field_group ([:*] except [:salary, :ssn])
+  # Actor with :public field_group (:all except [:salary, :ssn])
   actor(:public_viewer, %{permissions: ["exceptrecord:*:read:all:public"]})
   # Actor with :full field_group (inherits :public, adds [:salary, :ssn])
   actor(:full_viewer, %{permissions: ["exceptrecord:*:read:all:full"]})
@@ -285,7 +285,7 @@ defmodule AshGrant.PolicyTest.Fixtures.ExceptFieldGroupTest do
 
   resource(AshGrant.Test.ExceptRecord)
 
-  # Actor with :public field_group ([:*] except [:salary, :ssn])
+  # Actor with :public field_group (:all except [:salary, :ssn])
   actor(:public_viewer, %{permissions: ["exceptrecord:*:read:all:public"]})
   # Actor with :full field_group (inherits :public, adds [:salary, :ssn])
   actor(:full_viewer, %{permissions: ["exceptrecord:*:read:all:full"]})

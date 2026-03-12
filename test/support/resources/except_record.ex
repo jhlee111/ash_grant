@@ -2,14 +2,14 @@ defmodule AshGrant.Test.ExceptRecord do
   @moduledoc """
   Test resource for field_group `except` (blacklist) option.
 
-  Uses ETS data layer and defines field groups using the `[:*]` wildcard
+  Uses ETS data layer and defines field groups using `:all`
   with `except` to test the blacklist mode.
 
   ## Field Groups
 
   | Group | Definition | Resolved Fields |
   |-------|-----------|-----------------|
-  | :public | `[:*], except: [:salary, :ssn]` | id, name, department, position, email, phone, address |
+  | :public | `:all, except: [:salary, :ssn]` | id, name, department, position, email, phone, address |
   | :full | inherits :public, adds [:salary, :ssn] | all fields |
   """
   use Ash.Resource,
@@ -32,8 +32,8 @@ defmodule AshGrant.Test.ExceptRecord do
 
     scope(:all, true)
 
-    field_group(:public, [], [:*], except: [:salary, :ssn])
-    field_group(:full, [:public], [:salary, :ssn])
+    field_group(:public, :all, except: [:salary, :ssn])
+    field_group(:full, [:salary, :ssn], inherits: [:public])
   end
 
   attributes do

@@ -225,30 +225,31 @@ defmodule AshGrant.Dsl do
         # Root group — no inheritance
         field_group :public, [:name, :department, :position]
 
+        # All fields
+        field_group :admin, :all
+
+        # All fields except (blacklist)
+        field_group :internal, :all, except: [:ssn, :tax_code]
+
         # Inherits from :public, adds more fields
-        field_group :sensitive, [:public], [:phone, :address]
+        field_group :sensitive, [:phone, :address], inherits: [:public]
 
         # With masking
-        field_group :sensitive, [:public], [:phone, :address] do
+        field_group :sensitive, [:phone, :address], inherits: [:public] do
           mask [:phone, :address], with: &MyApp.Masker.mask/2
         end
 
-        # Wildcard — all resource attributes
-        field_group :everything, [:*]
-
-        # Blacklist — all attributes except specified ones
-        field_group :public, [:*], except: [:salary, :ssn]
-
-        # Blacklist with inheritance
-        field_group :sensitive, [:public], [:*], except: [:salary]
+        # Inherits + all except
+        field_group :editor, :all, except: [:admin_notes], inherits: [:public]
     """,
     examples: [
       "field_group :public, [:name, :department]",
-      "field_group :sensitive, [:public], [:phone, :address]",
-      "field_group :public, [:*], except: [:salary, :ssn]"
+      "field_group :sensitive, [:phone, :address], inherits: [:public]",
+      "field_group :admin, :all",
+      "field_group :public, :all, except: [:salary, :ssn]"
     ],
     target: AshGrant.Dsl.FieldGroup,
-    args: [:name, {:optional, :inherits}, :fields],
+    args: [:name, :fields],
     schema: [
       name: [
         type: :atom,
@@ -260,9 +261,9 @@ defmodule AshGrant.Dsl do
         doc: "List of parent field groups to inherit from"
       ],
       fields: [
-        type: {:list, :atom},
+        type: {:or, [{:in, [:all]}, {:list, :atom}]},
         required: true,
-        doc: "List of field atoms accessible at this level"
+        doc: "List of field atoms accessible at this level, or `:all` for all resource attributes"
       ],
       mask: [
         type: {:list, :atom},
@@ -275,9 +276,9 @@ defmodule AshGrant.Dsl do
       except: [
         type: {:list, :atom},
         doc:
-          "Fields to exclude when using `[:*]` wildcard. " <>
-            "Only valid when `fields` is `[:*]`. " <>
-            "The transformer resolves `[:*]` minus `except` to concrete field names."
+          "Fields to exclude when `fields` is `:all`. " <>
+            "Only valid when `fields` is `:all`. " <>
+            "The transformer resolves `:all` minus `except` to concrete field names."
       ],
       description: [
         type: :string,
@@ -443,9 +444,9 @@ defmodule AshGrant.Dsl.FieldGroup do
   ## Fields
 
   - `:name` - The atom name of the field group (e.g., `:public`, `:sensitive`)
-  - `:fields` - List of field atoms included in this group (or `[:*]` for all attributes)
+  - `:fields` - `:all` or list of field atoms included in this group (resolved to `[atom()]` by transformer)
   - `:inherits` - Optional list of parent field group names to inherit fields from
-  - `:except` - Optional list of fields to exclude when using `[:*]` wildcard
+  - `:except` - Optional list of fields to exclude when `fields` is `:all`
   - `:mask` - Optional list of fields to mask (return masked values instead of hiding)
   - `:mask_with` - Optional 2-arity function `(value, field_name) -> masked_value`
   - `:description` - Optional human-readable description
@@ -464,7 +465,7 @@ defmodule AshGrant.Dsl.FieldGroup do
 
   @type t :: %__MODULE__{
           name: atom(),
-          fields: [atom()],
+          fields: :all | [atom()],
           inherits: [atom()] | nil,
           except: [atom()] | nil,
           mask: [atom()] | nil,

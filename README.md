@@ -728,16 +728,16 @@ ash_grant do
   field_group :public, [:name, :department, :position]
 
   # Inherits all fields from :public, adds phone and address
-  field_group :sensitive, [:public], [:phone, :address]
+  field_group :sensitive, [:phone, :address], inherits: [:public]
 
   # Inherits all fields from :sensitive (which includes :public)
-  field_group :confidential, [:sensitive], [:salary, :email]
+  field_group :confidential, [:salary, :email], inherits: [:sensitive]
 end
 ```
 
 #### Blacklist Mode (`except`)
 
-When a resource has many attributes, use `[:*]` with `except` to exclude specific fields instead of listing all visible ones:
+When a resource has many attributes, use `:all` with `except` to exclude specific fields instead of listing all visible ones:
 
 ```elixir
 ash_grant do
@@ -745,14 +745,14 @@ ash_grant do
   scope :all, true
 
   # All attributes except salary and ssn
-  field_group :public, [], [:*], except: [:salary, :ssn]
+  field_group :public, :all, except: [:salary, :ssn]
 
   # Child group adds back the excluded fields
-  field_group :full, [:public], [:salary, :ssn]
+  field_group :full, [:salary, :ssn], inherits: [:public]
 end
 ```
 
-`[:*]` expands to all resource attributes at compile time. `except` removes fields from that list. `[:*]` without `except` is also valid (expands to all attributes).
+`:all` expands to all resource attributes at compile time. `except` removes fields from that list. `:all` without `except` is also valid (expands to all attributes).
 
 ### Permission Strings with Field Groups
 
@@ -800,16 +800,16 @@ ash_grant do
   scope :all, true
 
   field_group :public, [:name, :department, :position]
-  field_group :sensitive, [:public], [:phone, :address]
-  field_group :confidential, [:sensitive], [:salary, :email]
+  field_group :sensitive, [:phone, :address], inherits: [:public]
+  field_group :confidential, [:salary, :email], inherits: [:sensitive]
 end
 ```
 
 This also works with blacklist mode:
 
 ```elixir
-field_group :public, [], [:*], except: [:salary, :ssn]
-field_group :full, [:public], [:salary, :ssn]
+field_group :public, :all, except: [:salary, :ssn]
+field_group :full, [:salary, :ssn], inherits: [:public]
 ```
 
 Auto-generates equivalent field policies with a catch-all `field_policy :*` that allows non-grouped fields.
@@ -831,7 +831,8 @@ An actor with `confidential` permission can see everything that `sensitive` and 
 Instead of hiding fields entirely, you can show masked values:
 
 ```elixir
-field_group :sensitive, [:public], [:phone, :address],
+field_group :sensitive, [:phone, :address],
+  inherits: [:public],
   mask: [:phone, :address],
   mask_with: fn value, _field ->
     if is_binary(value), do: String.replace(value, ~r/./, "*"), else: "***"

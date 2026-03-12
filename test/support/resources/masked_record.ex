@@ -46,12 +46,13 @@ defmodule AshGrant.Test.MaskedRecord do
 
     field_group(:public, [:name, :department])
 
-    field_group(:sensitive, [:public], [:phone, :address],
+    field_group(:sensitive, [:phone, :address],
+      inherits: [:public],
       mask: [:phone, :address],
       mask_with: &AshGrant.Test.MaskHelpers.mask_string/2
     )
 
-    field_group(:confidential, [:sensitive], [:salary, :email])
+    field_group(:confidential, [:salary, :email], inherits: [:sensitive])
   end
 
   attributes do

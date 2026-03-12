@@ -271,10 +271,10 @@ defmodule AshGrant do
 
         # Field groups (whitelist)
         field_group :public, [:name, :department]
-        field_group :sensitive, [:public], [:phone, :address]
+        field_group :sensitive, [:phone, :address], inherits: [:public]
 
         # Field groups (blacklist with except)
-        # field_group :public, [], [:*], except: [:salary, :ssn]
+        # field_group :public, :all, except: [:salary, :ssn]
       end
 
   | Option | Type | Description |
@@ -303,7 +303,7 @@ defmodule AshGrant do
     sections: AshGrant.Dsl.sections(),
     transformers: [
       AshGrant.Transformers.ValidateScopes,
-      AshGrant.Transformers.ResolveFieldGroupExcept,
+      AshGrant.Transformers.ResolveFieldGroupFields,
       AshGrant.Transformers.ValidateFieldGroups,
       AshGrant.Transformers.AddDefaultPolicies,
       AshGrant.Transformers.AddFieldPolicies,

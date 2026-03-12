@@ -3,10 +3,10 @@ defmodule AshGrant.FieldGroupExceptTest do
   Tests for the field_group `except` (blacklist) option.
 
   Covers:
-  - [:*] resolves to all resource attributes
-  - [:*] with except excludes specified fields
+  - :all resolves to all resource attributes
+  - :all with except excludes specified fields
   - Child group inheriting from except parent and adding back excluded fields
-  - except without [:*] raises compile error
+  - except without :all raises compile error
   - mask field in except raises compile error
   - except field not in resource attributes raises compile error
   - Integration: actor with public permission can't see excepted fields
@@ -15,12 +15,12 @@ defmodule AshGrant.FieldGroupExceptTest do
 
   alias AshGrant.Test.ExceptRecord
 
-  describe "[:*] wildcard resolution" do
-    test "ExceptRecord compiles with [:*] and except option" do
+  describe ":all wildcard resolution" do
+    test "ExceptRecord compiles with :all and except option" do
       assert Code.ensure_loaded?(ExceptRecord)
     end
 
-    test "[:*] with except resolves to all attributes minus excepted fields" do
+    test ":all with except resolves to all attributes minus excepted fields" do
       fg = AshGrant.Info.get_field_group(ExceptRecord, :public)
 
       assert fg != nil
@@ -59,14 +59,14 @@ defmodule AshGrant.FieldGroupExceptTest do
       assert :ssn in resolved_fields
     end
 
-    test "id attribute is included in [:*] resolution" do
+    test "id attribute is included in :all resolution" do
       fg = AshGrant.Info.get_field_group(ExceptRecord, :public)
       assert :id in fg.fields
     end
   end
 
   describe "compile-time validation errors" do
-    test "except without [:*] raises compile error" do
+    test "except without :all raises compile error" do
       assert_raise Spark.Error.DslError, ~r/only valid when/, fn ->
         defmodule ExceptWithoutWildcard do
           use Ash.Resource,
@@ -82,7 +82,7 @@ defmodule AshGrant.FieldGroupExceptTest do
             resource_name("exc_no_wildcard")
             scope(:all, true)
 
-            field_group(:bad, [], [:name, :email], except: [:salary])
+            field_group(:bad, [:name, :email], except: [:salary])
           end
 
           attributes do
@@ -115,7 +115,7 @@ defmodule AshGrant.FieldGroupExceptTest do
             resource_name("exc_bad_field")
             scope(:all, true)
 
-            field_group(:bad, [], [:*], except: [:nonexistent_field])
+            field_group(:bad, :all, except: [:nonexistent_field])
           end
 
           attributes do
@@ -146,7 +146,7 @@ defmodule AshGrant.FieldGroupExceptTest do
             resource_name("exc_mask_conflict")
             scope(:all, true)
 
-            field_group(:bad, [], [:*],
+            field_group(:bad, :all,
               except: [:salary],
               mask: [:salary],
               mask_with: &AshGrant.Test.MaskHelpers.mask_string/2
@@ -167,9 +167,9 @@ defmodule AshGrant.FieldGroupExceptTest do
     end
   end
 
-  describe "[:*] without except" do
-    test "[:*] without except resolves to all attributes" do
-      defmodule WildcardAll do
+  describe ":all without except" do
+    test ":all without except resolves to all attributes" do
+      defmodule AllNoExcept do
         use Ash.Resource,
           domain: AshGrant.Test.Domain,
           data_layer: Ash.DataLayer.Ets,
@@ -181,10 +181,10 @@ defmodule AshGrant.FieldGroupExceptTest do
           resolver(fn _, _ -> [] end)
           default_policies(true)
           default_field_policies(true)
-          resource_name("wildcard_all")
+          resource_name("all_no_except")
           scope(:all, true)
 
-          field_group(:everything, [], [:*])
+          field_group(:everything, :all)
         end
 
         attributes do
@@ -199,7 +199,7 @@ defmodule AshGrant.FieldGroupExceptTest do
         end
       end
 
-      fg = AshGrant.Info.get_field_group(WildcardAll, :everything)
+      fg = AshGrant.Info.get_field_group(AllNoExcept, :everything)
       assert :id in fg.fields
       assert :name in fg.fields
       assert :email in fg.fields

@@ -14,8 +14,8 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
   For field groups:
 
       field_group :public, [:name, :department]
-      field_group :sensitive, [:public], [:phone, :address]
-      field_group :confidential, [:sensitive], [:salary, :email]
+      field_group :sensitive, [:phone, :address], inherits: [:public]
+      field_group :confidential, [:salary, :email], inherits: [:sensitive]
 
   Generates:
 

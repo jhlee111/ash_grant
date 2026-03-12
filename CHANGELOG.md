@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- **`field_group` DSL redesign** (#40): Removed positional argument ambiguity between `inherits` and `fields`
+  - **BREAKING: `inherits` is now keyword-only**: `field_group :name, [:parents], [:fields]` no longer works. Use `field_group :name, [:fields], inherits: [:parents]` instead.
+  - **BREAKING: `[:*]` replaced by `:all`**: Use `field_group :name, :all` instead of `field_group :name, [:*]` (deprecated `[:*]` still works with a warning, will be removed in v1.0.0)
+  - **New `:all` syntax**: `field_group :admin, :all` — all resource attributes
+  - **Blacklist mode**: `field_group :public, :all, except: [:salary, :ssn]`
+  - **Combined**: `field_group :editor, :all, except: [:admin_notes], inherits: [:base]`
+  - **Most common pattern unchanged**: `field_group :public, [:name, :department]` works as before
+
+#### Migration Guide
+
+```elixir
+# Before (v0.9.0)
+field_group :public, [], [:*], except: [:salary, :ssn]
+field_group :sensitive, [:public], [:phone, :address]
+field_group :confidential, [:sensitive], [:salary, :email]
+
+# After (v0.10.0)
+field_group :public, :all, except: [:salary, :ssn]
+field_group :sensitive, [:phone, :address], inherits: [:public]
+field_group :confidential, [:salary, :email], inherits: [:sensitive]
+```
+
+### Deprecated
+
+- **`[:*]` wildcard syntax**: Use `:all` instead. `[:*]` still works but emits a compile-time deprecation warning. Will be removed in v1.0.0.
+
 ## [0.9.0] - 2026-03-12
 
 ### Added

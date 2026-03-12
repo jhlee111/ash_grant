@@ -213,7 +213,7 @@ returns `false`, the child is also denied.
 
 ```elixir
 field_group :name, [:field1, :field2]
-field_group :name, [:parent_groups], [:field1, :field2]
+field_group :name, [:field1, :field2], inherits: [:parent_groups]
 ```
 
 Field groups define sets of fields for column-level read authorization.
@@ -223,8 +223,8 @@ ash_grant do
   resolver MyApp.PermissionResolver
 
   field_group :public, [:name, :department, :position]
-  field_group :sensitive, [:public], [:phone, :address]        # Inherits public
-  field_group :confidential, [:sensitive], [:salary, :ssn]     # Inherits sensitive
+  field_group :sensitive, [:phone, :address], inherits: [:public]          # Inherits public
+  field_group :confidential, [:salary, :ssn], inherits: [:sensitive]      # Inherits sensitive
 end
 ```
 
@@ -509,8 +509,8 @@ ash_grant do
   resolver MyApp.PermissionResolver
 
   field_group :public, [:name, :department]
-  field_group :sensitive, [:public], [:phone, :address]
-  field_group :confidential, [:sensitive], [:salary, :ssn]
+  field_group :sensitive, [:phone, :address], inherits: [:public]
+  field_group :confidential, [:salary, :ssn], inherits: [:sensitive]
 end
 
 field_policies do
@@ -538,8 +538,8 @@ ash_grant do
   default_field_policies true
 
   field_group :public, [:name, :department]
-  field_group :sensitive, [:public], [:phone, :address]
-  field_group :confidential, [:sensitive], [:salary, :ssn]
+  field_group :sensitive, [:phone, :address], inherits: [:public]
+  field_group :confidential, [:salary, :ssn], inherits: [:sensitive]
 end
 # field_policies block is generated automatically
 ```
