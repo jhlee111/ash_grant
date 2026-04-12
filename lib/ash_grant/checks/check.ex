@@ -691,13 +691,21 @@ defmodule AshGrant.Check do
     if context[:tenant], do: Keyword.put(opts, :tenant, context[:tenant]), else: opts
   end
 
-  # Resolve actor/tenant/context templates in an expression
+  # Resolve actor/tenant/context/arguments templates in an expression
   defp resolve_templates(filter, context) do
     Ash.Expr.fill_template(filter,
       actor: context[:actor],
       tenant: context[:tenant],
-      context: context[:query_context] || %{}
+      context: context[:query_context] || %{},
+      args: extract_arguments(context)
     )
+  end
+
+  defp extract_arguments(context) do
+    case context[:changeset] do
+      %{arguments: args} when is_map(args) -> args
+      _ -> %{}
+    end
   end
 
   # For belongs_to: source_attribute is the FK (e.g., :team_id)
@@ -808,9 +816,15 @@ defmodule AshGrant.Check do
     # Ash.Expr.eval cannot resolve exists() in-memory (requires DB queries).
     simplified = simplify_exists_for_eval(filter)
 
-    # Resolve actor/tenant/context templates to concrete values before eval,
-    # then pass resource: so Ash can hydrate attribute references.
-    filled = Ash.Expr.fill_template(simplified, actor: actor, tenant: tenant, context: %{})
+    # Resolve actor/tenant/context/arguments templates to concrete values before
+    # eval, then pass resource: so Ash can hydrate attribute references.
+    filled =
+      Ash.Expr.fill_template(simplified,
+        actor: actor,
+        tenant: tenant,
+        context: %{},
+        args: extract_arguments(context)
+      )
 
     case Ash.Expr.eval(filled, record: record, resource: resource, actor: actor, tenant: tenant) do
       {:ok, true} -> true
