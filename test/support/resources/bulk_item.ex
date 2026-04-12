@@ -15,6 +15,8 @@ defmodule AshGrant.Test.BulkItem do
   | :team_member | exists(team.memberships, user_id == ^actor(:id)) |
   | :own_in_team | author_id == ^actor(:id) AND exists(team.memberships, ...) |
   | :named_team | team.name == ^actor(:team_name) (dot-path) |
+  | :team_member_and_own | inherits :team_member + author_id == ^actor(:id) |
+  | :named_team_and_own | inherits :named_team + author_id == ^actor(:id) |
   """
   use Ash.Resource,
     domain: AshGrant.Test.Domain,
@@ -50,6 +52,13 @@ defmodule AshGrant.Test.BulkItem do
     )
 
     scope(:named_team, [], expr(team.name == ^actor(:team_name)))
+
+    # Composite scopes: inherit from a relational parent + add direct-attribute check.
+    # These reproduce a bug where should_use_db_query? checks only the child's own
+    # filter (no relationship ref) instead of the resolved filter (with inherited
+    # relationship refs), causing in-memory eval to fail on create actions.
+    scope(:team_member_and_own, [:team_member], expr(author_id == ^actor(:id)))
+    scope(:named_team_and_own, [:named_team], expr(author_id == ^actor(:id)))
   end
 
   attributes do

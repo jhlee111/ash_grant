@@ -483,10 +483,10 @@ defmodule AshGrant.Check do
   # Used when: scope has relationship references, no explicit write: option, and resource has a data layer.
   defp should_use_db_query?(nil, _filter, _resource), do: false
 
-  defp should_use_db_query?(scope_def, _filter, resource) do
+  defp should_use_db_query?(scope_def, filter, resource) do
     is_nil(scope_def.write) and
       has_data_layer?(resource) and
-      contains_relationship_reference?(scope_def.filter)
+      contains_relationship_reference?(filter)
   end
 
   defp has_data_layer?(resource) do
@@ -495,9 +495,13 @@ defmodule AshGrant.Check do
     _ -> false
   end
 
-  # Check if an Ash expression contains relationship references (exists() or dot-paths)
+  # Check if an Ash expression contains relationship references (exists() or dot-paths).
+  # The filter at this stage is a mix of hydrated (%Ref{}, %Exists{}) and unhydrated
+  # (%Ash.Query.Call{}) nodes, so we walk the AST manually rather than using
+  # Ash.Filter.relationship_paths/4 (which assumes a fully hydrated filter).
   defp contains_relationship_reference?(true), do: false
   defp contains_relationship_reference?(false), do: false
+  defp contains_relationship_reference?(nil), do: false
   defp contains_relationship_reference?(%Ash.Query.Exists{}), do: true
 
   defp contains_relationship_reference?(%Ash.Query.Ref{relationship_path: p}) when p != [],
@@ -514,8 +518,19 @@ defmodule AshGrant.Check do
     Enum.any?(args, &contains_relationship_reference?/1)
   end
 
+  # Hydrated Ash function structs (if/is_nil/contains/fragment/etc.) carry args in :arguments
+  defp contains_relationship_reference?(%{__function__?: true, arguments: arguments}) do
+    Enum.any?(arguments, &contains_relationship_reference?/1)
+  end
+
+  # Operators and other binary-shape structs
   defp contains_relationship_reference?(%{__struct__: _, left: l, right: r}) do
     contains_relationship_reference?(l) or contains_relationship_reference?(r)
+  end
+
+  # Lists appear as RHS of `in` operator and function arguments
+  defp contains_relationship_reference?(list) when is_list(list) do
+    Enum.any?(list, &contains_relationship_reference?/1)
   end
 
   defp contains_relationship_reference?(_), do: false
