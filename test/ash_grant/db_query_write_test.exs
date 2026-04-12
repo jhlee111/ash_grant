@@ -504,4 +504,131 @@ defmodule AshGrant.DbQueryWriteTest do
       assert :ok = result
     end
   end
+
+  # ============================================================
+  # BUG: Composite scopes inheriting relational parents on CREATE
+  #
+  # should_use_db_query?/3 checks scope_def.filter (the CHILD's own filter)
+  # instead of the fully resolved filter (with inherited parent filters).
+  #
+  # For composite scope :team_member_and_own (inherits :team_member):
+  #   - scope_def.filter = expr(author_id == ^actor(:id))  ← no relationship ref
+  #   - resolved filter  = author_id == ^actor(:id) AND exists(team.memberships, ...)
+  #
+  # Because scope_def.filter has no relationship ref, should_use_db_query?
+  # returns false. The resolved filter (with exists()) is then evaluated
+  # in-memory on a virtual record that has no loaded relationships → Forbidden.
+  # ============================================================
+
+  describe "BUG: composite scope inheriting relational parent on create" do
+    test "create with composite scope (inherits exists()) and valid conditions succeeds" do
+      actor_id = Ash.UUID.generate()
+      actor = actor_with_perms(["item:*:create:team_member_and_own"], actor_id)
+
+      team = create_team!("Composite Create Team")
+      create_membership!(team, actor_id)
+
+      # Both conditions should be met:
+      # - :team_member parent: actor has membership in team
+      # - :team_member_and_own child: author_id == actor.id
+      result =
+        BulkItem
+        |> Ash.Changeset.for_create(:create, %{
+          title: "Composite Scope Item",
+          author_id: actor_id,
+          team_id: team.id
+        })
+        |> Ash.create(actor: actor)
+
+      assert {:ok, item} = result
+      assert item.title == "Composite Scope Item"
+    end
+
+    test "create with composite scope (inherits exists()) rejects when parent condition fails" do
+      actor_id = Ash.UUID.generate()
+      actor = actor_with_perms(["item:*:create:team_member_and_own"], actor_id)
+
+      team = create_team!("No Member Composite Team")
+      # No membership created — parent :team_member condition fails
+
+      result =
+        BulkItem
+        |> Ash.Changeset.for_create(:create, %{
+          title: "Should Fail",
+          author_id: actor_id,
+          team_id: team.id
+        })
+        |> Ash.create(actor: actor)
+
+      assert {:error, %Ash.Error.Forbidden{}} = result
+    end
+
+    test "create with composite scope (inherits exists()) rejects when child condition fails" do
+      actor_id = Ash.UUID.generate()
+      other_id = Ash.UUID.generate()
+      actor = actor_with_perms(["item:*:create:team_member_and_own"], actor_id)
+
+      team = create_team!("Composite Child Fail Team")
+      create_membership!(team, actor_id)
+
+      # Membership exists but author_id doesn't match actor
+      result =
+        BulkItem
+        |> Ash.Changeset.for_create(:create, %{
+          title: "Wrong Author",
+          author_id: other_id,
+          team_id: team.id
+        })
+        |> Ash.create(actor: actor)
+
+      assert {:error, %Ash.Error.Forbidden{}} = result
+    end
+
+    test "create with composite scope (inherits dot-path) and valid conditions succeeds" do
+      actor_id = Ash.UUID.generate()
+
+      actor =
+        actor_with_perms(["item:*:create:named_team_and_own"], actor_id)
+        |> Map.put(:team_name, "Composite Dot Path")
+
+      team = create_team!("Composite Dot Path")
+
+      # Both conditions should be met:
+      # - :named_team parent: team.name == actor.team_name
+      # - :named_team_and_own child: author_id == actor.id
+      result =
+        BulkItem
+        |> Ash.Changeset.for_create(:create, %{
+          title: "Composite Dot Path Item",
+          author_id: actor_id,
+          team_id: team.id
+        })
+        |> Ash.create(actor: actor)
+
+      assert {:ok, item} = result
+      assert item.title == "Composite Dot Path Item"
+    end
+
+    test "update with composite scope (inherits exists()) and valid conditions succeeds" do
+      actor_id = Ash.UUID.generate()
+
+      actor =
+        actor_with_perms(
+          ["item:*:update:team_member_and_own", "item:*:read:always"],
+          actor_id
+        )
+
+      team = create_team!("Composite Update Team")
+      create_membership!(team, actor_id)
+      item = create_item!(%{title: "Update Me", author_id: actor_id, team_id: team.id})
+
+      result =
+        item
+        |> Ash.Changeset.for_update(:update, %{title: "Updated Composite"})
+        |> Ash.update(actor: actor)
+
+      assert {:ok, updated} = result
+      assert updated.title == "Updated Composite"
+    end
+  end
 end
