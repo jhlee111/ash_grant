@@ -30,13 +30,13 @@ AshGrant only needs a resolver that returns permission strings for a given actor
 ### RBAC permissions (instance_id = `*`)
 
 ```elixir
-"blog:*:read:all"           # Read all blogs
+"blog:*:read:always"           # Read all blogs
 "blog:*:read:published"     # Read only published blogs
 "blog:*:update:own"         # Update own blogs only
-"blog:*:*:all"              # All actions on all blogs
-"*:*:read:all"              # Read all resources
-"blog:*:read*:all"          # All read-type actions (read, read_all, etc.)
-"!blog:*:delete:all"        # DENY delete on all blogs
+"blog:*:*:always"              # All actions on all blogs
+"*:*:read:always"              # Read all resources
+"blog:*:read*:always"          # All read-type actions (read, read_all, etc.)
+"!blog:*:delete:always"        # DENY delete on all blogs
 ```
 
 ### Instance permissions (specific instance_id)
@@ -54,9 +54,9 @@ Instance permissions with a scope name impose an attribute-based condition.
 ### Field-level permissions (5-part format)
 
 ```elixir
-"employee:*:read:all:public"       # See only public fields
-"employee:*:read:all:sensitive"    # See public + sensitive fields
-"employee:*:read:all:confidential" # See all fields including confidential
+"employee:*:read:always:public"       # See only public fields
+"employee:*:read:always:sensitive"    # See public + sensitive fields
+"employee:*:read:always:confidential" # See all fields including confidential
 ```
 
 When the 5th part is omitted (4-part format), all fields are visible.
@@ -78,7 +78,7 @@ defmodule MyApp.Blog.Post do
 
   ash_grant do
     resolver MyApp.PermissionResolver
-    scope :all, true
+    scope :always, true
     scope :own, expr(author_id == ^actor(:id))
   end
 end
@@ -91,7 +91,7 @@ ash_grant do
   resolver MyApp.PermissionResolver
   default_policies true  # Generates read + write policies automatically
 
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
 end
 # No policies block needed!
@@ -102,7 +102,7 @@ end
 ```elixir
 ash_grant do
   resolver MyApp.PermissionResolver
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
 end
 
@@ -136,7 +136,7 @@ AshGrant generates policy checks, but Ash must be told to enforce them.
 | Option                 | Type              | Required | Default | Description                                                  |
 |------------------------|-------------------|----------|---------|--------------------------------------------------------------|
 | `resolver`             | module or fun/2   | Yes      | —       | Resolves permissions for actors                              |
-| `default_policies`     | bool/atom         | No       | `false` | `true`, `:all`, `:read`, or `:write`                        |
+| `default_policies`     | bool/atom         | No       | `false` | `true`, `:always`, `:read`, or `:write`                        |
 | `default_field_policies`| boolean          | No       | `false` | Auto-generate `field_policies` from `field_group` definitions|
 | `resource_name`        | string            | No       | derived | Override resource name for permission matching               |
 | `instance_key`         | atom              | No       | `:id`   | Field to match instance permission IDs against               |
@@ -163,7 +163,7 @@ ash_grant do
   resolver MyApp.PermissionResolver
   default_policies true
 
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
 
   # Posts inherit Feed's instance permissions via :feed relationship
@@ -196,7 +196,7 @@ scope :name, filter_expression, write: write_expression
 ash_grant do
   resolver MyApp.PermissionResolver
 
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
   scope :published, expr(status == :published)
   scope :own_draft, [:own], expr(status == :draft)  # own AND draft
@@ -406,8 +406,8 @@ When both allow and deny rules match, **deny always wins**:
 
 ```elixir
 permissions = [
-  "blog:*:*:all",        # Allow all blog actions
-  "!blog:*:delete:all"   # Deny delete
+  "blog:*:*:always",        # Allow all blog actions
+  "!blog:*:delete:always"   # Deny delete
 ]
 
 # Result: read ✓, update ✓, delete ✗ (deny wins)
@@ -496,7 +496,7 @@ Always return an empty list `[]` for unauthenticated or unknown actors.
 |----------|-------------|--------------|
 | `false`  | No          | No           |
 | `true`   | Yes         | Yes          |
-| `:all`   | Yes         | Yes          |
+| `:always`   | Yes         | Yes          |
 | `:read`  | Yes         | No           |
 | `:write` | No          | Yes          |
 
@@ -544,7 +544,7 @@ ash_grant do
   resolver MyApp.PermissionResolver
   instance_key :feed_id  # "feed:feed_abc:read:" → WHERE feed_id IN ('feed_abc')
 
-  scope :all, true
+  scope :always, true
 end
 ```
 
@@ -557,7 +557,7 @@ ash_grant do
   resolver MyApp.PermissionResolver
   default_policies true
 
-  scope :all, true
+  scope :always, true
   scope_through :feed  # Posts where feed_id == "feed_abc" are now readable
 end
 ```
@@ -717,7 +717,7 @@ tests:
     actor:
       role: editor
       permissions:
-        - "post:*:read:all"
+        - "post:*:read:always"
     action: read
     expected: allow
 ```
@@ -738,16 +738,16 @@ policy action_type(:read) do
 end
 ```
 
-### Missing the `:all` scope
+### Missing the `:always` scope
 
-Every resource with AshGrant should define a `:all` scope. Without it,
-permissions like `"post:*:read:all"` will raise a runtime error because
-the scope `"all"` cannot be resolved.
+Every resource with AshGrant should define a `:always` scope. Without it,
+permissions like `"post:*:read:always"` will raise a runtime error because
+the scope `"always"` cannot be resolved.
 
 ```elixir
 ash_grant do
   resolver MyApp.PermissionResolver
-  scope :all, true  # Always include this
+  scope :always, true  # Always include this
   scope :own, expr(author_id == ^actor(:id))
 end
 ```
@@ -771,8 +771,8 @@ You cannot "override" a deny with a later allow.
 
 ```elixir
 # These are equivalent — deny ALWAYS wins
-["!post:*:delete:all", "post:*:*:all"]
-["post:*:*:all", "!post:*:delete:all"]
+["!post:*:delete:always", "post:*:*:always"]
+["post:*:*:always", "!post:*:delete:always"]
 ```
 
 ### Using wrong permission format for instances

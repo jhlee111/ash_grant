@@ -15,12 +15,12 @@ defmodule AshGrant.InfoTest do
 
     ash_grant do
       resolver(fn actor, _context ->
-        if actor, do: ["resource:*:read:all"], else: []
+        if actor, do: ["resource:*:read:always"], else: []
       end)
 
       resource_name("custom_resource")
 
-      scope(:all, true)
+      scope(:always, true)
       scope(:own, expr(owner_id == ^actor(:id)))
     end
 
@@ -52,7 +52,7 @@ defmodule AshGrant.InfoTest do
     @behaviour AshGrant.PermissionResolver
 
     @impl true
-    def resolve(_actor, _context), do: ["test:*:read:all"]
+    def resolve(_actor, _context), do: ["test:*:read:always"]
   end
 
   defmodule ModuleResolverResource do
@@ -112,7 +112,7 @@ defmodule AshGrant.InfoTest do
       assert length(scopes) == 2
 
       names = Enum.map(scopes, & &1.name)
-      assert :all in names
+      assert :always in names
       assert :own in names
     end
 
@@ -124,8 +124,8 @@ defmodule AshGrant.InfoTest do
 
   describe "get_scope/2" do
     test "returns scope by name" do
-      scope = Info.get_scope(FullConfigResource, :all)
-      assert scope.name == :all
+      scope = Info.get_scope(FullConfigResource, :always)
+      assert scope.name == :always
       assert scope.filter == true
     end
 
@@ -137,7 +137,7 @@ defmodule AshGrant.InfoTest do
 
   describe "resolve_scope_filter/3" do
     test "resolves boolean scope" do
-      filter = Info.resolve_scope_filter(FullConfigResource, :all, %{})
+      filter = Info.resolve_scope_filter(FullConfigResource, :always, %{})
       assert filter == true
     end
 

@@ -55,14 +55,14 @@ defprotocol AshGrant.Permissionable do
   ### Plain strings (backward compatible)
 
       def resolve(actor, _context) do
-        ["post:*:read:all", "post:*:update:own"]
+        ["post:*:read:always", "post:*:update:own"]
       end
 
   ### Mixed strings and PermissionInput
 
       def resolve(actor, _context) do
         [
-          "post:*:read:all",
+          "post:*:read:always",
           %AshGrant.PermissionInput{
             string: "post:*:update:own",
             description: "Edit own posts",
@@ -86,12 +86,12 @@ defprotocol AshGrant.Permissionable do
 
   ## Examples
 
-      iex> AshGrant.Permissionable.to_permission_input("post:*:read:all")
-      %AshGrant.PermissionInput{string: "post:*:read:all"}
+      iex> AshGrant.Permissionable.to_permission_input("post:*:read:always")
+      %AshGrant.PermissionInput{string: "post:*:read:always"}
 
-      iex> input = %AshGrant.PermissionInput{string: "post:*:read:all", description: "Read posts"}
+      iex> input = %AshGrant.PermissionInput{string: "post:*:read:always", description: "Read posts"}
       iex> AshGrant.Permissionable.to_permission_input(input)
-      %AshGrant.PermissionInput{string: "post:*:read:all", description: "Read posts"}
+      %AshGrant.PermissionInput{string: "post:*:read:always", description: "Read posts"}
 
   """
   @spec to_permission_input(t) :: AshGrant.PermissionInput.t()

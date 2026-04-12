@@ -10,7 +10,7 @@ AshGrant uses an Apache Shiro-inspired permission string format with deny-wins s
 
 | Component | Description | Examples |
 |-----------|-------------|----------|
-| `!` | Optional deny prefix | `!blog:*:delete:all` |
+| `!` | Optional deny prefix | `!blog:*:delete:always` |
 | resource | Resource type or `*` | `blog`, `post`, `*` |
 | instance_id | Resource instance or `*` | `*`, `post_abc123xyz789ab` |
 | action | Action name or wildcard | `read`, `*`, `read*` |
@@ -32,9 +32,9 @@ When present, only fields in the named group (and its inherited parents) are acc
 **Examples:**
 
 ```elixir
-"*:*:read:all"       # All resources, read action (exact name match)
-"blog:*:read*:all"   # All :read-type actions on blog (type match)
-"blog:*:read:all"    # Only the action named "read" on blog (exact match)
+"*:*:read:always"       # All resources, read action (exact name match)
+"blog:*:read*:always"   # All :read-type actions on blog (type match)
+"blog:*:read:always"    # Only the action named "read" on blog (exact match)
 ```
 
 ### Action Type Wildcards vs Exact Action Names
@@ -49,18 +49,18 @@ matches by action type.
 
 | Permission | Matches | Why |
 |------------|---------|-----|
-| `post:*:read*:all` | `:list`, `:search`, `:get_by_id` | All actions with `type: :read` |
-| `post:*:update*:all` | `:publish`, `:approve`, `:archive` | All actions with `type: :update` |
-| `post:*:read:all` | `:read` only | Exact action name match |
+| `post:*:read*:always` | `:list`, `:search`, `:get_by_id` | All actions with `type: :read` |
+| `post:*:update*:always` | `:publish`, `:approve`, `:archive` | All actions with `type: :update` |
+| `post:*:read:always` | `:read` only | Exact action name match |
 
-This means a permission like `post:*:read*:all` grants access to **all read-type actions**
+This means a permission like `post:*:read*:always` grants access to **all read-type actions**
 on the resource, including custom ones like `:search` or `:export` if they are defined
 with `type: :read`.
 
 > **Warning:** Be careful in workflows where different read actions should have different
 > access levels. For example, if `:list` shows summaries but `:read` shows full details,
 > using `read*` would grant access to both. Use exact action names instead:
-> `post:*:list:all` and `post:*:read:own`.
+> `post:*:list:always` and `post:*:read:own`.
 
 ### Generic Actions
 
@@ -71,28 +71,28 @@ blanket type-level access is not supported.
 
 | Permission | Matches | Why |
 |------------|---------|-----|
-| `service:*:ping:all` | `:ping` only | Exact action name match |
-| `service:*:*:all` | All actions including generic | Universal wildcard |
-| `service:*:check_status:all` | `:check_status` only | Exact action name match |
+| `service:*:ping:always` | `:ping` only | Exact action name match |
+| `service:*:*:always` | All actions including generic | Universal wildcard |
+| `service:*:check_status:always` | `:check_status` only | Exact action name match |
 
 ```elixir
 # Grant access to specific generic actions
-["service:*:ping:all", "service:*:check_status:all"]
+["service:*:ping:always", "service:*:check_status:always"]
 
 # Or use the universal wildcard for admin access
-["service:*:*:all"]
+["service:*:*:always"]
 ```
 
 ## RBAC Permissions (instance_id = `*`)
 
 ```elixir
-"blog:*:read:all"           # Read all blogs
+"blog:*:read:always"           # Read all blogs
 "blog:*:read:published"     # Read only published blogs
 "blog:*:update:own"         # Update own blogs only
-"blog:*:*:all"              # All actions on all blogs
-"*:*:read:all"              # Read all resources
-"blog:*:read*:all"          # All read-type actions
-"!blog:*:delete:all"        # DENY delete on all blogs
+"blog:*:*:always"              # All actions on all blogs
+"*:*:read:always"              # Read all resources
+"blog:*:read*:always"          # All read-type actions
+"!blog:*:delete:always"        # DENY delete on all blogs
 ```
 
 ## Instance Permissions (specific instance_id)
@@ -209,7 +209,7 @@ ash_grant do
   resolver MyApp.PermissionResolver
   instance_key :feed_id  # Match against feed_id instead of id
 
-  scope :all, true
+  scope :always, true
 end
 ```
 
@@ -229,7 +229,7 @@ defmodule MyApp.Post do
     resolver MyApp.PermissionResolver
     default_policies true
 
-    scope :all, true
+    scope :always, true
     scope :own, expr(author_id == ^actor(:id))
 
     # Posts inherit Feed's instance permissions via :feed relationship
@@ -257,7 +257,7 @@ For backward compatibility, shorter formats are supported but **use with caution
 
 | Input | Parsed As | Notes |
 |-------|-----------|-------|
-| `"blog:read:all"` | `blog:*:read:all` | Safe - 3rd part is clearly a scope |
+| `"blog:read:always"` | `blog:*:read:always` | Safe - 3rd part is clearly a scope |
 | `"blog:read"` | `blog:*:read:` | Safe - 2-part format |
 | `"blog:post123:read"` | `blog:*:post123:read` | Ambiguous! `post123` becomes action |
 
@@ -265,8 +265,8 @@ For backward compatibility, shorter formats are supported but **use with caution
 
 ```elixir
 # RBAC permissions
-"blog:*:read:all"       # Explicit 4-part format (recommended)
-"blog:read:all"         # Legacy 3-part format (works but discouraged)
+"blog:*:read:always"       # Explicit 4-part format (recommended)
+"blog:read:always"         # Legacy 3-part format (works but discouraged)
 
 # Instance permissions
 "blog:post123:read:"    # Explicit instance permission (recommended)
@@ -278,8 +278,8 @@ When both allow and deny rules match, deny always takes precedence:
 
 ```elixir
 permissions = [
-  "blog:*:*:all",           # Allow all blog actions
-  "!blog:*:delete:all"      # Deny delete
+  "blog:*:*:always",           # Allow all blog actions
+  "!blog:*:delete:always"      # Deny delete
 ]
 
 # Result:

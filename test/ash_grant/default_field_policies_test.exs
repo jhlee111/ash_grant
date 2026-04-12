@@ -77,7 +77,7 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
           default_policies(true)
           default_field_policies(true)
           resource_name("timestamp_res")
-          scope(:all, true)
+          scope(:always, true)
 
           field_group(:admin, :all)
         end

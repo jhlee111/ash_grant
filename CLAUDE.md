@@ -102,7 +102,7 @@ Scopes are defined inline with `expr()` expressions:
 
 ```elixir
 ash_grant do
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
   scope :own_draft, [:own], expr(status == :draft)  # Inherits from :own
 end

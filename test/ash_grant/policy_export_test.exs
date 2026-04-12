@@ -27,7 +27,7 @@ defmodule AshGrant.PolicyExportTest do
     test "includes scopes" do
       mermaid = PolicyExport.to_mermaid(AshGrant.Test.Document)
 
-      assert String.contains?(mermaid, "all")
+      assert String.contains?(mermaid, "always")
       assert String.contains?(mermaid, "draft")
       assert String.contains?(mermaid, "approved")
     end
@@ -53,7 +53,7 @@ defmodule AshGrant.PolicyExportTest do
       markdown = PolicyExport.to_markdown(AshGrant.Test.Document)
 
       assert String.contains?(markdown, "## Scopes")
-      assert String.contains?(markdown, "all")
+      assert String.contains?(markdown, "always")
       assert String.contains?(markdown, "draft")
     end
 

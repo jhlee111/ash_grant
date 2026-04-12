@@ -25,7 +25,7 @@ defmodule AshGrant.Test.SharedDoc do
           []
 
         %{role: :admin} ->
-          ["shareddoc:*:*:all"]
+          ["shareddoc:*:*:always"]
 
         %{role: :user, id: id, shared_doc_ids: shared_ids} ->
           # RBAC: own documents
@@ -79,7 +79,7 @@ defmodule AshGrant.Test.SharedDoc do
 
     resource_name("shareddoc")
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(owner_id == ^actor(:id)))
 
     can_perform :update

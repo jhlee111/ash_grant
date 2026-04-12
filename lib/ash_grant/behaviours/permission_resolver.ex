@@ -115,7 +115,7 @@ defmodule AshGrant.PermissionResolver do
 
   @typedoc """
   A permission can be:
-  - A string in permission format (e.g., "blog:*:read:all")
+  - A string in permission format (e.g., "blog:*:read:always")
   - An `AshGrant.PermissionInput` struct with metadata
   - An `AshGrant.Permission` struct
   - A map with permission fields
@@ -144,7 +144,7 @@ defmodule AshGrant.PermissionResolver do
   ## Returns
 
   A list of permissions. Each permission can be:
-  - A string in permission format (e.g., "blog:*:read:all")
+  - A string in permission format (e.g., "blog:*:read:always")
   - An `AshGrant.PermissionInput` struct with metadata for debugging
   - An `AshGrant.Permission` struct
   - A map with permission fields

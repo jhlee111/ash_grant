@@ -19,7 +19,7 @@ defmodule AshGrant.ExplainTest do
           %{role: :admin} ->
             [
               %AshGrant.PermissionInput{
-                string: "post:*:*:all",
+                string: "post:*:*:always",
                 description: "Full access to all posts",
                 source: "admin_role"
               }
@@ -28,7 +28,7 @@ defmodule AshGrant.ExplainTest do
           %{role: :editor, id: id} ->
             [
               %AshGrant.PermissionInput{
-                string: "post:*:read:all",
+                string: "post:*:read:always",
                 description: "Read all posts",
                 source: "editor_role"
               },
@@ -49,7 +49,7 @@ defmodule AshGrant.ExplainTest do
 
       resource_name("post")
 
-      scope(:all, [], true, description: "All records without restriction")
+      scope(:always, [], true, description: "All records without restriction")
 
       scope(:own, [], expr(author_id == ^actor(:id)),
         description: "Records owned by the current user"
@@ -105,7 +105,7 @@ defmodule AshGrant.ExplainTest do
 
       # The matching permission should include scope information
       [first_match | _] = result.matching_permissions
-      assert first_match.scope_name == :all
+      assert first_match.scope_name == :always
       assert first_match.scope_description == "All records without restriction"
     end
 
@@ -129,7 +129,7 @@ defmodule AshGrant.ExplainTest do
           p.matched == false
         end)
 
-      # "post:*:read:all" should not match update action
+      # "post:*:read:always" should not match update action
       assert non_matching != []
     end
 

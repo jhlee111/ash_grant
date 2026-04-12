@@ -34,7 +34,7 @@ defmodule AshGrant.Test.Article do
 
   | Role | Permissions |
   |------|-------------|
-  | admin | `article:*:*:all` - Full access |
+  | admin | `article:*:*:always` - Full access |
   | editor | Read all, update own, create all |
   | viewer | Read published only |
   """
@@ -52,19 +52,30 @@ defmodule AshGrant.Test.Article do
   ash_grant do
     resolver(fn actor, _context ->
       case actor do
-        nil -> []
-        %{permissions: perms} -> perms
-        %{role: :admin} -> ["article:*:*:all"]
-        %{role: :editor} -> ["article:*:read:all", "article:*:update:own", "article:*:create:all"]
-        %{role: :viewer} -> ["article:*:read:published"]
-        _ -> []
+        nil ->
+          []
+
+        %{permissions: perms} ->
+          perms
+
+        %{role: :admin} ->
+          ["article:*:*:always"]
+
+        %{role: :editor} ->
+          ["article:*:read:always", "article:*:update:own", "article:*:create:always"]
+
+        %{role: :viewer} ->
+          ["article:*:read:published"]
+
+        _ ->
+          []
       end
     end)
 
     default_policies(true)
     resource_name("article")
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(author_id == ^actor(:id)))
     scope(:published, expr(status == :published))
   end

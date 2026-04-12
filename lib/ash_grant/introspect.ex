@@ -24,11 +24,11 @@ defmodule AshGrant.Introspect do
 
       # Admin UI: What can this user do?
       Introspect.actor_permissions(Post, current_user)
-      # => [%{action: "read", allowed: true, scope: "all", field_groups: []}, ...]
+      # => [%{action: "read", allowed: true, scope: "always", field_groups: []}, ...]
 
       # Permission management: What permissions exist?
       Introspect.available_permissions(Post)
-      # => [%{permission_string: "post:*:read:all", action: "read", scope: "all", field_group: nil}, ...]
+      # => [%{permission_string: "post:*:read:always", action: "read", scope: "always", field_group: nil}, ...]
 
       # Debugging: Can user do this?
       Introspect.can?(Post, :update, user)
@@ -71,7 +71,7 @@ defmodule AshGrant.Introspect do
 
       iex> Introspect.actor_permissions(Post, %{role: :editor})
       [
-        %{action: "read", allowed: true, scope: "all", denied: false, instance_ids: nil, field_groups: []},
+        %{action: "read", allowed: true, scope: "always", denied: false, instance_ids: nil, field_groups: []},
         %{action: "update", allowed: true, scope: "own", denied: false, instance_ids: nil, field_groups: []},
         %{action: "destroy", allowed: false, scope: nil, denied: false, instance_ids: nil, field_groups: []}
       ]
@@ -126,7 +126,7 @@ defmodule AshGrant.Introspect do
 
       iex> Introspect.available_permissions(Post)
       [
-        %{permission_string: "post:*:read:all", action: "read", scope: "all", scope_description: nil, field_group: nil},
+        %{permission_string: "post:*:read:always", action: "read", scope: "always", scope_description: nil, field_group: nil},
         %{permission_string: "post:*:read:own", action: "read", scope: "own", scope_description: "...", field_group: nil},
         ...
       ]
@@ -190,7 +190,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> Introspect.can?(Post, :read, %{role: :editor})
-      {:allow, %{scope: "all", instance_ids: nil, field_groups: []}}
+      {:allow, %{scope: "always", instance_ids: nil, field_groups: []}}
 
       iex> Introspect.can?(Post, :destroy, %{role: :viewer})
       {:deny, %{reason: :no_permission}}
@@ -307,8 +307,8 @@ defmodule AshGrant.Introspect do
 
       iex> Introspect.allowed_actions(Post, %{role: :editor}, detailed: true)
       [
-        %{action: :read, scope: "all", instance_ids: nil, field_groups: []},
-        %{action: :create, scope: "all", instance_ids: nil, field_groups: []},
+        %{action: :read, scope: "always", instance_ids: nil, field_groups: []},
+        %{action: :create, scope: "always", instance_ids: nil, field_groups: []},
         %{action: :update, scope: "own", instance_ids: nil, field_groups: []}
       ]
 
@@ -353,7 +353,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> Introspect.permissions_for(Post, %{role: :editor})
-      ["post:*:read:all", "post:*:update:own", "post:*:create:all"]
+      ["post:*:read:always", "post:*:update:own", "post:*:create:always"]
 
   """
   @spec permissions_for(module(), term(), keyword()) :: [String.t()]

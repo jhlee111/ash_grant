@@ -31,9 +31,9 @@ defmodule AshGrant.Evaluator do
 
   The evaluator accepts permissions in multiple formats:
 
-  - **Strings**: `"blog:*:read:all"`, `"!blog:*:delete:all"`, `"employee:*:read:all:sensitive"` (5-part)
+  - **Strings**: `"blog:*:read:always"`, `"!blog:*:delete:always"`, `"employee:*:read:always:sensitive"` (5-part)
   - **Permission structs**: `%AshGrant.Permission{...}`
-  - **PermissionInput structs**: `%AshGrant.PermissionInput{string: "blog:*:read:all", ...}`
+  - **PermissionInput structs**: `%AshGrant.PermissionInput{string: "blog:*:read:always", ...}`
   - **Custom structs**: Any struct implementing the `AshGrant.Permissionable` protocol
 
   All formats are automatically normalized internally.
@@ -42,7 +42,7 @@ defmodule AshGrant.Evaluator do
 
   ### Basic Access Check
 
-      permissions = ["blog:*:read:all", "blog:*:write:own"]
+      permissions = ["blog:*:read:always", "blog:*:write:own"]
 
       Evaluator.has_access?(permissions, "blog", "read")   # true
       Evaluator.has_access?(permissions, "blog", "write")  # true
@@ -51,8 +51,8 @@ defmodule AshGrant.Evaluator do
   ### Deny-Wins in Action
 
       permissions = [
-        "blog:*:*:all",           # Allow all blog actions
-        "!blog:*:delete:all"      # Deny delete
+        "blog:*:*:always",           # Allow all blog actions
+        "!blog:*:delete:always"      # Deny delete
       ]
 
       Evaluator.has_access?(permissions, "blog", "read")   # true
@@ -128,11 +128,11 @@ defmodule AshGrant.Evaluator do
 
   ## Examples
 
-      iex> permissions = ["blog:*:read:all", "blog:*:write:own"]
+      iex> permissions = ["blog:*:read:always", "blog:*:write:own"]
       iex> AshGrant.Evaluator.has_access?(permissions, "blog", "read")
       true
 
-      iex> permissions = ["blog:*:*:all", "!blog:*:delete:all"]
+      iex> permissions = ["blog:*:*:always", "!blog:*:delete:always"]
       iex> AshGrant.Evaluator.has_access?(permissions, "blog", "delete")
       false
 
@@ -213,7 +213,7 @@ defmodule AshGrant.Evaluator do
       iex> AshGrant.Evaluator.get_instance_scope(permissions, "doc_123", "read")
       nil
 
-      iex> permissions = ["doc:doc_123:*:all", "!doc:doc_123:delete:all"]
+      iex> permissions = ["doc:doc_123:*:always", "!doc:doc_123:delete:always"]
       iex> AshGrant.Evaluator.get_instance_scope(permissions, "doc_123", "delete")
       nil
 
@@ -255,7 +255,7 @@ defmodule AshGrant.Evaluator do
       iex> AshGrant.Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
       ["draft", "internal"]
 
-      iex> permissions = ["doc:doc_123:*:all", "!doc:doc_123:delete:all"]
+      iex> permissions = ["doc:doc_123:*:always", "!doc:doc_123:delete:always"]
       iex> AshGrant.Evaluator.get_all_instance_scopes(permissions, "doc_123", "delete")
       []
 
@@ -291,9 +291,9 @@ defmodule AshGrant.Evaluator do
 
   ## Examples
 
-      iex> permissions = ["blog:*:read:all", "blog:*:update:own"]
+      iex> permissions = ["blog:*:read:always", "blog:*:update:own"]
       iex> AshGrant.Evaluator.get_scope(permissions, "blog", "read")
-      "all"
+      "always"
       iex> AshGrant.Evaluator.get_scope(permissions, "blog", "update")
       "own"
       iex> AshGrant.Evaluator.get_scope(permissions, "blog", "delete")
@@ -333,9 +333,9 @@ defmodule AshGrant.Evaluator do
 
   ## Examples
 
-      iex> permissions = ["blog:*:read:own", "blog:*:read:published", "blog:*:read:all"]
+      iex> permissions = ["blog:*:read:own", "blog:*:read:published", "blog:*:read:always"]
       iex> AshGrant.Evaluator.get_all_scopes(permissions, "blog", "read")
-      ["own", "published", "all"]
+      ["own", "published", "always"]
 
   """
   @spec get_all_scopes(permissions(), String.t(), String.t(), atom() | nil) :: [String.t()]
@@ -369,11 +369,11 @@ defmodule AshGrant.Evaluator do
 
   ## Examples
 
-      iex> permissions = ["employee:*:read:all:sensitive"]
+      iex> permissions = ["employee:*:read:always:sensitive"]
       iex> AshGrant.Evaluator.get_field_group(permissions, "employee", "read")
       "sensitive"
 
-      iex> permissions = ["employee:*:read:all"]
+      iex> permissions = ["employee:*:read:always"]
       iex> AshGrant.Evaluator.get_field_group(permissions, "employee", "read")
       nil
 
@@ -410,11 +410,11 @@ defmodule AshGrant.Evaluator do
 
   ## Examples
 
-      iex> permissions = ["employee:*:read:all:sensitive", "employee:*:read:all:billing"]
+      iex> permissions = ["employee:*:read:always:sensitive", "employee:*:read:always:billing"]
       iex> AshGrant.Evaluator.get_all_field_groups(permissions, "employee", "read")
       ["sensitive", "billing"]
 
-      iex> permissions = ["employee:*:read:all:sensitive", "!employee:*:read:all"]
+      iex> permissions = ["employee:*:read:always:sensitive", "!employee:*:read:always"]
       iex> AshGrant.Evaluator.get_all_field_groups(permissions, "employee", "read")
       []
 
@@ -446,7 +446,7 @@ defmodule AshGrant.Evaluator do
 
   ## Examples
 
-      iex> permissions = ["blog:*:*:all", "!blog:*:delete:all", "blog:*:read:published"]
+      iex> permissions = ["blog:*:*:always", "!blog:*:delete:always", "blog:*:read:published"]
       iex> matching = AshGrant.Evaluator.find_matching(permissions, "blog", "read")
       iex> length(matching)
       2
@@ -474,7 +474,7 @@ defmodule AshGrant.Evaluator do
       iex> AshGrant.Evaluator.get_matching_instance_ids(permissions, "shareddoc", "read")
       ["doc_abc", "doc_xyz"]
 
-      iex> permissions = ["shareddoc:*:read:all", "otherdoc:doc_abc:read:"]
+      iex> permissions = ["shareddoc:*:read:always", "otherdoc:doc_abc:read:"]
       iex> AshGrant.Evaluator.get_matching_instance_ids(permissions, "shareddoc", "read")
       []
 
@@ -520,7 +520,7 @@ defmodule AshGrant.Evaluator do
 
   ## Examples
 
-      iex> role_perms = ["blog:*:read:all"]
+      iex> role_perms = ["blog:*:read:always"]
       iex> instance_perms = ["blog:blog_abc123xyz789ab:write:"]
       iex> combined = AshGrant.Evaluator.combine([role_perms, instance_perms])
       iex> AshGrant.Evaluator.has_access?(combined, "blog", "read")

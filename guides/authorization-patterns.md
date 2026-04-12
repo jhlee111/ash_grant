@@ -26,7 +26,7 @@ defmodule MyApp.Blog.Post do
     resolver MyApp.PermissionResolver
     default_policies true
 
-    scope :all, true
+    scope :always, true
     scope :own, expr(author_id == ^actor(:id))
     scope :published, expr(status == :published)
   end
@@ -43,15 +43,15 @@ defmodule MyApp.PermissionResolver do
 
   @impl true
   def resolve(%{role: :admin}, _context) do
-    ["post:*:*:all"]                                      # Full access
+    ["post:*:*:always"]                                      # Full access
   end
 
   def resolve(%{role: :editor}, _context) do
-    ["post:*:read:all", "post:*:update:all"]              # Read + update all
+    ["post:*:read:always", "post:*:update:always"]              # Read + update all
   end
 
   def resolve(%{role: :author}, _context) do
-    ["post:*:read:all", "post:*:update:own"]              # Read all, update own
+    ["post:*:read:always", "post:*:update:own"]              # Read all, update own
   end
 
   def resolve(%{role: :viewer}, _context) do
@@ -66,8 +66,8 @@ end
 
 | Role | Permission | Resulting Filter |
 |------|-----------|------------------|
-| Admin | `post:*:*:all` | No filter (sees everything) |
-| Editor | `post:*:update:all` | No filter on updates |
+| Admin | `post:*:*:always` | No filter (sees everything) |
+| Editor | `post:*:update:always` | No filter on updates |
 | Author | `post:*:update:own` | `WHERE author_id = actor.id` |
 | Viewer | `post:*:read:published` | `WHERE status = 'published'` |
 
@@ -115,7 +115,7 @@ Filter by properties of the resource itself:
 ```elixir
 ash_grant do
   # Status-based workflow
-  scope :all, true
+  scope :always, true
   scope :draft, expr(status == :draft)
   scope :approved, expr(status == :approved)
   scope :editable, expr(status in [:draft, :pending_review])
@@ -199,7 +199,7 @@ ash_grant do
   resolver MyApp.PaymentResolver
   default_policies true
 
-  scope :all, true
+  scope :always, true
   scope :small_amount, expr(amount < 1000)
   scope :medium_amount, expr(amount < 10_000)
   scope :large_amount, expr(amount < 100_000)
@@ -271,7 +271,7 @@ Use `exists()` to filter through join tables and associations:
 
 ```elixir
 ash_grant do
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
 
   # N:M relationship — team membership via join table
@@ -303,7 +303,7 @@ defmodule MyApp.Comment do
     resolver MyApp.PermissionResolver
     default_policies true
 
-    scope :all, true
+    scope :always, true
     scope :own, expr(user_id == ^actor(:id))
 
     # Comments inherit Post's instance permissions
@@ -326,7 +326,7 @@ Model tree-structured access with list membership:
 
 ```elixir
 ash_grant do
-  scope :all, true
+  scope :always, true
 
   # Same organizational unit
   scope :org_self, expr(organization_unit_id == ^actor(:org_unit_id))
@@ -369,8 +369,8 @@ The `!` prefix creates deny rules that always override allow rules:
 
 ```elixir
 permissions = [
-  "post:*:*:all",              # Allow everything
-  "!post:*:delete:all"         # Deny delete — always wins
+  "post:*:*:always",              # Allow everything
+  "!post:*:delete:always"         # Deny delete — always wins
 ]
 
 # read   → allowed
@@ -390,7 +390,7 @@ AshGrant supports tenant isolation using `^tenant()` or `^actor(:tenant_id)`:
 
 ```elixir
 ash_grant do
-  scope :all, true
+  scope :always, true
   scope :same_tenant, expr(tenant_id == ^tenant())
   scope :own, expr(author_id == ^actor(:id))
   scope :own_in_tenant, [:same_tenant], expr(author_id == ^actor(:id))
@@ -414,7 +414,7 @@ Control which fields are visible based on permissions:
 
 ```elixir
 ash_grant do
-  scope :all, true
+  scope :always, true
   default_field_policies true
 
   field_group :public, [:name, :department, :position]
@@ -425,9 +425,9 @@ end
 
 ```elixir
 # Permission with field_group (5th component)
-"employee:*:read:all:public"          # → sees name, department, position
-"employee:*:read:all:sensitive"       # → + phone, address
-"employee:*:read:all:confidential"    # → + salary, email (everything)
+"employee:*:read:always:public"          # → sees name, department, position
+"employee:*:read:always:sensitive"       # → + phone, address
+"employee:*:read:always:confidential"    # → + salary, email (everything)
 ```
 
 See the [Field-Level Permissions guide](field-level-permissions.md) for masking and
@@ -444,7 +444,7 @@ defmodule MyApp.Blog do
   ash_grant do
     resolver MyApp.PermissionResolver
 
-    scope :all, true
+    scope :always, true
     scope :own, expr(author_id == ^actor(:id))
   end
 
@@ -458,7 +458,7 @@ end
 Resources can add extra scopes or override inherited ones:
 
 ```elixir
-# Inherits :all and :own from domain, adds :published
+# Inherits :always and :own from domain, adds :published
 ash_grant do
   default_policies true
   scope :published, expr(status == :published)
@@ -518,7 +518,7 @@ ash_grant do
   default_field_policies true
 
   # RBAC scopes
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
 
   # ABAC scopes

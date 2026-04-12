@@ -52,12 +52,12 @@ defmodule AshGrant.Check do
   actions are individually unique:
 
       # Permission grants access to the specific "ping" action
-      "service_request:*:ping:all"
+      "service_request:*:ping:always"
 
       # Wildcard (*) grants access to all actions including generic ones
-      "service_request:*:*:all"
+      "service_request:*:*:always"
 
-  Since generic actions have no target record, only `scope :all, true` (or
+  Since generic actions have no target record, only `scope :always, true` (or
   other non-record scopes) will pass scope evaluation. Record-based scopes
   like `scope :own, expr(author_id == ^actor(:id))` are not applicable.
 
@@ -410,8 +410,11 @@ defmodule AshGrant.Check do
     true
   end
 
+  defp check_scope_access("always", _scope_resolver, _context, _authorizer, _opts) do
+    true
+  end
+
   defp check_scope_access("all", _scope_resolver, _context, _authorizer, _opts) do
-    # "all" scope means no filtering
     true
   end
 

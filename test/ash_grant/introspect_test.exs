@@ -20,12 +20,12 @@ defmodule AshGrant.IntrospectTest do
 
       result = Introspect.actor_permissions(Post, actor)
 
-      # Editor has: post:*:read:all, post:*:update:own, post:*:create:all
+      # Editor has: post:*:read:always, post:*:update:own, post:*:create:all
       assert is_list(result)
 
       read_perm = Enum.find(result, &(&1.action == "read"))
       assert read_perm.allowed == true
-      assert read_perm.scope == "all"
+      assert read_perm.scope == "always"
 
       update_perm = Enum.find(result, &(&1.action == "update"))
       assert update_perm.allowed == true
@@ -37,7 +37,7 @@ defmodule AshGrant.IntrospectTest do
 
     test "returns denied status for actions with deny rules" do
       # Actor has both allow and deny for destroy
-      actor = %{id: "user-1", permissions: ["post:*:*:all", "!post:*:destroy:all"]}
+      actor = %{id: "user-1", permissions: ["post:*:*:always", "!post:*:destroy:always"]}
 
       result = Introspect.actor_permissions(Post, actor)
 
@@ -86,7 +86,7 @@ defmodule AshGrant.IntrospectTest do
 
       # Should have different scope options
       scopes = Enum.map(read_perms, & &1.scope)
-      assert "all" in scopes
+      assert "always" in scopes
       assert "own" in scopes
       assert "published" in scopes
     end
@@ -116,7 +116,7 @@ defmodule AshGrant.IntrospectTest do
       actor = %{id: "user-1", role: :editor}
 
       assert {:allow, info} = Introspect.can?(Post, :read, actor)
-      assert info.scope == "all"
+      assert info.scope == "always"
     end
 
     test "returns :allow with :own scope for update" do
@@ -173,7 +173,7 @@ defmodule AshGrant.IntrospectTest do
 
       assert is_list(result)
       read_action = Enum.find(result, &(&1.action == :read))
-      assert read_action.scope == "all"
+      assert read_action.scope == "always"
     end
 
     test "includes instance-based actions" do
@@ -212,7 +212,7 @@ defmodule AshGrant.IntrospectTest do
 
   describe "actor_permissions/3 with field_groups" do
     test "returns field_groups for actor with 5-part permissions" do
-      actor = %{permissions: ["sensitiverecord:*:read:all:sensitive"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:sensitive"]}
 
       result = Introspect.actor_permissions(AshGrant.Test.SensitiveRecord, actor)
 
@@ -224,8 +224,8 @@ defmodule AshGrant.IntrospectTest do
     test "returns multiple field_groups from multiple 5-part permissions" do
       actor = %{
         permissions: [
-          "sensitiverecord:*:read:all:sensitive",
-          "sensitiverecord:*:read:all:confidential"
+          "sensitiverecord:*:read:always:sensitive",
+          "sensitiverecord:*:read:always:confidential"
         ]
       }
 
@@ -238,7 +238,7 @@ defmodule AshGrant.IntrospectTest do
     end
 
     test "returns empty field_groups for 4-part permissions" do
-      actor = %{permissions: ["sensitiverecord:*:read:all"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always"]}
 
       result = Introspect.actor_permissions(AshGrant.Test.SensitiveRecord, actor)
 
@@ -250,8 +250,8 @@ defmodule AshGrant.IntrospectTest do
     test "returns empty field_groups when denied" do
       actor = %{
         permissions: [
-          "sensitiverecord:*:read:all:sensitive",
-          "!sensitiverecord:*:read:all"
+          "sensitiverecord:*:read:always:sensitive",
+          "!sensitiverecord:*:read:always"
         ]
       }
 
@@ -303,14 +303,14 @@ defmodule AshGrant.IntrospectTest do
 
   describe "can?/4 with field_groups" do
     test "returns field_groups in allow response" do
-      actor = %{permissions: ["sensitiverecord:*:read:all:sensitive"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:sensitive"]}
 
       assert {:allow, info} = Introspect.can?(AshGrant.Test.SensitiveRecord, :read, actor)
       assert "sensitive" in info.field_groups
     end
 
     test "returns empty field_groups for 4-part permissions" do
-      actor = %{permissions: ["sensitiverecord:*:read:all"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always"]}
 
       assert {:allow, info} = Introspect.can?(AshGrant.Test.SensitiveRecord, :read, actor)
       assert info.field_groups == []
@@ -319,8 +319,8 @@ defmodule AshGrant.IntrospectTest do
     test "returns multiple field_groups" do
       actor = %{
         permissions: [
-          "sensitiverecord:*:read:all:public",
-          "sensitiverecord:*:read:all:sensitive"
+          "sensitiverecord:*:read:always:public",
+          "sensitiverecord:*:read:always:sensitive"
         ]
       }
 
@@ -332,7 +332,7 @@ defmodule AshGrant.IntrospectTest do
 
   describe "allowed_actions/3 with field_groups" do
     test "detailed mode includes field_groups" do
-      actor = %{permissions: ["sensitiverecord:*:read:all:confidential"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:confidential"]}
 
       result =
         Introspect.allowed_actions(AshGrant.Test.SensitiveRecord, actor, detailed: true)

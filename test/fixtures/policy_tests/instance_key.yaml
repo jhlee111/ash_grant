@@ -6,7 +6,7 @@ actors:
       - "feed:feed_abc:read:"
   all_reader:
     permissions:
-      - "feed:*:read:all"
+      - "feed:*:read:always"
   guest:
     permissions: []
 

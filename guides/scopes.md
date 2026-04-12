@@ -10,7 +10,7 @@ ash_grant do
   resolver MyApp.PermissionResolver
 
   # Boolean scope - no filtering
-  scope :all, true
+  scope :always, true
 
   # Expression scope - filter by condition
   scope :own, expr(author_id == ^actor(:id))
@@ -104,7 +104,7 @@ defmodule MyApp.Blog.Post do
     default_policies true
 
     # Tenant-based scopes using ^tenant()
-    scope :all, true
+    scope :always, true
     scope :same_tenant, expr(tenant_id == ^tenant())
     scope :own, expr(author_id == ^actor(:id))
     scope :own_in_tenant, [:same_tenant], expr(author_id == ^actor(:id))
@@ -216,7 +216,7 @@ AshGrant supports a wide variety of business scenarios. Here are common patterns
 
 ```elixir
 ash_grant do
-  scope :all, true
+  scope :always, true
   scope :draft, expr(status == :draft)
   scope :pending_review, expr(status == :pending_review)
   scope :approved, expr(status == :approved)

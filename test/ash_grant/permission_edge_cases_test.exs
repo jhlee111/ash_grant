@@ -12,13 +12,13 @@ defmodule AshGrant.PermissionEdgeCasesTest do
   describe "parse/1 - edge cases" do
     test "handles colons in instance_id (UUID format)" do
       # 5-part format is now valid: resource:instance_id:action:scope:field_group
-      result = Permission.parse("blog:abc:def:read:all")
+      result = Permission.parse("blog:abc:def:read:always")
       assert {:ok, perm} = result
       assert perm.resource == "blog"
       assert perm.instance_id == "abc"
       assert perm.action == "def"
       assert perm.scope == "read"
-      assert perm.field_group == "all"
+      assert perm.field_group == "always"
 
       # 6 parts should still fail
       assert {:error, _} = Permission.parse("a:b:c:d:e:f")
@@ -27,7 +27,7 @@ defmodule AshGrant.PermissionEdgeCasesTest do
     test "handles empty parts" do
       # Empty resource - currently allowed (parsed as empty string)
       # This documents current behavior; could be made stricter
-      assert {:ok, perm} = Permission.parse(":*:read:all")
+      assert {:ok, perm} = Permission.parse(":*:read:always")
       assert perm.resource == ""
 
       # Permission with empty action handled as valid (legacy two-part)
@@ -37,14 +37,14 @@ defmodule AshGrant.PermissionEdgeCasesTest do
 
     test "handles whitespace" do
       # Leading/trailing whitespace
-      assert {:ok, perm} = Permission.parse(" blog:*:read:all ")
+      assert {:ok, perm} = Permission.parse(" blog:*:read:always ")
       # Note: Currently whitespace is NOT trimmed
       assert perm.resource == " blog"
     end
 
     test "handles very long strings" do
       long_resource = String.duplicate("a", 1000)
-      assert {:ok, perm} = Permission.parse("#{long_resource}:*:read:all")
+      assert {:ok, perm} = Permission.parse("#{long_resource}:*:read:always")
       assert perm.resource == long_resource
     end
 
@@ -80,34 +80,34 @@ defmodule AshGrant.PermissionEdgeCasesTest do
 
     test "handles double deny prefix" do
       # !!blog should be treated as resource "!blog" (not deny)
-      assert {:ok, perm} = Permission.parse("!!blog:*:read:all")
+      assert {:ok, perm} = Permission.parse("!!blog:*:read:always")
       # First ! is deny, second ! is part of resource
       assert perm.deny == true
       assert perm.resource == "!blog"
     end
 
     test "handles multiple wildcards in action" do
-      assert {:ok, perm} = Permission.parse("blog:*:*:all")
+      assert {:ok, perm} = Permission.parse("blog:*:*:always")
       assert perm.action == "*"
 
-      assert {:ok, perm} = Permission.parse("blog:*:**:all")
+      assert {:ok, perm} = Permission.parse("blog:*:**:always")
       assert perm.action == "**"
     end
   end
 
   describe "matches?/3 - edge cases" do
     test "empty resource string does not match" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       refute Permission.matches?(perm, "", "read")
     end
 
     test "empty action string does not match" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       refute Permission.matches?(perm, "blog", "")
     end
 
     test "nil resource does not crash" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       # This might raise, depending on implementation
       # We want to ensure it doesn't crash the system
       refute Permission.matches?(perm, nil, "read")
@@ -117,14 +117,14 @@ defmodule AshGrant.PermissionEdgeCasesTest do
     end
 
     test "action type wildcard requires action_type" do
-      perm = Permission.parse!("blog:*:read*:all")
+      perm = Permission.parse!("blog:*:read*:always")
       # read* requires action_type — exact name alone doesn't match
       refute Permission.matches?(perm, "blog", "read")
       assert Permission.matches?(perm, "blog", "read", :read)
     end
 
     test "action prefix wildcard does not match unrelated" do
-      perm = Permission.parse!("blog:*:read*:all")
+      perm = Permission.parse!("blog:*:read*:always")
       refute Permission.matches?(perm, "blog", "write")
       # "read" not at start
       refute Permission.matches?(perm, "blog", "aread")
@@ -135,12 +135,12 @@ defmodule AshGrant.PermissionEdgeCasesTest do
     test "multiple asterisks in action pattern" do
       # "read*" pattern does not match action name "read*" literally
       # — prefix matching is removed, only exact action or action_type match
-      perm = Permission.parse!("blog:*:read*:all")
+      perm = Permission.parse!("blog:*:read*:always")
       refute Permission.matches?(perm, "blog", "read*")
     end
 
     test "case sensitivity" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       # Permission matching is case-sensitive
       refute Permission.matches?(perm, "BLOG", "read")
       refute Permission.matches?(perm, "blog", "READ")
@@ -191,8 +191,8 @@ defmodule AshGrant.PermissionEdgeCasesTest do
     end
 
     test "handles nil instance_id" do
-      perm = %Permission{resource: "blog", instance_id: nil, action: "read", scope: "all"}
-      assert Permission.to_string(perm) == "blog:*:read:all"
+      perm = %Permission{resource: "blog", instance_id: nil, action: "read", scope: "always"}
+      assert Permission.to_string(perm) == "blog:*:read:always"
     end
 
     test "handles deny with nil scope" do
@@ -236,7 +236,7 @@ defmodule AshGrant.PermissionEdgeCasesTest do
 
   describe "parse/1 with maps" do
     test "parses map without instance_id" do
-      {:ok, perm} = Permission.parse(%{resource: "blog", action: "read", scope: "all"})
+      {:ok, perm} = Permission.parse(%{resource: "blog", action: "read", scope: "always"})
       # Should default
       assert perm.instance_id == "*"
     end

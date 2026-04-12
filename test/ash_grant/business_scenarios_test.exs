@@ -833,12 +833,12 @@ defmodule AshGrant.BusinessScenariosTest do
     test "deny blocks access even when allow exists for same resource/action" do
       _scenario = document_workflow_scenario()
 
-      # Actor has "all" permission BUT also explicit deny for "read"
+      # Actor has "always" permission BUT also explicit deny for "read"
       actor =
         custom_actor(
           permissions: [
             # allow all
-            "document:*:read:all",
+            "document:*:read:always",
             # deny approved
             "!document:*:read:approved"
           ]
@@ -901,7 +901,7 @@ defmodule AshGrant.BusinessScenariosTest do
             # allow read
             "payment:*:read:unlimited",
             # deny update
-            "!payment:*:update:all"
+            "!payment:*:update:always"
           ]
         )
 
@@ -927,7 +927,7 @@ defmodule AshGrant.BusinessScenariosTest do
             # allow all reports
             "report:*:read:top_secret",
             # deny all documents
-            "!document:*:read:all"
+            "!document:*:read:always"
           ]
         )
 
@@ -972,7 +972,7 @@ defmodule AshGrant.BusinessScenariosTest do
         custom_actor(
           permissions: [
             # allow all
-            "task:*:read:all",
+            "task:*:read:always",
             # deny specific instance
             "!task:#{task2.id}:read:"
           ]
@@ -986,7 +986,7 @@ defmodule AshGrant.BusinessScenariosTest do
       case result do
         {:ok, tasks} ->
           # Current behavior: instance deny doesn't filter individual records
-          # All tasks are still visible because "all" scope wins for read
+          # All tasks are still visible because "always" scope wins for read
           assert tasks != []
 
         {:error, %Ash.Error.Forbidden{}} ->
@@ -1001,11 +1001,11 @@ defmodule AshGrant.BusinessScenariosTest do
   # ============================================
 
   describe "Edge cases and error conditions" do
-    test "actor with nil id can still access if permissions allow scope:all" do
+    test "actor with nil id can still access if permissions allow scope:always" do
       _scenario = document_workflow_scenario()
 
-      # Actor with nil id but valid permissions for "all" scope
-      actor = custom_actor(permissions: ["document:*:read:all"], id: nil)
+      # Actor with nil id but valid permissions for "always" scope
+      actor = custom_actor(permissions: ["document:*:read:always"], id: nil)
 
       # Should work based on permission scope
       docs = Document |> Ash.read!(actor: actor)
@@ -1016,7 +1016,7 @@ defmodule AshGrant.BusinessScenariosTest do
       _scenario = document_workflow_scenario()
 
       # Wildcard resource permission
-      actor = custom_actor(permissions: ["*:*:read:all"])
+      actor = custom_actor(permissions: ["*:*:read:always"])
 
       docs = Document |> Ash.read!(actor: actor)
       assert length(docs) == 4

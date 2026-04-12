@@ -14,7 +14,7 @@ defmodule AshGrant.Permission do
   - `resource` - The resource type (e.g., "blog", "post") or `"*"` for all
   - `instance_id` - The specific resource ID or `"*"` for all instances
   - `action` - The action (e.g., "read", "update") or wildcard patterns
-  - `scope` - The access scope (e.g., "all", "own") for filtering
+  - `scope` - The access scope (e.g., "always", "own") for filtering
   - `field_group` - Optional field group for column-level access (e.g., "sensitive")
   - `deny` - Whether this is a deny rule (takes precedence over allow)
 
@@ -48,14 +48,14 @@ defmodule AshGrant.Permission do
 
   ### RBAC Permissions (instance_id = "*")
 
-      "blog:*:read:all"            # Read all blogs
+      "blog:*:read:always"            # Read all blogs
       "blog:*:read:published"      # Read only published blogs
       "blog:*:update:own"          # Update own blogs only
-      "blog:*:*:all"               # All actions on all blogs
-      "*:*:read:all"               # Read all resources
-      "*:*:*:all"                  # Full access to everything
-      "blog:*:read*:all"           # All read-type actions
-      "!blog:*:delete:all"         # DENY delete on all blogs
+      "blog:*:*:always"               # All actions on all blogs
+      "*:*:read:always"               # Read all resources
+      "*:*:*:always"                  # Full access to everything
+      "blog:*:read*:always"           # All read-type actions
+      "!blog:*:delete:always"         # DENY delete on all blogs
 
   ### Instance Permissions (specific instance_id)
 
@@ -88,13 +88,13 @@ defmodule AshGrant.Permission do
   ## Usage
 
       # Parse from string (new format)
-      {:ok, perm} = AshGrant.Permission.parse("blog:*:read:all")
+      {:ok, perm} = AshGrant.Permission.parse("blog:*:read:always")
 
       # Legacy format also works
-      {:ok, perm} = AshGrant.Permission.parse("blog:read:all")
+      {:ok, perm} = AshGrant.Permission.parse("blog:read:always")
 
       # Parse with error on failure
-      perm = AshGrant.Permission.parse!("blog:*:read:all")
+      perm = AshGrant.Permission.parse!("blog:*:read:always")
 
       # Check if permission matches for RBAC
       AshGrant.Permission.matches?(perm, "blog", "read")
@@ -107,7 +107,7 @@ defmodule AshGrant.Permission do
 
       # Convert back to string
       AshGrant.Permission.to_string(perm)
-      # => "blog:*:read:all"
+      # => "blog:*:read:always"
   """
 
   @type t :: %__MODULE__{
@@ -149,14 +149,14 @@ defmodule AshGrant.Permission do
 
   ## Examples
 
-      iex> AshGrant.Permission.parse("blog:*:read:all")
-      {:ok, %AshGrant.Permission{resource: "blog", instance_id: "*", action: "read", scope: "all", deny: false}}
+      iex> AshGrant.Permission.parse("blog:*:read:always")
+      {:ok, %AshGrant.Permission{resource: "blog", instance_id: "*", action: "read", scope: "always", deny: false}}
 
-      iex> AshGrant.Permission.parse("employee:*:read:all:sensitive")
-      {:ok, %AshGrant.Permission{resource: "employee", instance_id: "*", action: "read", scope: "all", field_group: "sensitive", deny: false}}
+      iex> AshGrant.Permission.parse("employee:*:read:always:sensitive")
+      {:ok, %AshGrant.Permission{resource: "employee", instance_id: "*", action: "read", scope: "always", field_group: "sensitive", deny: false}}
 
-      iex> AshGrant.Permission.parse("!blog:*:delete:all")
-      {:ok, %AshGrant.Permission{resource: "blog", instance_id: "*", action: "delete", scope: "all", deny: true}}
+      iex> AshGrant.Permission.parse("!blog:*:delete:always")
+      {:ok, %AshGrant.Permission{resource: "blog", instance_id: "*", action: "delete", scope: "always", deny: true}}
 
       iex> AshGrant.Permission.parse("blog:post_abc123xyz789ab:read:")
       {:ok, %AshGrant.Permission{resource: "blog", instance_id: "post_abc123xyz789ab", action: "read", scope: nil, deny: false}}
@@ -247,7 +247,7 @@ defmodule AshGrant.Permission do
   ## Examples
 
       iex> input = %AshGrant.PermissionInput{
-      ...>   string: "blog:*:read:all",
+      ...>   string: "blog:*:read:always",
       ...>   description: "Read all blogs",
       ...>   source: "editor_role"
       ...> }
@@ -256,7 +256,7 @@ defmodule AshGrant.Permission do
         resource: "blog",
         instance_id: "*",
         action: "read",
-        scope: "all",
+        scope: "always",
         deny: false,
         description: "Read all blogs",
         source: "editor_role",
@@ -283,17 +283,17 @@ defmodule AshGrant.Permission do
 
   ## Examples
 
-      iex> perm = %AshGrant.Permission{resource: "blog", instance_id: "*", action: "read", scope: "all"}
+      iex> perm = %AshGrant.Permission{resource: "blog", instance_id: "*", action: "read", scope: "always"}
       iex> AshGrant.Permission.to_string(perm)
-      "blog:*:read:all"
+      "blog:*:read:always"
 
-      iex> perm = %AshGrant.Permission{resource: "employee", instance_id: "*", action: "read", scope: "all", field_group: "sensitive"}
+      iex> perm = %AshGrant.Permission{resource: "employee", instance_id: "*", action: "read", scope: "always", field_group: "sensitive"}
       iex> AshGrant.Permission.to_string(perm)
-      "employee:*:read:all:sensitive"
+      "employee:*:read:always:sensitive"
 
-      iex> perm = %AshGrant.Permission{resource: "blog", instance_id: "*", action: "delete", scope: "all", deny: true}
+      iex> perm = %AshGrant.Permission{resource: "blog", instance_id: "*", action: "delete", scope: "always", deny: true}
       iex> AshGrant.Permission.to_string(perm)
-      "!blog:*:delete:all"
+      "!blog:*:delete:always"
 
   """
   @spec to_string(t()) :: String.t()
@@ -319,15 +319,15 @@ defmodule AshGrant.Permission do
 
   ## Examples
 
-      iex> perm = AshGrant.Permission.parse!("blog:*:read:all")
+      iex> perm = AshGrant.Permission.parse!("blog:*:read:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "read")
       true
 
-      iex> perm = AshGrant.Permission.parse!("blog:*:read*:all")
+      iex> perm = AshGrant.Permission.parse!("blog:*:read*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "read_published")
       false
 
-      iex> perm = AshGrant.Permission.parse!("blog:*:*:all")
+      iex> perm = AshGrant.Permission.parse!("blog:*:*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "delete")
       true
 
@@ -344,11 +344,11 @@ defmodule AshGrant.Permission do
 
   ## Examples
 
-      iex> perm = AshGrant.Permission.parse!("blog:*:read*:all")
+      iex> perm = AshGrant.Permission.parse!("blog:*:read*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "list_published", :read)
       true
 
-      iex> perm = AshGrant.Permission.parse!("blog:*:read*:all")
+      iex> perm = AshGrant.Permission.parse!("blog:*:read*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "list_published", :update)
       false
 

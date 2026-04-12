@@ -60,8 +60,8 @@ defmodule AshGrant.FieldCheckTest do
     end
 
     test "actor with 5-part permission matching the required group passes" do
-      # Actor has sensitiverecord:*:read:all:sensitive (exactly the required group)
-      actor = %{permissions: ["sensitiverecord:*:read:all:sensitive"]}
+      # Actor has sensitiverecord:*:read:always:sensitive (exactly the required group)
+      actor = %{permissions: ["sensitiverecord:*:read:always:sensitive"]}
       authorizer = build_authorizer()
 
       assert AshGrant.FieldCheck.match?(actor, authorizer, field_group: :sensitive)
@@ -69,7 +69,7 @@ defmodule AshGrant.FieldCheckTest do
 
     test "actor with higher field group (confidential) passes for lower group (sensitive)" do
       # :confidential inherits :sensitive, so having confidential grants access to sensitive
-      actor = %{permissions: ["sensitiverecord:*:read:all:confidential"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:confidential"]}
       authorizer = build_authorizer()
 
       assert AshGrant.FieldCheck.match?(actor, authorizer, field_group: :sensitive)
@@ -77,7 +77,7 @@ defmodule AshGrant.FieldCheckTest do
 
     test "actor with higher field group (confidential) passes for public group" do
       # :confidential -> :sensitive -> :public (transitive inheritance)
-      actor = %{permissions: ["sensitiverecord:*:read:all:confidential"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:confidential"]}
       authorizer = build_authorizer()
 
       assert AshGrant.FieldCheck.match?(actor, authorizer, field_group: :public)
@@ -85,14 +85,14 @@ defmodule AshGrant.FieldCheckTest do
 
     test "actor with lower field group (public) fails for higher group (sensitive)" do
       # :public does NOT inherit from :sensitive
-      actor = %{permissions: ["sensitiverecord:*:read:all:public"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:public"]}
       authorizer = build_authorizer()
 
       refute AshGrant.FieldCheck.match?(actor, authorizer, field_group: :sensitive)
     end
 
     test "actor with lower field group (public) fails for confidential group" do
-      actor = %{permissions: ["sensitiverecord:*:read:all:public"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:public"]}
       authorizer = build_authorizer()
 
       refute AshGrant.FieldCheck.match?(actor, authorizer, field_group: :confidential)
@@ -100,7 +100,7 @@ defmodule AshGrant.FieldCheckTest do
 
     test "actor with 4-part permission (no field_group) passes - unrestricted field access" do
       # No field_group in permission means no field restrictions
-      actor = %{permissions: ["sensitiverecord:*:read:all"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always"]}
       authorizer = build_authorizer()
 
       assert AshGrant.FieldCheck.match?(actor, authorizer, field_group: :confidential)
@@ -108,7 +108,7 @@ defmodule AshGrant.FieldCheckTest do
 
     test "actor with no matching resource permission fails" do
       # Actor has permission for a different resource
-      actor = %{permissions: ["other_resource:*:read:all"]}
+      actor = %{permissions: ["other_resource:*:read:always"]}
       authorizer = build_authorizer()
 
       refute AshGrant.FieldCheck.match?(actor, authorizer, field_group: :public)
@@ -117,7 +117,10 @@ defmodule AshGrant.FieldCheckTest do
     test "actor with denied permission fails even with field_group" do
       # Deny permission should block access
       actor = %{
-        permissions: ["sensitiverecord:*:read:all:confidential", "!sensitiverecord:*:read:all"]
+        permissions: [
+          "sensitiverecord:*:read:always:confidential",
+          "!sensitiverecord:*:read:always"
+        ]
       }
 
       authorizer = build_authorizer()
@@ -126,7 +129,7 @@ defmodule AshGrant.FieldCheckTest do
     end
 
     test "sensitive group grants access to sensitive but not confidential" do
-      actor = %{permissions: ["sensitiverecord:*:read:all:sensitive"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:sensitive"]}
       authorizer = build_authorizer()
 
       # :sensitive includes :public (via inheritance)
@@ -140,8 +143,8 @@ defmodule AshGrant.FieldCheckTest do
     test "5-part deny on field_group blocks access" do
       actor = %{
         permissions: [
-          "sensitiverecord:*:read:all:confidential",
-          "!sensitiverecord:*:read:all:sensitive"
+          "sensitiverecord:*:read:always:confidential",
+          "!sensitiverecord:*:read:always:sensitive"
         ]
       }
 
@@ -153,7 +156,7 @@ defmodule AshGrant.FieldCheckTest do
     end
 
     test "5-part with action wildcard grants field access" do
-      actor = %{permissions: ["sensitiverecord:*:*:all:confidential"]}
+      actor = %{permissions: ["sensitiverecord:*:*:always:confidential"]}
       authorizer = build_authorizer()
 
       assert AshGrant.FieldCheck.match?(actor, authorizer, field_group: :confidential)
@@ -162,7 +165,7 @@ defmodule AshGrant.FieldCheckTest do
     end
 
     test "5-part with resource wildcard grants field access" do
-      actor = %{permissions: ["*:*:read:all:sensitive"]}
+      actor = %{permissions: ["*:*:read:always:sensitive"]}
       authorizer = build_authorizer()
 
       assert AshGrant.FieldCheck.match?(actor, authorizer, field_group: :sensitive)

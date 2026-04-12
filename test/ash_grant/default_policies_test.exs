@@ -9,7 +9,7 @@ defmodule AshGrant.DefaultPoliciesTest do
 
   - Auto-generated read policy with `filter_check/1`
   - Auto-generated write policy with `check/1`
-  - Scope-based filtering (`:own`, `:published`, `:all`)
+  - Scope-based filtering (`:own`, `:published`, `:always`)
   - Role-based permissions (admin, editor, viewer)
   - Proper `Ash.Expr.eval/2` integration for actor references
 
@@ -128,7 +128,7 @@ defmodule AshGrant.DefaultPoliciesTest do
     end
 
     test "actor with matching permission can run generic action" do
-      actor = %{permissions: ["article:*:summarize:all"]}
+      actor = %{permissions: ["article:*:summarize:always"]}
 
       input = Ash.ActionInput.for_action(Article, :summarize, %{}, actor: actor)
       assert {:ok, "summary"} = Ash.run_action(input)

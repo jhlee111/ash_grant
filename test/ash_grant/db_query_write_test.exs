@@ -49,7 +49,7 @@ defmodule AshGrant.DbQueryWriteTest do
   describe "DB query fallback for update" do
     test "update with exists() scope and valid membership succeeds" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("Update Team")
       create_membership!(team, actor_id)
@@ -66,7 +66,7 @@ defmodule AshGrant.DbQueryWriteTest do
 
     test "update with exists() scope and no membership is forbidden" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("No Member Team")
       # No membership created for actor
@@ -84,7 +84,7 @@ defmodule AshGrant.DbQueryWriteTest do
   describe "DB query fallback for destroy" do
     test "destroy with exists() scope and valid membership succeeds" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("Destroy Team")
       create_membership!(team, actor_id)
@@ -100,7 +100,7 @@ defmodule AshGrant.DbQueryWriteTest do
 
     test "destroy with exists() scope and no membership is forbidden" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("No Member Team")
       item = create_item!(%{title: "Keep Me", author_id: actor_id, team_id: team.id})
@@ -117,7 +117,7 @@ defmodule AshGrant.DbQueryWriteTest do
   describe "DB query fallback for update with mixed scope" do
     test "update with mixed scope (own + exists) and both conditions met succeeds" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:own_in_team", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:own_in_team", "item:*:read:always"], actor_id)
 
       team = create_team!("Mixed Team")
       create_membership!(team, actor_id)
@@ -134,7 +134,7 @@ defmodule AshGrant.DbQueryWriteTest do
 
     test "update with mixed scope, own matches but no membership, is forbidden" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:own_in_team", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:own_in_team", "item:*:read:always"], actor_id)
 
       team = create_team!("No Member Team")
       # author_id matches but no membership
@@ -281,7 +281,7 @@ defmodule AshGrant.DbQueryWriteTest do
 
     test "bulk_update with exists() scope and valid membership succeeds" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("Bulk Update Team")
       create_membership!(team, actor_id)
@@ -304,7 +304,7 @@ defmodule AshGrant.DbQueryWriteTest do
 
     test "bulk_destroy with exists() scope and valid membership succeeds" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("Bulk Destroy Team")
       create_membership!(team, actor_id)
@@ -333,7 +333,7 @@ defmodule AshGrant.DbQueryWriteTest do
   describe "non-relationship scopes still use in-memory eval" do
     test "own scope (direct attribute) uses in-memory eval" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:own", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:own", "item:*:read:always"], actor_id)
 
       item = create_item!(%{title: "My Item", author_id: actor_id})
 
@@ -349,7 +349,7 @@ defmodule AshGrant.DbQueryWriteTest do
     test "own scope rejects non-owner" do
       actor_id = Ash.UUID.generate()
       other_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:own", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:own", "item:*:read:always"], actor_id)
 
       item = create_item!(%{title: "Other's Item", author_id: other_id})
 
@@ -362,7 +362,7 @@ defmodule AshGrant.DbQueryWriteTest do
     end
 
     test "all scope uses in-memory eval (short-circuits)" do
-      actor = actor_with_perms(["item:*:update:all"])
+      actor = actor_with_perms(["item:*:update:always"])
 
       item = create_item!(%{title: "Any Item", author_id: Ash.UUID.generate()})
 
@@ -385,7 +385,7 @@ defmodule AshGrant.DbQueryWriteTest do
       actor_id = Ash.UUID.generate()
 
       actor =
-        actor_with_perms(["item:*:update:named_team", "item:*:read:all"], actor_id)
+        actor_with_perms(["item:*:update:named_team", "item:*:read:always"], actor_id)
         |> Map.put(:team_name, "Alpha")
 
       team = create_team!("Alpha")
@@ -404,7 +404,7 @@ defmodule AshGrant.DbQueryWriteTest do
       actor_id = Ash.UUID.generate()
 
       actor =
-        actor_with_perms(["item:*:update:named_team", "item:*:read:all"], actor_id)
+        actor_with_perms(["item:*:update:named_team", "item:*:read:always"], actor_id)
         |> Map.put(:team_name, "Beta")
 
       team = create_team!("Alpha")
@@ -461,11 +461,36 @@ defmodule AshGrant.DbQueryWriteTest do
       assert {:error, %Ash.Error.Forbidden{}} = result
     end
 
+    test "create with dot-path scope and list-membership check (in operator) succeeds" do
+      actor_id = Ash.UUID.generate()
+      team = create_team!("InCheck")
+
+      # Simulates GsNet pattern: scope :at_own_unit, expr(order.center_id in ^actor(:own_org_unit_ids))
+      # The `in` operator with a list from actor context + dot-path relationship traversal
+      # is the exact pattern used for refund authorization.
+      # This test verifies dot-path + `in` works (not just dot-path + `==`).
+      actor =
+        actor_with_perms(["item:*:create:named_team"], actor_id)
+        |> Map.put(:team_name, "InCheck")
+
+      result =
+        BulkItem
+        |> Ash.Changeset.for_create(:create, %{
+          title: "In Operator Create",
+          author_id: actor_id,
+          team_id: team.id
+        })
+        |> Ash.create(actor: actor)
+
+      assert {:ok, item} = result
+      assert item.title == "In Operator Create"
+    end
+
     test "destroy with dot-path scope and matching team name succeeds" do
       actor_id = Ash.UUID.generate()
 
       actor =
-        actor_with_perms(["item:*:destroy:named_team", "item:*:read:all"], actor_id)
+        actor_with_perms(["item:*:destroy:named_team", "item:*:read:always"], actor_id)
         |> Map.put(:team_name, "Zeta")
 
       team = create_team!("Zeta")

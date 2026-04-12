@@ -15,7 +15,7 @@ defmodule AshGrant.Calculation.CanPerform do
 
       ash_grant do
         resolver MyApp.PermissionResolver
-        scope :all, true
+        scope :always, true
         scope :own, expr(author_id == ^actor(:id))
 
         # Batch — generates :can_update? and :can_destroy?
@@ -62,7 +62,7 @@ defmodule AshGrant.Calculation.CanPerform do
   2. Gets RBAC scopes via `AshGrant.Evaluator.get_all_scopes/4`
   3. Gets instance IDs via `AshGrant.Evaluator.get_matching_instance_ids/4`
   4. Builds a combined boolean expression:
-     - "all"/"global" in scopes -> `true`
+     - "always"/"all"/"global" in scopes -> `true`
      - No scopes AND no instances -> `false`
      - RBAC scopes -> scope filters combined with OR
      - Instance IDs -> `id in ^instance_ids`
@@ -178,7 +178,7 @@ defmodule AshGrant.Calculation.CanPerform do
   end
 
   defp build_rbac_expression(scopes, scope_resolver, resource) do
-    if "all" in scopes or "global" in scopes do
+    if "always" in scopes or "all" in scopes or "global" in scopes do
       true
     else
       build_rbac_filter(scopes, scope_resolver, resource)
@@ -279,6 +279,7 @@ defmodule AshGrant.Calculation.CanPerform do
       resolve_with_scope_resolver(scope_resolver, scope)
   end
 
+  defp resolve_with_scope_resolver(nil, "always"), do: true
   defp resolve_with_scope_resolver(nil, "all"), do: true
 
   defp resolve_with_scope_resolver(nil, scope) do

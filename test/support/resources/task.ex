@@ -28,7 +28,7 @@ defmodule AshGrant.Test.Task do
           perms
 
         %{role: :admin} ->
-          ["task:*:*:all"]
+          ["task:*:*:always"]
 
         %{role: :project_manager} ->
           [
@@ -58,7 +58,7 @@ defmodule AshGrant.Test.Task do
     resource_name("task")
 
     # Project/Team scopes
-    scope(:all, true)
+    scope(:always, true)
     scope(:my_projects, expr(project_id in ^actor(:project_ids)))
     scope(:my_team, expr(team_id == ^actor(:team_id)))
     scope(:assigned, expr(assignee_id == ^actor(:id)))

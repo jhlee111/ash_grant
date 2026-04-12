@@ -19,7 +19,7 @@ defmodule AshGrant.PermissionInput do
   ## Examples
 
       # Simple permission with just the string
-      %AshGrant.PermissionInput{string: "post:*:read:all"}
+      %AshGrant.PermissionInput{string: "post:*:read:always"}
 
       # Permission with metadata
       %AshGrant.PermissionInput{
@@ -30,7 +30,7 @@ defmodule AshGrant.PermissionInput do
 
       # Permission with extra metadata
       %AshGrant.PermissionInput{
-        string: "post:*:delete:all",
+        string: "post:*:delete:always",
         description: "Delete any post",
         source: "admin_role",
         metadata: %{granted_at: ~U[2024-01-15 10:00:00Z], granted_by: "system"}
@@ -78,8 +78,8 @@ defmodule AshGrant.PermissionInput do
 
   ## Examples
 
-      iex> AshGrant.PermissionInput.new("post:*:read:all")
-      %AshGrant.PermissionInput{string: "post:*:read:all"}
+      iex> AshGrant.PermissionInput.new("post:*:read:always")
+      %AshGrant.PermissionInput{string: "post:*:read:always"}
 
       iex> AshGrant.PermissionInput.new("post:*:update:own", description: "Edit own posts")
       %AshGrant.PermissionInput{string: "post:*:update:own", description: "Edit own posts"}
@@ -100,9 +100,9 @@ defmodule AshGrant.PermissionInput do
 
   ## Examples
 
-      iex> input = %AshGrant.PermissionInput{string: "post:*:read:all", description: "Read posts"}
+      iex> input = %AshGrant.PermissionInput{string: "post:*:read:always", description: "Read posts"}
       iex> AshGrant.PermissionInput.to_string(input)
-      "post:*:read:all"
+      "post:*:read:always"
 
   """
   @spec to_string(t()) :: String.t()

@@ -217,7 +217,7 @@ defmodule AshGrant.ScopeThroughTest do
       # Actor can read all (RBAC) but only update post1's children
       actor = %{
         id: Ash.UUID.generate(),
-        permissions: ["child_comment:*:read:all", "post:#{post1.id}:update:"]
+        permissions: ["child_comment:*:read:always", "post:#{post1.id}:update:"]
       }
 
       comments =

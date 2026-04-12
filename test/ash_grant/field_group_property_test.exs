@@ -167,7 +167,7 @@ defmodule AshGrant.FieldGroupPropertyTest do
             ) do
         permissions = [
           "#{resource}:*:#{action}:#{scope}:#{field_group}",
-          "!#{resource}:*:#{action}:all"
+          "!#{resource}:*:#{action}:always"
         ]
 
         assert Evaluator.get_field_group(permissions, resource, action) == nil
@@ -179,7 +179,7 @@ defmodule AshGrant.FieldGroupPropertyTest do
               resource <- resource_gen(),
               action <- action_gen()
             ) do
-        permissions = ["other_resource:*:#{action}:all:public"]
+        permissions = ["other_resource:*:#{action}:always:public"]
         result = Evaluator.get_field_group(permissions, resource, action)
         assert result == nil
       end
@@ -223,8 +223,8 @@ defmodule AshGrant.FieldGroupPropertyTest do
               action <- action_gen(),
               groups <- list_of(non_nil_field_group_gen(), min_length: 1, max_length: 3)
             ) do
-        allow_perms = Enum.map(groups, &"#{resource}:*:#{action}:all:#{&1}")
-        deny_perm = "!#{resource}:*:#{action}:all"
+        allow_perms = Enum.map(groups, &"#{resource}:*:#{action}:always:#{&1}")
+        deny_perm = "!#{resource}:*:#{action}:always"
 
         result = Evaluator.get_all_field_groups(allow_perms ++ [deny_perm], resource, action)
         assert result == []
@@ -239,8 +239,8 @@ defmodule AshGrant.FieldGroupPropertyTest do
               fg2 <- non_nil_field_group_gen() |> filter(&(&1 != fg1))
             ) do
         permissions = [
-          "#{resource}:*:#{action}:all:#{fg1}",
-          "#{resource}:*:#{action}:all:#{fg2}"
+          "#{resource}:*:#{action}:always:#{fg1}",
+          "#{resource}:*:#{action}:always:#{fg2}"
         ]
 
         groups = Evaluator.get_all_field_groups(permissions, resource, action)
@@ -337,7 +337,7 @@ defmodule AshGrant.FieldGroupPropertyTest do
             ) do
         permissions = [
           "#{resource}:*:#{action}:#{scope}:#{field_group}",
-          "!#{resource}:*:#{action}:all"
+          "!#{resource}:*:#{action}:always"
         ]
 
         assert Evaluator.get_field_group(permissions, resource, action) == nil
@@ -354,7 +354,7 @@ defmodule AshGrant.FieldGroupPropertyTest do
             ) do
         permissions = [
           "#{resource}:*:#{action}:#{scope}:#{field_group}",
-          "!#{resource}:*:#{other_action}:all:#{field_group}"
+          "!#{resource}:*:#{other_action}:always:#{field_group}"
         ]
 
         assert Evaluator.has_access?(permissions, resource, action)

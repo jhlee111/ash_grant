@@ -50,7 +50,7 @@ defmodule AshGrant.MaskingIntegrationTest do
     end
 
     test "actor with :sensitive sees phone and address masked", %{record: record} do
-      actor = %{permissions: ["maskedrecord:*:read:all:sensitive"]}
+      actor = %{permissions: ["maskedrecord:*:read:always:sensitive"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -74,7 +74,7 @@ defmodule AshGrant.MaskingIntegrationTest do
     test "actor with :confidential sees phone and address unmasked", %{record: record} do
       # :confidential inherits :sensitive, but masking doesn't inherit
       # So confidential actor sees original values
-      actor = %{permissions: ["maskedrecord:*:read:all:confidential"]}
+      actor = %{permissions: ["maskedrecord:*:read:always:confidential"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -90,7 +90,7 @@ defmodule AshGrant.MaskingIntegrationTest do
     end
 
     test "actor with :public cannot see sensitive fields at all", %{record: record} do
-      actor = %{permissions: ["maskedrecord:*:read:all:public"]}
+      actor = %{permissions: ["maskedrecord:*:read:always:public"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -111,7 +111,7 @@ defmodule AshGrant.MaskingIntegrationTest do
 
     test "actor with 4-part permission (no field_group) sees all unmasked", %{record: record} do
       # No field_group means unrestricted field access — no masking applies
-      actor = %{permissions: ["maskedrecord:*:read:all"]}
+      actor = %{permissions: ["maskedrecord:*:read:always"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -139,8 +139,8 @@ defmodule AshGrant.MaskingIntegrationTest do
       # Allow-wins: unmasked wins
       actor = %{
         permissions: [
-          "maskedrecord:*:read:all:sensitive",
-          "maskedrecord:*:read:all:confidential"
+          "maskedrecord:*:read:always:sensitive",
+          "maskedrecord:*:read:always:confidential"
         ]
       }
 
@@ -160,7 +160,7 @@ defmodule AshGrant.MaskingIntegrationTest do
       r1 = create_record!(%{name: "Alice", phone: "010-1111-1111", address: "111 First Ave"})
       r2 = create_record!(%{name: "Bob", phone: "010-2222-2222", address: "222 Second Ave"})
 
-      actor = %{permissions: ["maskedrecord:*:read:all:sensitive"]}
+      actor = %{permissions: ["maskedrecord:*:read:always:sensitive"]}
       results = read_records(actor)
 
       result1 = find_record(results, r1.id)

@@ -22,7 +22,7 @@ defmodule AshGrant.Test.Report do
       case actor do
         nil -> []
         %{permissions: perms} -> perms
-        %{role: :admin} -> ["report:*:*:all"]
+        %{role: :admin} -> ["report:*:*:always"]
         %{role: :executive} -> ["report:*:read:top_secret"]
         %{role: :manager} -> ["report:*:read:confidential"]
         %{role: :employee} -> ["report:*:read:internal"]
@@ -34,7 +34,7 @@ defmodule AshGrant.Test.Report do
     resource_name("report")
 
     # Security classification scopes (hierarchical)
-    scope(:all, true)
+    scope(:always, true)
     scope(:public, expr(classification == :public))
     scope(:internal, expr(classification in [:public, :internal]))
     scope(:confidential, expr(classification in [:public, :internal, :confidential]))

@@ -5,24 +5,24 @@ defmodule AshGrant.EvaluatorTest do
 
   describe "has_access?/3 - new format" do
     test "grants access with matching permission" do
-      permissions = ["blog:*:read:all"]
+      permissions = ["blog:*:read:always"]
       assert Evaluator.has_access?(permissions, "blog", "read")
     end
 
     test "denies access without matching permission" do
-      permissions = ["blog:*:read:all"]
+      permissions = ["blog:*:read:always"]
       refute Evaluator.has_access?(permissions, "blog", "write")
     end
 
     test "grants access with wildcard action" do
-      permissions = ["blog:*:*:all"]
+      permissions = ["blog:*:*:always"]
       assert Evaluator.has_access?(permissions, "blog", "read")
       assert Evaluator.has_access?(permissions, "blog", "write")
       assert Evaluator.has_access?(permissions, "blog", "delete")
     end
 
     test "action type wildcard requires action_type" do
-      permissions = ["blog:*:read*:all"]
+      permissions = ["blog:*:read*:always"]
       # read* requires action_type — 3-arg call never matches
       refute Evaluator.has_access?(permissions, "blog", "read")
       refute Evaluator.has_access?(permissions, "blog", "read_all")
@@ -34,8 +34,8 @@ defmodule AshGrant.EvaluatorTest do
 
     test "deny wins over allow" do
       permissions = [
-        "blog:*:*:all",
-        "!blog:*:delete:all"
+        "blog:*:*:always",
+        "!blog:*:delete:always"
       ]
 
       assert Evaluator.has_access?(permissions, "blog", "read")
@@ -45,8 +45,8 @@ defmodule AshGrant.EvaluatorTest do
 
     test "deny wins regardless of order" do
       permissions = [
-        "!blog:*:delete:all",
-        "blog:*:*:all"
+        "!blog:*:delete:always",
+        "blog:*:*:always"
       ]
 
       refute Evaluator.has_access?(permissions, "blog", "delete")
@@ -54,9 +54,9 @@ defmodule AshGrant.EvaluatorTest do
 
     test "multiple permissions" do
       permissions = [
-        "blog:*:read:all",
+        "blog:*:read:always",
         "blog:*:write:own",
-        "comment:*:read:all"
+        "comment:*:read:always"
       ]
 
       assert Evaluator.has_access?(permissions, "blog", "read")
@@ -72,7 +72,7 @@ defmodule AshGrant.EvaluatorTest do
 
     test "works with Permission structs" do
       permissions = [
-        AshGrant.Permission.parse!("blog:*:read:all")
+        AshGrant.Permission.parse!("blog:*:read:always")
       ]
 
       assert Evaluator.has_access?(permissions, "blog", "read")
@@ -80,7 +80,7 @@ defmodule AshGrant.EvaluatorTest do
 
     test "works with maps" do
       permissions = [
-        %{resource: "blog", instance_id: "*", action: "read", scope: "all", deny: false}
+        %{resource: "blog", instance_id: "*", action: "read", scope: "always", deny: false}
       ]
 
       assert Evaluator.has_access?(permissions, "blog", "read")
@@ -89,7 +89,7 @@ defmodule AshGrant.EvaluatorTest do
 
   describe "has_access?/3 - legacy format compatibility" do
     test "grants access with legacy three-part format" do
-      permissions = ["blog:read:all"]
+      permissions = ["blog:read:always"]
       assert Evaluator.has_access?(permissions, "blog", "read")
     end
 
@@ -100,8 +100,8 @@ defmodule AshGrant.EvaluatorTest do
 
     test "deny wins with legacy format" do
       permissions = [
-        "blog:*:all",
-        "!blog:delete:all"
+        "blog:*:always",
+        "!blog:delete:always"
       ]
 
       assert Evaluator.has_access?(permissions, "blog", "read")
@@ -137,29 +137,29 @@ defmodule AshGrant.EvaluatorTest do
     end
 
     test "RBAC permission does not grant instance access" do
-      permissions = ["blog:*:read:all"]
+      permissions = ["blog:*:read:always"]
       refute Evaluator.has_instance_access?(permissions, "post_abc123xyz789ab", "read")
     end
   end
 
   describe "get_scope/3" do
     test "returns scope from matching permission" do
-      permissions = ["blog:*:read:all"]
-      assert Evaluator.get_scope(permissions, "blog", "read") == "all"
+      permissions = ["blog:*:read:always"]
+      assert Evaluator.get_scope(permissions, "blog", "read") == "always"
     end
 
     test "returns nil for no match" do
-      permissions = ["blog:*:read:all"]
+      permissions = ["blog:*:read:always"]
       assert Evaluator.get_scope(permissions, "blog", "write") == nil
     end
 
     test "returns nil when denied" do
       permissions = [
-        "blog:*:*:all",
-        "!blog:*:delete:all"
+        "blog:*:*:always",
+        "!blog:*:delete:always"
       ]
 
-      assert Evaluator.get_scope(permissions, "blog", "read") == "all"
+      assert Evaluator.get_scope(permissions, "blog", "read") == "always"
       assert Evaluator.get_scope(permissions, "blog", "delete") == nil
     end
 
@@ -173,8 +173,8 @@ defmodule AshGrant.EvaluatorTest do
     end
 
     test "works with legacy format" do
-      permissions = ["blog:read:all"]
-      assert Evaluator.get_scope(permissions, "blog", "read") == "all"
+      permissions = ["blog:read:always"]
+      assert Evaluator.get_scope(permissions, "blog", "read") == "always"
     end
   end
 
@@ -183,47 +183,47 @@ defmodule AshGrant.EvaluatorTest do
       permissions = [
         "blog:*:read:own",
         "blog:*:read:published",
-        "blog:*:read:all"
+        "blog:*:read:always"
       ]
 
       scopes = Evaluator.get_all_scopes(permissions, "blog", "read")
       assert "own" in scopes
       assert "published" in scopes
-      assert "all" in scopes
+      assert "always" in scopes
     end
 
     test "returns empty list when denied" do
       permissions = [
-        "blog:*:*:all",
-        "!blog:*:delete:all"
+        "blog:*:*:always",
+        "!blog:*:delete:always"
       ]
 
       assert Evaluator.get_all_scopes(permissions, "blog", "delete") == []
     end
 
     test "returns empty list for no match" do
-      permissions = ["blog:*:read:all"]
+      permissions = ["blog:*:read:always"]
       assert Evaluator.get_all_scopes(permissions, "blog", "write") == []
     end
 
     test "returns unique scopes" do
       permissions = [
-        "blog:*:read:all",
-        "blog:*:*:all"
+        "blog:*:read:always",
+        "blog:*:*:always"
       ]
 
       scopes = Evaluator.get_all_scopes(permissions, "blog", "read")
-      assert scopes == ["all"]
+      assert scopes == ["always"]
     end
   end
 
   describe "find_matching/3" do
     test "finds all matching permissions" do
       permissions = [
-        "blog:*:read:all",
+        "blog:*:read:always",
         "blog:*:*:own",
-        "!blog:*:delete:all",
-        "comment:*:read:all"
+        "!blog:*:delete:always",
+        "comment:*:read:always"
       ]
 
       matching = Evaluator.find_matching(permissions, "blog", "read")
@@ -232,8 +232,8 @@ defmodule AshGrant.EvaluatorTest do
 
     test "finds deny permissions too" do
       permissions = [
-        "blog:*:*:all",
-        "!blog:*:delete:all"
+        "blog:*:*:always",
+        "!blog:*:delete:always"
       ]
 
       matching = Evaluator.find_matching(permissions, "blog", "delete")
@@ -243,27 +243,27 @@ defmodule AshGrant.EvaluatorTest do
 
   describe "field group evaluation" do
     test "get_field_group returns field group from matching permission" do
-      permissions = ["employee:*:read:all:sensitive"]
+      permissions = ["employee:*:read:always:sensitive"]
       assert Evaluator.get_field_group(permissions, "employee", "read") == "sensitive"
     end
 
     test "get_field_group returns nil when no field_group in permission" do
-      permissions = ["employee:*:read:all"]
+      permissions = ["employee:*:read:always"]
       assert Evaluator.get_field_group(permissions, "employee", "read") == nil
     end
 
     test "get_field_group returns nil when denied" do
-      permissions = ["employee:*:read:all:sensitive", "!employee:*:read:all"]
+      permissions = ["employee:*:read:always:sensitive", "!employee:*:read:always"]
       assert Evaluator.get_field_group(permissions, "employee", "read") == nil
     end
 
     test "get_field_group returns nil when no matching permission" do
-      permissions = ["employee:*:read:all:sensitive"]
+      permissions = ["employee:*:read:always:sensitive"]
       assert Evaluator.get_field_group(permissions, "employee", "write") == nil
     end
 
     test "get_all_field_groups returns all field groups from matching permissions" do
-      permissions = ["employee:*:read:all:sensitive", "employee:*:read:all:billing"]
+      permissions = ["employee:*:read:always:sensitive", "employee:*:read:always:billing"]
 
       assert Evaluator.get_all_field_groups(permissions, "employee", "read") == [
                "sensitive",
@@ -272,13 +272,13 @@ defmodule AshGrant.EvaluatorTest do
     end
 
     test "get_all_field_groups returns empty when denied" do
-      permissions = ["employee:*:read:all:sensitive", "!employee:*:read:all"]
+      permissions = ["employee:*:read:always:sensitive", "!employee:*:read:always"]
       assert Evaluator.get_all_field_groups(permissions, "employee", "read") == []
     end
 
     test "get_all_field_groups deduplicates" do
       permissions = [
-        "employee:*:read:all:sensitive",
+        "employee:*:read:always:sensitive",
         "employee:*:read:own:sensitive"
       ]
 
@@ -286,13 +286,13 @@ defmodule AshGrant.EvaluatorTest do
     end
 
     test "get_all_field_groups returns empty when no matching permissions" do
-      permissions = ["employee:*:read:all:sensitive"]
+      permissions = ["employee:*:read:always:sensitive"]
       assert Evaluator.get_all_field_groups(permissions, "employee", "write") == []
     end
 
     test "get_all_field_groups ignores permissions without field_group" do
       permissions = [
-        "employee:*:read:all:sensitive",
+        "employee:*:read:always:sensitive",
         "employee:*:read:own"
       ]
 
@@ -303,8 +303,8 @@ defmodule AshGrant.EvaluatorTest do
   describe "5-part with deny field_group" do
     test "5-part deny blocks access even when field_group matches" do
       permissions = [
-        "employee:*:read:all:sensitive",
-        "!employee:*:read:all:sensitive"
+        "employee:*:read:always:sensitive",
+        "!employee:*:read:always:sensitive"
       ]
 
       refute Evaluator.has_access?(permissions, "employee", "read")
@@ -315,8 +315,8 @@ defmodule AshGrant.EvaluatorTest do
     test "5-part deny on specific field_group blocks that field_group" do
       # Deny with field_group still matches resource:action, so deny-wins blocks everything
       permissions = [
-        "employee:*:read:all:billing",
-        "!employee:*:read:all:sensitive"
+        "employee:*:read:always:billing",
+        "!employee:*:read:always:sensitive"
       ]
 
       # deny-wins: the deny matches resource+action, so all access is denied
@@ -325,8 +325,8 @@ defmodule AshGrant.EvaluatorTest do
 
     test "5-part deny does not affect different resource" do
       permissions = [
-        "employee:*:read:all:sensitive",
-        "!blog:*:read:all:sensitive"
+        "employee:*:read:always:sensitive",
+        "!blog:*:read:always:sensitive"
       ]
 
       assert Evaluator.has_access?(permissions, "employee", "read")
@@ -335,8 +335,8 @@ defmodule AshGrant.EvaluatorTest do
 
     test "5-part deny does not affect different action" do
       permissions = [
-        "employee:*:read:all:sensitive",
-        "!employee:*:write:all:sensitive"
+        "employee:*:read:always:sensitive",
+        "!employee:*:write:always:sensitive"
       ]
 
       assert Evaluator.has_access?(permissions, "employee", "read")
@@ -346,14 +346,14 @@ defmodule AshGrant.EvaluatorTest do
 
   describe "5-part with wildcards" do
     test "5-part with action wildcard grants access" do
-      permissions = ["employee:*:*:all:sensitive"]
+      permissions = ["employee:*:*:always:sensitive"]
       assert Evaluator.has_access?(permissions, "employee", "read")
       assert Evaluator.has_access?(permissions, "employee", "write")
       assert Evaluator.get_field_group(permissions, "employee", "read") == "sensitive"
     end
 
     test "5-part with action type wildcard grants access" do
-      permissions = ["employee:*:read*:all:sensitive"]
+      permissions = ["employee:*:read*:always:sensitive"]
       # read* requires action_type
       refute Evaluator.has_access?(permissions, "employee", "read")
       assert Evaluator.has_access?(permissions, "employee", "read", :read)
@@ -362,7 +362,7 @@ defmodule AshGrant.EvaluatorTest do
     end
 
     test "5-part with resource wildcard grants access" do
-      permissions = ["*:*:read:all:sensitive"]
+      permissions = ["*:*:read:always:sensitive"]
       assert Evaluator.has_access?(permissions, "employee", "read")
       assert Evaluator.has_access?(permissions, "blog", "read")
       assert Evaluator.get_field_group(permissions, "employee", "read") == "sensitive"
@@ -370,8 +370,8 @@ defmodule AshGrant.EvaluatorTest do
 
     test "deny 5-part with action wildcard blocks specific actions" do
       permissions = [
-        "employee:*:*:all:sensitive",
-        "!employee:*:delete:all:sensitive"
+        "employee:*:*:always:sensitive",
+        "!employee:*:delete:always:sensitive"
       ]
 
       assert Evaluator.has_access?(permissions, "employee", "read")
@@ -427,26 +427,26 @@ defmodule AshGrant.EvaluatorTest do
 
   describe "has_access?/4 with action_type" do
     test "read* matches :read type action with non-prefixed name" do
-      permissions = ["blog:*:read*:all"]
+      permissions = ["blog:*:read*:always"]
       assert Evaluator.has_access?(permissions, "blog", "list_published", :read)
     end
 
     test "read* does NOT match :update type with non-prefixed name" do
-      permissions = ["blog:*:read*:all"]
+      permissions = ["blog:*:read*:always"]
       refute Evaluator.has_access?(permissions, "blog", "list_published", :update)
     end
 
     test "deny-wins with action_type" do
       permissions = [
-        "blog:*:read*:all",
-        "!blog:*:read*:all"
+        "blog:*:read*:always",
+        "!blog:*:read*:always"
       ]
 
       refute Evaluator.has_access?(permissions, "blog", "list_published", :read)
     end
 
     test "backward compat: 3-arg has_access? unchanged" do
-      permissions = ["blog:*:read*:all"]
+      permissions = ["blog:*:read*:always"]
       # read* requires action_type — 3-arg call never matches
       refute Evaluator.has_access?(permissions, "blog", "read")
       refute Evaluator.has_access?(permissions, "blog", "read_all")
@@ -467,12 +467,12 @@ defmodule AshGrant.EvaluatorTest do
     end
 
     test "returns nil when action_type doesn't match" do
-      permissions = ["blog:*:read*:all"]
+      permissions = ["blog:*:read*:always"]
       assert Evaluator.get_scope(permissions, "blog", "list_published", :update) == nil
     end
 
     test "returns nil when denied with action_type" do
-      permissions = ["blog:*:read*:all", "!blog:*:read*:all"]
+      permissions = ["blog:*:read*:always", "!blog:*:read*:always"]
       assert Evaluator.get_scope(permissions, "blog", "by_slug", :read) == nil
     end
   end
@@ -490,14 +490,14 @@ defmodule AshGrant.EvaluatorTest do
     end
 
     test "returns empty when denied with action_type" do
-      permissions = ["blog:*:read*:all", "!blog:*:read*:all"]
+      permissions = ["blog:*:read*:always", "!blog:*:read*:always"]
       assert Evaluator.get_all_scopes(permissions, "blog", "search", :read) == []
     end
   end
 
   describe "get_all_field_groups/4 with action_type" do
     test "returns field groups matching via action_type" do
-      permissions = ["employee:*:read*:all:sensitive"]
+      permissions = ["employee:*:read*:always:sensitive"]
 
       assert Evaluator.get_all_field_groups(permissions, "employee", "by_department", :read) == [
                "sensitive"
@@ -507,7 +507,7 @@ defmodule AshGrant.EvaluatorTest do
 
   describe "find_matching/4 with action_type" do
     test "finds permissions matching via action_type" do
-      permissions = ["blog:*:read*:all", "blog:*:update*:own"]
+      permissions = ["blog:*:read*:always", "blog:*:update*:own"]
       matching = Evaluator.find_matching(permissions, "blog", "search", :read)
       assert length(matching) == 1
     end
@@ -524,7 +524,7 @@ defmodule AshGrant.EvaluatorTest do
 
   describe "combine/1" do
     test "combines multiple permission lists" do
-      role_perms = ["blog:*:read:all"]
+      role_perms = ["blog:*:read:always"]
       instance_perms = ["blog:post_abc123xyz789ab:write:"]
 
       combined = Evaluator.combine([role_perms, instance_perms])

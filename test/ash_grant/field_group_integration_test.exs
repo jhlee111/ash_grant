@@ -11,7 +11,7 @@ defmodule AshGrant.FieldGroupIntegrationTest do
   - field_group :sensitive    — inherits :public, adds [:phone, :address]
   - field_group :confidential — inherits :sensitive, adds [:salary, :email]
   - default_policies true, default_field_policies true
-  - scope :all, true
+  - scope :always, true
   """
   use ExUnit.Case, async: true
 
@@ -57,7 +57,7 @@ defmodule AshGrant.FieldGroupIntegrationTest do
     end
 
     test "actor with :public field_group sees only public fields", %{record: record} do
-      actor = %{permissions: ["sensitiverecord:*:read:all:public"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:public"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -78,7 +78,7 @@ defmodule AshGrant.FieldGroupIntegrationTest do
     end
 
     test "actor with :sensitive field_group sees public + sensitive fields", %{record: record} do
-      actor = %{permissions: ["sensitiverecord:*:read:all:sensitive"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:sensitive"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -99,7 +99,7 @@ defmodule AshGrant.FieldGroupIntegrationTest do
     end
 
     test "actor with :confidential field_group sees all fields", %{record: record} do
-      actor = %{permissions: ["sensitiverecord:*:read:all:confidential"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:confidential"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -116,7 +116,7 @@ defmodule AshGrant.FieldGroupIntegrationTest do
     end
 
     test "actor with no field_group (4-part permission) sees all fields", %{record: record} do
-      actor = %{permissions: ["sensitiverecord:*:read:all"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always"]}
       results = read_records(actor)
       result = find_record(results, record.id)
 
@@ -150,8 +150,8 @@ defmodule AshGrant.FieldGroupIntegrationTest do
       # Actor has both :public and :sensitive field_group permissions
       actor = %{
         permissions: [
-          "sensitiverecord:*:read:all:public",
-          "sensitiverecord:*:read:all:sensitive"
+          "sensitiverecord:*:read:always:public",
+          "sensitiverecord:*:read:always:sensitive"
         ]
       }
 
@@ -174,8 +174,8 @@ defmodule AshGrant.FieldGroupIntegrationTest do
 
     test "field_group hierarchy: :confidential subsumes :public", %{record: record} do
       # An actor with :confidential should see everything a :public actor sees plus more
-      public_actor = %{permissions: ["sensitiverecord:*:read:all:public"]}
-      confidential_actor = %{permissions: ["sensitiverecord:*:read:all:confidential"]}
+      public_actor = %{permissions: ["sensitiverecord:*:read:always:public"]}
+      confidential_actor = %{permissions: ["sensitiverecord:*:read:always:confidential"]}
 
       pub_results = read_records(public_actor)
       conf_results = read_records(confidential_actor)
@@ -211,7 +211,7 @@ defmodule AshGrant.FieldGroupIntegrationTest do
           salary: 75_000
         })
 
-      actor = %{permissions: ["sensitiverecord:*:read:all:public"]}
+      actor = %{permissions: ["sensitiverecord:*:read:always:public"]}
       results = read_records(actor)
 
       r1 = find_record(results, record.id)

@@ -45,14 +45,14 @@ unique:
 
 ```elixir
 # Grants access to the specific "ping" action only
-"service_request:*:ping:all"
+"service_request:*:ping:always"
 
 # Wildcard (*) grants access to all actions including generic ones
-"service_request:*:*:all"
+"service_request:*:*:always"
 ```
 
 Since generic actions have no target record, only non-record scopes (like
-`scope :all, true`) will pass scope evaluation.
+`scope :always, true`) will pass scope evaluation.
 
 ### `CanPerform` Calculation - Per-Record UI Visibility
 
@@ -64,7 +64,7 @@ AshGrant generates per-record boolean calculations for UI visibility patterns
 ```elixir
 ash_grant do
   resolver MyApp.PermissionResolver
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
 
   # Batch — generates :can_update? and :can_destroy?
@@ -133,7 +133,7 @@ ash_grant do
   resource_name "custom_name"             # Optional: defaults to module name (e.g., MyApp.Blog.Post → "post")
 
   # Inline scopes
-  scope :all, true
+  scope :always, true
   scope :own, expr(owner_id == ^actor(:id))
 
   # UI visibility calculations
@@ -144,7 +144,7 @@ end
 | Option | Type | Description |
 |--------|------|-------------|
 | `resolver` | module or function | **Required** (can be inherited from domain via `AshGrant.Domain`). Resolves permissions for actors |
-| `default_policies` | boolean or atom | Auto-generate policies: `true`, `:all`, `:read`, or `:write` |
+| `default_policies` | boolean or atom | Auto-generate policies: `true`, `:always`, `:read`, or `:write` |
 | `default_field_policies` | boolean | Auto-generate `field_policies` from `field_group` definitions |
 | `can_perform_actions` | list of atoms | Batch-generate `CanPerform` calculations (e.g., `[:update, :destroy]`) |
 | `resource_name` | string | Resource name for permission matching. Default: derived from module name (last segment, snake_cased). `MyApp.Blog.Post` → `"post"`, `MyApp.CustomerOrder` → `"customer_order"` |
@@ -157,7 +157,7 @@ The `default_policies` option controls automatic policy generation:
 | Value | Description |
 |-------|-------------|
 | `false` | No policies generated (default). You must define policies explicitly. |
-| `true` or `:all` | Generate read, write, and generic action policies |
+| `true` or `:always` | Generate read, write, and generic action policies |
 | `:read` | Only generate `filter_check()` policy for read actions |
 | `:write` | Only generate `check()` policy for write and generic actions |
 
@@ -189,16 +189,16 @@ For example, with these permissions:
 
 ```elixir
 # Resolver returns:
-["post:*:read:all", "post:*:update:own"]
+["post:*:read:always", "post:*:update:own"]
 ```
 
 The default policies will:
-- Allow `:read` actions (matches `post:*:read:all`)
+- Allow `:read` actions (matches `post:*:read:always`)
 - Allow `:update` actions only on own records (matches `post:*:update:own`)
 - Deny `:create` and `:destroy` actions (no matching permission)
 
 Each action is individually checked against the permission strings — there is no
-blanket "write" grant unless the actor has a wildcard permission like `post:*:*:all`.
+blanket "write" grant unless the actor has a wildcard permission like `post:*:*:always`.
 
 If you need to map multiple Ash actions to the same permission, use the `action:` override:
 
@@ -261,7 +261,7 @@ ash_grant do
   scope_resolver MyApp.LegacyScopeResolver  # Deprecated fallback
 
   # Inline scopes take priority
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
   # :legacy_scope will fall back to scope_resolver
 end

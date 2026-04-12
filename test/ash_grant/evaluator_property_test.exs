@@ -16,7 +16,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
 
   defp scope_gen do
     one_of([
-      constant("all"),
+      constant("always"),
       constant("own"),
       constant("published"),
       string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
@@ -115,7 +115,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
         permissions = [
           "#{resource}:*:#{action}:#{scope}",
           # deny
-          "!#{resource}:*:#{action}:all"
+          "!#{resource}:*:#{action}:always"
         ]
 
         assert Evaluator.get_scope(permissions, resource, action) == nil
@@ -143,7 +143,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
               scopes <- list_of(scope_gen(), min_length: 1, max_length: 3)
             ) do
         allow_perms = Enum.map(scopes, &"#{resource}:*:#{action}:#{&1}")
-        deny_perm = "!#{resource}:*:#{action}:all"
+        deny_perm = "!#{resource}:*:#{action}:always"
 
         assert Evaluator.get_all_scopes(allow_perms ++ [deny_perm], resource, action) == []
       end
@@ -207,7 +207,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
               scope <- scope_gen()
             ) do
         allow = "#{resource}:*:#{action}:#{scope}"
-        deny = "!#{resource}:*:#{action}:all"
+        deny = "!#{resource}:*:#{action}:always"
         other = "other:*:#{action}:#{scope}"
 
         permissions = [allow, deny, other]
@@ -229,7 +229,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
               resource <- resource_gen(),
               action <- action_gen()
             ) do
-        permissions = ["*:*:#{action}:all"]
+        permissions = ["*:*:#{action}:always"]
 
         assert Evaluator.has_access?(permissions, resource, action)
       end
@@ -240,7 +240,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
               resource <- resource_gen(),
               action <- action_gen()
             ) do
-        permissions = ["#{resource}:*:*:all"]
+        permissions = ["#{resource}:*:*:always"]
 
         assert Evaluator.has_access?(permissions, resource, action)
       end
@@ -254,7 +254,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
               action_name <-
                 string(:alphanumeric, min_length: 1, max_length: 10) |> map(&String.downcase/1)
             ) do
-        permissions = ["#{resource}:*:#{prefix}*:all"]
+        permissions = ["#{resource}:*:#{prefix}*:always"]
 
         # Without action_type, prefix* never matches
         refute Evaluator.has_access?(permissions, resource, action_name)
@@ -295,7 +295,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
             ) do
         permissions = [
           "#{resource}:*:#{action}:#{scope}:#{field_group}",
-          "!#{resource}:*:#{action}:all"
+          "!#{resource}:*:#{action}:always"
         ]
 
         assert Evaluator.get_all_field_groups(permissions, resource, action) == []
@@ -361,7 +361,7 @@ defmodule AshGrant.EvaluatorPropertyTest do
               instance_id <- instance_id_gen(),
               action <- action_gen()
             ) do
-        permissions = ["#{resource}:*:#{action}:all"]
+        permissions = ["#{resource}:*:#{action}:always"]
 
         assert Evaluator.has_access?(permissions, resource, action)
         refute Evaluator.has_instance_access?(permissions, instance_id, action)

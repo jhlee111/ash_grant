@@ -361,8 +361,9 @@ defmodule AshGrant.PolicyTest.Assertions do
   defp check_scope_against_record(resource, _action, actor, record, permission_details) do
     scope_name = permission_details[:scope]
 
-    if scope_name == nil or scope_name == "all" or scope_name == "global" do
-      # No scope restriction or "all" scope - record check passes
+    if scope_name == nil or scope_name == "always" or scope_name == "all" or
+         scope_name == "global" do
+      # No scope restriction or universal scope - record check passes
       {:allow, permission_details}
     else
       # Get the scope filter and evaluate against the record

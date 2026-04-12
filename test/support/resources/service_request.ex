@@ -38,19 +38,19 @@ defmodule AshGrant.Test.ServiceRequest do
         %{role: :tenant_operator, tenant_id: actor_tenant} ->
           if context[:tenant] != nil and to_string(context[:tenant]) == to_string(actor_tenant) do
             [
-              "service_request:*:read:all",
-              "service_request:*:create:all",
+              "service_request:*:read:always",
+              "service_request:*:create:always",
               "service_request:*:update:own",
               "service_request:*:destroy:own",
-              "service_request:*:ping:all",
-              "service_request:*:check_status:all"
+              "service_request:*:ping:always",
+              "service_request:*:check_status:always"
             ]
           else
             []
           end
 
         %{role: :admin} ->
-          ["service_request:*:*:all"]
+          ["service_request:*:*:always"]
 
         _ ->
           []
@@ -59,7 +59,7 @@ defmodule AshGrant.Test.ServiceRequest do
 
     resource_name("service_request")
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(requester_id == ^actor(:id)))
   end
 

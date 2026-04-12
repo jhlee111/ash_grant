@@ -3,19 +3,19 @@ resource: AshGrant.Test.ServiceRequest
 actors:
   operator:
     permissions:
-      - "service_request:*:ping:all"
-      - "service_request:*:check_status:all"
+      - "service_request:*:ping:always"
+      - "service_request:*:check_status:always"
   ping_only:
     permissions:
-      - "service_request:*:ping:all"
+      - "service_request:*:ping:always"
   crud_only:
     permissions:
-      - "service_request:*:read:all"
-      - "service_request:*:create:all"
+      - "service_request:*:read:always"
+      - "service_request:*:create:always"
   denied_ping:
     permissions:
-      - "service_request:*:ping:all"
-      - "!service_request:*:ping:all"
+      - "service_request:*:ping:always"
+      - "!service_request:*:ping:always"
   nobody:
     permissions: []
 

@@ -28,13 +28,13 @@ defmodule AshGrant.Test.Journal do
           perms
 
         %{role: :admin} ->
-          ["journal:*:*:all"]
+          ["journal:*:*:always"]
 
         %{role: :controller} ->
           [
-            "journal:*:read:all",
-            "journal:*:create:all",
-            "journal:*:update:all"
+            "journal:*:read:always",
+            "journal:*:create:always",
+            "journal:*:update:always"
           ]
 
         %{role: :accountant} ->
@@ -46,7 +46,7 @@ defmodule AshGrant.Test.Journal do
 
         %{role: :auditor} ->
           [
-            "journal:*:read:all"
+            "journal:*:read:always"
           ]
 
         _ ->
@@ -57,7 +57,7 @@ defmodule AshGrant.Test.Journal do
     resource_name("journal")
 
     # Period-based scopes
-    scope(:all, true)
+    scope(:always, true)
     scope(:current_period, expr(period_id == ^actor(:current_period_id)))
     scope(:open_periods, expr(period_status == :open))
     scope(:closed_periods, expr(period_status == :closed))

@@ -193,7 +193,7 @@ defmodule AshGrant.PermissionPropertyTest do
           resource: "*",
           instance_id: "*",
           action: action,
-          scope: "all",
+          scope: "always",
           deny: false
         }
 
@@ -212,7 +212,7 @@ defmodule AshGrant.PermissionPropertyTest do
           resource: resource,
           instance_id: "*",
           action: "*",
-          scope: "all",
+          scope: "always",
           deny: false
         }
 
@@ -233,7 +233,7 @@ defmodule AshGrant.PermissionPropertyTest do
           resource: resource,
           instance_id: "*",
           action: "#{prefix}*",
-          scope: "all",
+          scope: "always",
           deny: false
         }
 
@@ -312,7 +312,7 @@ defmodule AshGrant.PermissionPropertyTest do
           resource: resource,
           instance_id: "*",
           action: action,
-          scope: "all",
+          scope: "always",
           deny: false
         }
 
@@ -434,7 +434,7 @@ defmodule AshGrant.PermissionPropertyTest do
           resource: resource,
           instance_id: "*",
           action: pattern,
-          scope: "all",
+          scope: "always",
           deny: false
         }
 

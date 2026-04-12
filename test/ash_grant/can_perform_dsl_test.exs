@@ -81,7 +81,7 @@ defmodule AshGrant.CanPerformDslTest do
 
           ash_grant do
             resolver(fn _, _ -> [] end)
-            scope(:all, true)
+            scope(:always, true)
             can_perform_actions([:nonexistent])
           end
 
@@ -107,7 +107,7 @@ defmodule AshGrant.CanPerformDslTest do
 
           ash_grant do
             resolver(fn _, _ -> [] end)
-            scope(:all, true)
+            scope(:always, true)
             can_perform(:foobar)
           end
 
@@ -132,7 +132,7 @@ defmodule AshGrant.CanPerformDslTest do
 
         ash_grant do
           resolver(fn _, _ -> [] end)
-          scope(:all, true)
+          scope(:always, true)
           can_perform_actions([:read, :destroy])
           can_perform :update
         end

@@ -10,7 +10,7 @@ defmodule AshGrant.Test.BulkItem do
 
   | Scope | Filter |
   |-------|--------|
-  | :all | true |
+  | :always | true |
   | :own | author_id == ^actor(:id) |
   | :team_member | exists(team.memberships, user_id == ^actor(:id)) |
   | :own_in_team | author_id == ^actor(:id) AND exists(team.memberships, ...) |
@@ -32,14 +32,14 @@ defmodule AshGrant.Test.BulkItem do
       case actor do
         nil -> []
         %{permissions: perms} -> perms
-        %{role: :admin} -> ["item:*:*:all"]
+        %{role: :admin} -> ["item:*:*:always"]
         _ -> []
       end
     end)
 
     resource_name("item")
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(author_id == ^actor(:id)))
     scope(:team_member, [], expr(exists(team.memberships, user_id == ^actor(:id))))
 

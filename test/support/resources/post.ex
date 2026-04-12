@@ -16,8 +16,8 @@ defmodule AshGrant.Test.Post do
       case actor do
         nil -> []
         %{permissions: perms} -> perms
-        %{role: :admin} -> ["post:*:*:all"]
-        %{role: :editor} -> ["post:*:read:all", "post:*:update:own", "post:*:create:all"]
+        %{role: :admin} -> ["post:*:*:always"]
+        %{role: :editor} -> ["post:*:read:always", "post:*:update:own", "post:*:create:always"]
         %{role: :viewer} -> ["post:*:read:published"]
         _ -> []
       end
@@ -25,7 +25,7 @@ defmodule AshGrant.Test.Post do
 
     resource_name("post")
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(author_id == ^actor(:id)))
     scope(:published, expr(status == :published))
     scope(:draft, expr(status == :draft))

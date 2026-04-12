@@ -28,7 +28,7 @@ defmodule AshGrant.Test.ChildComment do
 
     resource_name("child_comment")
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(user_id == ^actor(:id)))
 
     scope_through(:post)

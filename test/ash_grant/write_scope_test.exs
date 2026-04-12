@@ -35,7 +35,7 @@ defmodule AshGrant.WriteScopeTest do
     ash_grant do
       resolver(fn _actor, _context -> [] end)
 
-      scope(:all, true)
+      scope(:always, true)
 
       # Same expression for read and write (simple ownership)
       scope(:own, [], expr(author_id == ^actor(:id)), write: expr(author_id == ^actor(:id)))
@@ -71,7 +71,7 @@ defmodule AshGrant.WriteScopeTest do
   # - :readonly_base → parent with write: false
   # - :readonly_child → child inherits parent's write: false (propagation)
   # - :deny_child    → child with write: false, parent with write: expr
-  # - :all_draft     → inherits from :all (filter=true)
+  # - :always_draft     → inherits from :always (filter=true)
   # - :multi_parent  → inherits from multiple parents
   # - :simple_scope  → no write: (used as second parent in multi_parent)
   defmodule InheritedWritePost do
@@ -83,7 +83,7 @@ defmodule AshGrant.WriteScopeTest do
     ash_grant do
       resolver(fn _actor, _context -> [] end)
 
-      scope(:all, true)
+      scope(:always, true)
 
       # Parent with write expression
       scope(:team, [], expr(team_id == ^actor(:team_id)),
@@ -105,7 +105,7 @@ defmodule AshGrant.WriteScopeTest do
       scope(:deny_child, [:team], expr(status == :archived), write: false)
 
       # Parent with all scope (true filter, no write: → fallback to true)
-      scope(:all_draft, [:all], expr(status == :draft))
+      scope(:always_draft, [:always], expr(status == :draft))
 
       # Multiple parents: one has write:, one doesn't
       scope(:simple_scope, expr(category == :news))
@@ -238,8 +238,8 @@ defmodule AshGrant.WriteScopeTest do
       assert inspect(write_filter) =~ "status"
     end
 
-    test "returns true for :all scope (filter=true, no write:)" do
-      assert Info.resolve_write_scope_filter(WriteScopePost, :all, %{}) == true
+    test "returns true for :always scope (filter=true, no write:)" do
+      assert Info.resolve_write_scope_filter(WriteScopePost, :always, %{}) == true
     end
 
     test "returns false for unknown scope" do
@@ -301,10 +301,10 @@ defmodule AshGrant.WriteScopeTest do
       assert Info.resolve_write_scope_filter(InheritedWritePost, :deny_child, %{}) == false
     end
 
-    test "inheriting from :all (filter=true, no write) works" do
-      # :all_draft inherits from :all (true). Parent write fallback = true (skipped).
+    test "inheriting from :always (filter=true, no write) works" do
+      # :always_draft inherits from :always (true). Parent write fallback = true (skipped).
       # Result should be child's own filter (status == :draft)
-      filter = Info.resolve_write_scope_filter(InheritedWritePost, :all_draft, %{})
+      filter = Info.resolve_write_scope_filter(InheritedWritePost, :always_draft, %{})
       refute filter == true
       refute filter == false
       assert inspect(filter) =~ "status"
@@ -411,7 +411,7 @@ defmodule AshGrant.WriteScopeTest do
     ash_grant do
       resolver(fn _actor, _context -> [] end)
       scope_resolver(fn scope, _context -> "legacy_filter_for_#{scope}" end)
-      scope(:all, true)
+      scope(:always, true)
     end
 
     attributes do
@@ -427,8 +427,8 @@ defmodule AshGrant.WriteScopeTest do
     end
 
     test "uses DSL scope (with write fallback) over legacy resolver" do
-      # :all IS defined in DSL, so should use it, not legacy resolver
-      result = Info.resolve_write_scope_filter(LegacyResolverResource, :all, %{})
+      # :always IS defined in DSL, so should use it, not legacy resolver
+      result = Info.resolve_write_scope_filter(LegacyResolverResource, :always, %{})
       assert result == true
     end
   end

@@ -27,10 +27,10 @@ defmodule AshGrant.Test.Employee do
           perms
 
         %{role: :admin} ->
-          ["employee:*:*:all"]
+          ["employee:*:*:always"]
 
         %{role: :hr_manager} ->
-          ["employee:*:read:all", "employee:*:update:all"]
+          ["employee:*:read:always", "employee:*:update:always"]
 
         %{role: :dept_manager} ->
           [
@@ -49,7 +49,7 @@ defmodule AshGrant.Test.Employee do
     resource_name("employee")
 
     # Organization hierarchy scopes
-    scope(:all, true)
+    scope(:always, true)
     scope(:org_self, expr(organization_unit_id == ^actor(:org_unit_id)))
     scope(:org_children, expr(organization_unit_id in ^actor(:child_org_ids)))
     scope(:org_subtree, expr(organization_unit_id in ^actor(:subtree_org_ids)))

@@ -28,7 +28,7 @@ defmodule AshGrant.Explanation do
         decision: :allow,
         matching_permissions: [
           %{
-            permission: "post:*:read:all",
+            permission: "post:*:read:always",
             description: "Read all posts",
             source: "editor_role",
             scope_name: :all,

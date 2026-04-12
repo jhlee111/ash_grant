@@ -28,7 +28,7 @@ defmodule AshGrant.Test.Feed do
     resource_name("feed")
     instance_key(:feed_id)
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:published, expr(status == :published))
 
     can_perform_actions([:update])

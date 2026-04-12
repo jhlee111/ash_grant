@@ -10,7 +10,7 @@ Define field groups with optional inheritance:
 ash_grant do
   resolver MyApp.PermissionResolver
 
-  scope :all, true
+  scope :always, true
 
   # Root group — no inheritance (whitelist)
   field_group :public, [:name, :department, :position]
@@ -25,12 +25,12 @@ end
 
 ### Blacklist Mode (`except`)
 
-When a resource has many attributes, use `:all` with `except` to exclude specific fields instead of listing all visible ones:
+When a resource has many attributes, use `:always` with `except` to exclude specific fields instead of listing all visible ones:
 
 ```elixir
 ash_grant do
   resolver MyApp.PermissionResolver
-  scope :all, true
+  scope :always, true
 
   # All attributes except salary and ssn
   field_group :public, :all, except: [:salary, :ssn]
@@ -40,17 +40,17 @@ ash_grant do
 end
 ```
 
-`:all` expands to all resource attributes at compile time. `except` removes fields from that list. `:all` without `except` is also valid (expands to all attributes).
+`:always` expands to all resource attributes at compile time. `except` removes fields from that list. `:always` without `except` is also valid (expands to all attributes).
 
 ## Permission Strings with Field Groups
 
 The 5th part of the permission string specifies the field group:
 
 ```elixir
-"employee:*:read:all:public"         # See name, department, position only
-"employee:*:read:all:sensitive"      # See public + phone, address
-"employee:*:read:all:confidential"   # See all fields
-"employee:*:read:all"               # No field_group → all fields visible
+"employee:*:read:always:public"         # See name, department, position only
+"employee:*:read:always:sensitive"      # See public + phone, address
+"employee:*:read:always:confidential"   # See all fields
+"employee:*:read:always"               # No field_group → all fields visible
 ```
 
 Fields not in the actor's field group are replaced with `%Ash.ForbiddenField{}`.
@@ -85,7 +85,7 @@ ash_grant do
   default_policies true
   default_field_policies true  # Auto-generates field_policies from field_groups
 
-  scope :all, true
+  scope :always, true
 
   field_group :public, [:name, :department, :position]
   field_group :sensitive, [:phone, :address], inherits: [:public]

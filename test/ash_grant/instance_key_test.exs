@@ -54,11 +54,11 @@ defmodule AshGrant.InstanceKeyTest do
       assert "feed_ccc" in feed_ids
     end
 
-    test "RBAC scope:all still works alongside instance_key" do
+    test "RBAC scope:always still works alongside instance_key" do
       _feed1 = create_feed!(feed_id: "feed_aaa", status: :published)
       _feed2 = create_feed!(feed_id: "feed_bbb", status: :draft)
 
-      actor = %{id: Ash.UUID.generate(), permissions: ["feed:*:read:all"]}
+      actor = %{id: Ash.UUID.generate(), permissions: ["feed:*:read:always"]}
 
       feeds = read_feeds(actor)
       assert length(feeds) == 2
@@ -111,7 +111,7 @@ defmodule AshGrant.InstanceKeyTest do
 
       actor = %{
         id: Ash.UUID.generate(),
-        permissions: ["feed:*:read:all", "feed:feed_aaa:update:"]
+        permissions: ["feed:*:read:always", "feed:feed_aaa:update:"]
       }
 
       feeds =
@@ -131,7 +131,7 @@ defmodule AshGrant.InstanceKeyTest do
 
       actor = %{
         id: Ash.UUID.generate(),
-        permissions: ["feed:*:read:all", "feed:*:update:published"]
+        permissions: ["feed:*:read:always", "feed:*:update:published"]
       }
 
       feeds =

@@ -51,10 +51,10 @@ defmodule MyApp.Blog.Post do
     # Resolver converts actor to permission strings
     resolver fn actor, _context ->
       case actor do
-        %{role: :admin} -> ["post:*:*:all"]           # Full access
+        %{role: :admin} -> ["post:*:*:always"]           # Full access
         %{role: :editor} -> [
-          "post:*:read:all",                          # Read all posts
-          "post:*:create:all",                        # Create posts
+          "post:*:read:always",                          # Read all posts
+          "post:*:create:always",                        # Create posts
           "post:*:update:own"                         # Update own posts only
         ]
         %{role: :viewer} -> ["post:*:read:published"] # Read published only
@@ -65,7 +65,7 @@ defmodule MyApp.Blog.Post do
     default_policies true  # Auto-generates read/write policies
 
     # Scopes define row-level filters (referenced by permission strings)
-    scope :all, true
+    scope :always, true
     scope :own, expr(author_id == ^actor(:id))
     scope :published, expr(status == :published)
   end
@@ -103,6 +103,7 @@ Post |> Ash.read!(actor: viewer)
 - **[Getting Started](guides/getting-started.md)** — Module-based resolvers, explicit policies, domain-level DSL, resolver patterns
 - **[Permissions](guides/permissions.md)** — Permission format, wildcards, RBAC, instance permissions, instance_key, scope_through, deny-wins
 - **[Scopes](guides/scopes.md)** — Scope DSL, inheritance, combination rules, multi-tenancy, relational scopes, business examples
+- **[Scope Naming Convention](guides/scope-naming-convention.md)** — Predicate naming, sentence test, RBAC/ABAC patterns, AND/OR composition
 - **[Field-Level Permissions](guides/field-level-permissions.md)** — Field groups, whitelist/blacklist modes, inheritance, masking
 - **[Checks & Policies](guides/checks-and-policies.md)** — Check types, CanPerform calculations, DSL configuration, default_policies
 - **[Debugging & Introspection](guides/debugging-and-introspection.md)** — explain/4, permission introspection, write: option, scope descriptions

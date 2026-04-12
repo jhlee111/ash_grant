@@ -28,7 +28,7 @@ defmodule AshGrant.Test.Customer do
           perms
 
         %{role: :admin} ->
-          ["customer:*:*:all"]
+          ["customer:*:*:always"]
 
         %{role: :regional_manager} ->
           [
@@ -57,7 +57,7 @@ defmodule AshGrant.Test.Customer do
     resource_name("customer")
 
     # Geographic scopes
-    scope(:all, true)
+    scope(:always, true)
     scope(:same_region, expr(region_id == ^actor(:region_id)))
     scope(:same_country, expr(country_code == ^actor(:country_code)))
     scope(:assigned_territories, expr(territory_id in ^actor(:territory_ids)))

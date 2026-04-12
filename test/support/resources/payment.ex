@@ -27,26 +27,26 @@ defmodule AshGrant.Test.Payment do
           perms
 
         %{role: :admin} ->
-          ["payment:*:*:all"]
+          ["payment:*:*:always"]
 
         %{role: :cfo} ->
           ["payment:*:*:unlimited"]
 
         %{role: :finance_manager} ->
           [
-            "payment:*:read:all",
+            "payment:*:read:always",
             "payment:*:approve:large_amount"
           ]
 
         %{role: :accountant} ->
           [
-            "payment:*:read:all",
+            "payment:*:read:always",
             "payment:*:approve:medium_amount"
           ]
 
         %{role: :clerk} ->
           [
-            "payment:*:read:all",
+            "payment:*:read:always",
             "payment:*:approve:small_amount"
           ]
 
@@ -58,7 +58,7 @@ defmodule AshGrant.Test.Payment do
     resource_name("payment")
 
     # Amount-based scopes
-    scope(:all, true)
+    scope(:always, true)
     scope(:unlimited, true)
     scope(:small_amount, expr(amount < 1000))
     scope(:medium_amount, expr(amount < 10_000))

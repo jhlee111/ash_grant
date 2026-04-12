@@ -16,7 +16,7 @@ result.decision  # => :allow or :deny
 
 # See matching permissions with metadata
 result.matching_permissions
-# => [%{permission: "post:*:read:all", description: "Read all posts", source: "editor_role", ...}]
+# => [%{permission: "post:*:read:always", description: "Read all posts", source: "editor_role", ...}]
 
 # See why permissions didn't match
 result.evaluated_permissions
@@ -37,7 +37,7 @@ Decision: ✓ ALLOW
 Actor:    %{id: "user-1", role: :editor}
 
 Matching Permissions:
-  • post:*:read:all [scope: all - All records without restriction] (from: editor_role)
+  • post:*:read:always [scope: always - All records without restriction] (from: editor_role)
     └─ Read all posts
 
 Scope Filter: true (no filtering)
@@ -61,7 +61,7 @@ DB query fallback. The `write:` option is an optional override for explicit cont
 ash_grant do
   resolver MyApp.PermissionResolver
 
-  scope :all, true
+  scope :always, true
 
   # Relational scope — DB query fallback handles writes automatically
   scope :team_member, expr(exists(team.memberships, user_id == ^actor(:id)))
@@ -101,7 +101,7 @@ Add descriptions to scopes for better debugging output:
 ash_grant do
   resolver MyApp.PermissionResolver
 
-  scope :all, true, description: "All records without restriction"
+  scope :always, true, description: "All records without restriction"
   scope :own, expr(author_id == ^actor(:id)), description: "Records owned by the current user"
   scope :published, expr(status == :published), description: "Published records visible to everyone"
 end
@@ -134,7 +134,7 @@ AshGrant.Introspect.actor_permissions(Post, current_user)
 ```elixir
 AshGrant.Introspect.available_permissions(Post)
 # => [
-#   %{permission_string: "post:*:read:all", action: "read", scope: "all", scope_description: "All records", field_group: nil},
+#   %{permission_string: "post:*:read:always", action: "read", scope: "all", scope_description: "All records", field_group: nil},
 #   %{permission_string: "post:*:read:own", action: "read", scope: "own", scope_description: "Own records", field_group: nil},
 #   ...
 # ]
@@ -173,7 +173,7 @@ AshGrant.Introspect.allowed_actions(Post, user, detailed: true)
 
 ```elixir
 AshGrant.Introspect.permissions_for(Post, user)
-# => ["post:*:read:all", "post:*:update:own", "post:*:create:all"]
+# => ["post:*:read:always", "post:*:update:own", "post:*:create:always"]
 ```
 
 ### With Context

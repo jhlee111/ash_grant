@@ -626,7 +626,7 @@ defmodule AshGrant.SimplifyCallbackTest do
         end)
 
         resource_name("integration_post")
-        scope(:all, true)
+        scope(:always, true)
         scope(:own, expr(author_id == ^actor(:id)))
       end
 
@@ -652,14 +652,14 @@ defmodule AshGrant.SimplifyCallbackTest do
     end
 
     test "Ash.can? works with simplify callbacks for read action" do
-      actor = %{id: Ash.UUID.generate(), permissions: ["integration_post:*:read:all"]}
+      actor = %{id: Ash.UUID.generate(), permissions: ["integration_post:*:read:always"]}
 
       # Should be able to read
       assert Ash.can?({IntegrationPost, :read}, actor) == true
     end
 
     test "Ash.can? works with simplify callbacks for create action" do
-      actor = %{id: Ash.UUID.generate(), permissions: ["integration_post:*:create:all"]}
+      actor = %{id: Ash.UUID.generate(), permissions: ["integration_post:*:create:always"]}
 
       # Should be able to create
       assert Ash.can?({IntegrationPost, :create}, actor) == true
@@ -680,16 +680,19 @@ defmodule AshGrant.SimplifyCallbackTest do
     test "policy evaluation uses AshGrant checks with simplify callbacks" do
       # This test verifies that the simplify/implies/conflicts callbacks
       # don't break the normal policy evaluation flow
-      actor_with_read = %{id: Ash.UUID.generate(), permissions: ["integration_post:*:read:all"]}
+      actor_with_read = %{
+        id: Ash.UUID.generate(),
+        permissions: ["integration_post:*:read:always"]
+      }
 
       actor_with_write = %{
         id: Ash.UUID.generate(),
-        permissions: ["integration_post:*:update:all"]
+        permissions: ["integration_post:*:update:always"]
       }
 
       actor_with_both = %{
         id: Ash.UUID.generate(),
-        permissions: ["integration_post:*:read:all", "integration_post:*:update:all"]
+        permissions: ["integration_post:*:read:always", "integration_post:*:update:always"]
       }
 
       # Read-only actor
@@ -708,7 +711,7 @@ defmodule AshGrant.SimplifyCallbackTest do
     test "multiple policy checks with same options handled correctly" do
       # Verifies that implies?/3 returning true for same checks doesn't
       # cause issues with policy evaluation
-      actor = %{id: Ash.UUID.generate(), permissions: ["integration_post:*:read:all"]}
+      actor = %{id: Ash.UUID.generate(), permissions: ["integration_post:*:read:always"]}
 
       # Multiple calls should all succeed
       assert Ash.can?({IntegrationPost, :read}, actor) == true

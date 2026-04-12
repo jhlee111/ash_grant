@@ -31,7 +31,7 @@ defmodule AshGrant.Test.SensitiveRecord do
     default_field_policies(true)
     resource_name("sensitiverecord")
 
-    scope(:all, true)
+    scope(:always, true)
 
     field_group(:public, [:name, :department, :position])
     field_group(:sensitive, [:phone, :address], inherits: [:public])

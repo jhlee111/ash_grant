@@ -76,7 +76,7 @@ defmodule AshGrant.PolicyTest.PropertyTest do
     property "deny always wins over allow for same action" do
       check all(
               action <- action_gen(),
-              scope <- StreamData.member_of(["all", "draft", "approved"]),
+              scope <- StreamData.member_of(["always", "draft", "approved"]),
               max_runs: 30
             ) do
         # Actor with both allow and deny for same action

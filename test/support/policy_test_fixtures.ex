@@ -263,12 +263,12 @@ defmodule AshGrant.PolicyTest.Fixtures.FieldVisibilityTest do
 
   resource(AshGrant.Test.ExceptRecord)
 
-  # Actor with :public field_group (:all except [:salary, :ssn])
-  actor(:public_viewer, %{permissions: ["exceptrecord:*:read:all:public"]})
+  # Actor with :public field_group (:always except [:salary, :ssn])
+  actor(:public_viewer, %{permissions: ["exceptrecord:*:read:always:public"]})
   # Actor with :full field_group (inherits :public, adds [:salary, :ssn])
-  actor(:full_viewer, %{permissions: ["exceptrecord:*:read:all:full"]})
+  actor(:full_viewer, %{permissions: ["exceptrecord:*:read:always:full"]})
   # Actor with 4-part permission (no field_group restriction)
-  actor(:unrestricted, %{permissions: ["exceptrecord:*:read:all"]})
+  actor(:unrestricted, %{permissions: ["exceptrecord:*:read:always"]})
   # Actor with no permissions
   actor(:nobody, %{permissions: []})
 
@@ -301,12 +301,12 @@ defmodule AshGrant.PolicyTest.Fixtures.ExceptFieldGroupTest do
 
   resource(AshGrant.Test.ExceptRecord)
 
-  # Actor with :public field_group (:all except [:salary, :ssn])
-  actor(:public_viewer, %{permissions: ["exceptrecord:*:read:all:public"]})
+  # Actor with :public field_group (:always except [:salary, :ssn])
+  actor(:public_viewer, %{permissions: ["exceptrecord:*:read:always:public"]})
   # Actor with :full field_group (inherits :public, adds [:salary, :ssn])
-  actor(:full_viewer, %{permissions: ["exceptrecord:*:read:all:full"]})
+  actor(:full_viewer, %{permissions: ["exceptrecord:*:read:always:full"]})
   # Actor with 4-part permission (no field_group restriction)
-  actor(:unrestricted, %{permissions: ["exceptrecord:*:read:all"]})
+  actor(:unrestricted, %{permissions: ["exceptrecord:*:read:always"]})
   # Actor with no permissions
   actor(:nobody, %{permissions: []})
 
@@ -334,7 +334,7 @@ defmodule AshGrant.PolicyTest.Fixtures.FeedPolicyTest do
   resource(AshGrant.Test.Feed)
 
   actor(:feed_reader, %{permissions: ["feed:feed_abc:read:"]})
-  actor(:all_reader, %{permissions: ["feed:*:read:all"]})
+  actor(:all_reader, %{permissions: ["feed:*:read:always"]})
   actor(:guest, %{permissions: []})
 
   test "feed_reader can read (instance permission)" do
@@ -383,19 +383,19 @@ defmodule AshGrant.PolicyTest.Fixtures.GenericActionPolicyTest do
 
   # Actor with specific generic action permissions (by name)
   actor(:operator, %{
-    permissions: ["service_request:*:ping:all", "service_request:*:check_status:all"]
+    permissions: ["service_request:*:ping:always", "service_request:*:check_status:always"]
   })
 
   # Actor with only ping permission
-  actor(:ping_only, %{permissions: ["service_request:*:ping:all"]})
+  actor(:ping_only, %{permissions: ["service_request:*:ping:always"]})
   # Actor with CRUD but no generic action permission
   actor(:crud_only, %{
-    permissions: ["service_request:*:read:all", "service_request:*:create:all"]
+    permissions: ["service_request:*:read:always", "service_request:*:create:always"]
   })
 
   # Actor with deny on specific generic action
   actor(:denied_ping, %{
-    permissions: ["service_request:*:ping:all", "!service_request:*:ping:all"]
+    permissions: ["service_request:*:ping:always", "!service_request:*:ping:always"]
   })
 
   # No permissions at all

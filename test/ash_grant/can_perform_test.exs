@@ -78,8 +78,8 @@ defmodule AshGrant.CanPerformTest do
       own = posts_by_id[own_post.id]
       assert own.can_update? == true
 
-      # Editor can read all (read:all) but can only update own
-      # Other post visible due to read:all, but can_update? false
+      # Editor can read all (read:always) but can only update own
+      # Other post visible due to read:always, but can_update? false
       other_posts = Enum.reject(posts, &(&1.id == own_post.id))
 
       for post <- other_posts do
@@ -120,10 +120,10 @@ defmodule AshGrant.CanPerformTest do
       author_id = Ash.UUID.generate()
       create_post!(%{title: "Post 1", status: :published, author_id: author_id})
 
-      # Actor has update:all but also !update:all → deny wins
+      # Actor has update:always but also !update:always → deny wins
       actor =
         custom_perms_actor(
-          ["post:*:read:all", "post:*:update:all", "!post:*:update:all"],
+          ["post:*:read:always", "post:*:update:always", "!post:*:update:always"],
           author_id
         )
 
@@ -149,7 +149,7 @@ defmodule AshGrant.CanPerformTest do
       # Actor can update own OR published
       actor =
         custom_perms_actor(
-          ["post:*:read:all", "post:*:update:own", "post:*:update:published"],
+          ["post:*:read:always", "post:*:update:own", "post:*:update:published"],
           editor_id
         )
 

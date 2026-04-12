@@ -47,7 +47,7 @@ defmodule AshGrant do
           resolver MyApp.PermissionResolver
           default_policies true  # Auto-generates read/write policies!
 
-          scope :all, true
+          scope :always, true
           scope :own, expr(author_id == ^actor(:id))
           scope :published, expr(status == :published)
         end
@@ -70,7 +70,7 @@ defmodule AshGrant do
           resolver MyApp.PermissionResolver
           resource_name "post"
 
-          scope :all, true
+          scope :always, true
           scope :own, expr(author_id == ^actor(:id))
           scope :published, expr(status == :published)
         end
@@ -178,13 +178,13 @@ defmodule AshGrant do
 
   ### RBAC Permissions (instance_id = `*`)
 
-      "blog:*:read:all"           # Read all blogs
+      "blog:*:read:always"           # Read all blogs
       "blog:*:read:published"     # Read only published blogs
       "blog:*:update:own"         # Update own blogs only
-      "blog:*:*:all"              # All actions on all blogs
-      "*:*:read:all"              # Read all resources
-      "blog:*:read*:all"          # All read-type actions
-      "!blog:*:delete:all"        # DENY delete on all blogs
+      "blog:*:*:always"              # All actions on all blogs
+      "*:*:read:always"              # Read all resources
+      "blog:*:read*:always"          # All read-type actions
+      "!blog:*:delete:always"        # DENY delete on all blogs
 
   ### Instance Permissions (specific instance_id)
 
@@ -207,7 +207,7 @@ defmodule AshGrant do
   Define scopes inline using `expr()` expressions:
 
       ash_grant do
-        scope :all, true
+        scope :always, true
         scope :own, expr(author_id == ^actor(:id))
         scope :published, expr(status == :published)
         scope :own_draft, [:own], expr(status == :draft)  # Inheritance
@@ -238,8 +238,8 @@ defmodule AshGrant do
   When both allow and deny rules match, deny always takes precedence:
 
       permissions = [
-        "blog:*:*:all",           # Allow all blog actions
-        "!blog:*:delete:all"      # Deny delete
+        "blog:*:*:always",           # Allow all blog actions
+        "!blog:*:delete:always"      # Deny delete
       ]
 
       # Result: read/update allowed, delete DENIED
@@ -265,7 +265,7 @@ defmodule AshGrant do
         default_policies true                   # Optional: auto-generate policies
         resource_name "custom_name"             # Optional
 
-        scope :all, true
+        scope :always, true
         scope :own, expr(author_id == ^actor(:id))
         scope :same_tenant, expr(tenant_id == ^tenant())  # Multi-tenancy
 
@@ -409,7 +409,7 @@ defmodule AshGrant do
       iex> AshGrant.explain(MyApp.Post, :read, actor)
       %AshGrant.Explanation{
         decision: :allow,
-        matching_permissions: [%{permission: "post:*:read:all", ...}],
+        matching_permissions: [%{permission: "post:*:read:always", ...}],
         ...
       }
 

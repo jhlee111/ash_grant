@@ -9,7 +9,7 @@ defmodule AshGrant.Test.ResolverOnlyPost do
   ash_grant do
     default_policies(true)
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(author_id == ^actor(:id)))
   end
 

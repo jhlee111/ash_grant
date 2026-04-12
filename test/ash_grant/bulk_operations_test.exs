@@ -45,7 +45,7 @@ defmodule AshGrant.BulkOperationsTest do
 
   describe "bulk_create" do
     test "with all scope creates all items" do
-      actor = actor_with_perms(["item:*:create:all"])
+      actor = actor_with_perms(["item:*:create:always"])
 
       inputs = [
         %{title: "Item 1", author_id: actor.id},
@@ -137,7 +137,7 @@ defmodule AshGrant.BulkOperationsTest do
     end
 
     test "with deny rule is forbidden" do
-      actor = actor_with_perms(["item:*:create:all", "!item:*:create:all"])
+      actor = actor_with_perms(["item:*:create:always", "!item:*:create:always"])
 
       inputs = [%{title: "Denied Item"}]
 
@@ -237,7 +237,7 @@ defmodule AshGrant.BulkOperationsTest do
 
   describe "bulk_update" do
     test "with all scope updates all items" do
-      actor = actor_with_perms(["item:*:update:all"])
+      actor = actor_with_perms(["item:*:update:always"])
 
       _item1 = create_item!(%{title: "Update Me 1", author_id: actor.id})
       _item2 = create_item!(%{title: "Update Me 2", author_id: actor.id})
@@ -260,7 +260,7 @@ defmodule AshGrant.BulkOperationsTest do
 
     test "with own scope updates own items" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:own", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:own", "item:*:read:always"], actor_id)
 
       _own_item = create_item!(%{title: "My Item", author_id: actor_id})
 
@@ -280,7 +280,8 @@ defmodule AshGrant.BulkOperationsTest do
     end
 
     test "with deny rule rejects updates" do
-      actor = actor_with_perms(["item:*:update:all", "!item:*:update:all", "item:*:read:all"])
+      actor =
+        actor_with_perms(["item:*:update:always", "!item:*:update:always", "item:*:read:always"])
 
       _item = create_item!(%{title: "Deny Update", author_id: actor.id})
 
@@ -300,7 +301,7 @@ defmodule AshGrant.BulkOperationsTest do
 
     test "with exists() scope (team_member) succeeds via DB query" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:update:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("Update Team")
       create_membership!(team, actor_id)
@@ -327,7 +328,7 @@ defmodule AshGrant.BulkOperationsTest do
 
   describe "bulk_destroy" do
     test "with all scope destroys all items" do
-      actor = actor_with_perms(["item:*:destroy:all", "item:*:read:all"])
+      actor = actor_with_perms(["item:*:destroy:always", "item:*:read:always"])
 
       _item1 = create_item!(%{title: "Delete Me 1", author_id: actor.id})
       _item2 = create_item!(%{title: "Delete Me 2", author_id: actor.id})
@@ -349,7 +350,7 @@ defmodule AshGrant.BulkOperationsTest do
 
     test "with own scope destroys own items" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:destroy:own", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:destroy:own", "item:*:read:always"], actor_id)
 
       _own_item = create_item!(%{title: "My Delete Item", author_id: actor_id})
 
@@ -369,7 +370,12 @@ defmodule AshGrant.BulkOperationsTest do
     end
 
     test "with deny rule rejects destroys" do
-      actor = actor_with_perms(["item:*:destroy:all", "!item:*:destroy:all", "item:*:read:all"])
+      actor =
+        actor_with_perms([
+          "item:*:destroy:always",
+          "!item:*:destroy:always",
+          "item:*:read:always"
+        ])
 
       _item = create_item!(%{title: "Deny Delete", author_id: actor.id})
 
@@ -390,7 +396,7 @@ defmodule AshGrant.BulkOperationsTest do
 
     test "with exists() scope (team_member) succeeds via DB query" do
       actor_id = Ash.UUID.generate()
-      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:all"], actor_id)
+      actor = actor_with_perms(["item:*:destroy:team_member", "item:*:read:always"], actor_id)
 
       team = create_team!("Destroy Team")
       create_membership!(team, actor_id)

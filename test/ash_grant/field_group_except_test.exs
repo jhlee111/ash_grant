@@ -80,7 +80,7 @@ defmodule AshGrant.FieldGroupExceptTest do
             default_policies(true)
             default_field_policies(true)
             resource_name("exc_no_wildcard")
-            scope(:all, true)
+            scope(:always, true)
 
             field_group(:bad, [:name, :email], except: [:salary])
           end
@@ -113,7 +113,7 @@ defmodule AshGrant.FieldGroupExceptTest do
             default_policies(true)
             default_field_policies(true)
             resource_name("exc_bad_field")
-            scope(:all, true)
+            scope(:always, true)
 
             field_group(:bad, :all, except: [:nonexistent_field])
           end
@@ -144,7 +144,7 @@ defmodule AshGrant.FieldGroupExceptTest do
             default_policies(true)
             default_field_policies(true)
             resource_name("exc_mask_conflict")
-            scope(:all, true)
+            scope(:always, true)
 
             field_group(:bad, :all,
               except: [:salary],
@@ -182,7 +182,7 @@ defmodule AshGrant.FieldGroupExceptTest do
           default_policies(true)
           default_field_policies(true)
           resource_name("all_no_except")
-          scope(:all, true)
+          scope(:always, true)
 
           field_group(:everything, :all)
         end
@@ -231,7 +231,7 @@ defmodule AshGrant.FieldGroupExceptTest do
     end
 
     test "actor with :public sees non-excepted fields, not excepted ones", %{record: record} do
-      actor = %{permissions: ["exceptrecord:*:read:all:public"]}
+      actor = %{permissions: ["exceptrecord:*:read:always:public"]}
       results = ExceptRecord |> Ash.read!(actor: actor)
       result = Enum.find(results, &(&1.id == record.id))
 
@@ -251,7 +251,7 @@ defmodule AshGrant.FieldGroupExceptTest do
     end
 
     test "actor with 4-part permission (no field_group) sees all fields", %{record: record} do
-      actor = %{permissions: ["exceptrecord:*:read:all"]}
+      actor = %{permissions: ["exceptrecord:*:read:always"]}
       results = ExceptRecord |> Ash.read!(actor: actor)
       result = Enum.find(results, &(&1.id == record.id))
 
@@ -261,7 +261,7 @@ defmodule AshGrant.FieldGroupExceptTest do
     end
 
     test "actor with :full sees all fields including excepted ones", %{record: record} do
-      actor = %{permissions: ["exceptrecord:*:read:all:full"]}
+      actor = %{permissions: ["exceptrecord:*:read:always:full"]}
       results = ExceptRecord |> Ash.read!(actor: actor)
       result = Enum.find(results, &(&1.id == record.id))
 

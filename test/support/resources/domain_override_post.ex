@@ -12,7 +12,7 @@ defmodule AshGrant.Test.DomainOverridePost do
       case actor do
         nil -> []
         %{permissions: perms} -> perms
-        %{role: :admin} -> ["domain_override_post:*:*:all"]
+        %{role: :admin} -> ["domain_override_post:*:*:always"]
         _ -> []
       end
     end)

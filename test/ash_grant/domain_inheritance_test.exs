@@ -33,37 +33,37 @@ defmodule AshGrant.DomainInheritanceTest do
       resolver = Info.resolver(DomainInheritedPost)
       assert is_function(resolver, 2)
 
-      a = %{permissions: ["domain_inherited_post:*:read:all"]}
-      assert resolver.(a, %{}) == ["domain_inherited_post:*:read:all"]
+      a = %{permissions: ["domain_inherited_post:*:read:always"]}
+      assert resolver.(a, %{}) == ["domain_inherited_post:*:read:always"]
     end
 
     test "resource resolver takes precedence over domain" do
       resolver = Info.resolver(DomainOverridePost)
       assert is_function(resolver, 2)
 
-      assert resolver.(%{role: :admin}, %{}) == ["domain_override_post:*:*:all"]
+      assert resolver.(%{role: :admin}, %{}) == ["domain_override_post:*:*:always"]
     end
 
     test "existing resource in plain domain keeps own resolver" do
       resolver = Info.resolver(AshGrant.Test.Post)
       assert is_function(resolver, 2)
-      assert resolver.(%{role: :admin}, %{}) == ["post:*:*:all"]
+      assert resolver.(%{role: :admin}, %{}) == ["post:*:*:always"]
     end
 
     test "domain provides resolver only, resource adds scopes" do
       resolver = Info.resolver(ResolverOnlyPost)
       assert is_function(resolver, 2)
 
-      a = %{permissions: ["resolver_only_post:*:read:all"]}
-      assert resolver.(a, %{}) == ["resolver_only_post:*:read:all"]
+      a = %{permissions: ["resolver_only_post:*:read:always"]}
+      assert resolver.(a, %{}) == ["resolver_only_post:*:read:always"]
     end
 
     test "resource provides resolver, domain provides scopes only" do
       resolver = Info.resolver(ScopesOnlyPost)
       assert is_function(resolver, 2)
 
-      a = %{permissions: ["scopes_only_post:*:read:all"]}
-      assert resolver.(a, %{}) == ["scopes_only_post:*:read:all"]
+      a = %{permissions: ["scopes_only_post:*:read:always"]}
+      assert resolver.(a, %{}) == ["scopes_only_post:*:read:always"]
     end
   end
 
@@ -72,7 +72,7 @@ defmodule AshGrant.DomainInheritanceTest do
   describe "scope inheritance" do
     test "resource inherits all scopes from domain" do
       names = scope_names(DomainInheritedPost)
-      assert :all in names
+      assert :always in names
       assert :own in names
     end
 
@@ -89,29 +89,29 @@ defmodule AshGrant.DomainInheritanceTest do
 
     test "resource adds scopes beyond domain's" do
       names = scope_names(DomainMinimalPost)
-      assert :all in names
+      assert :always in names
       assert :own in names
       assert :published in names
     end
 
     test "domain and resource scopes are merged (no duplicates)" do
-      assert scope_names(DomainMinimalPost) |> Enum.sort() == [:all, :own, :published]
+      assert scope_names(DomainMinimalPost) |> Enum.sort() == [:always, :own, :published]
     end
 
-    test "domain :all scope inherits correctly as true" do
-      assert Info.resolve_scope_filter(DomainInheritedPost, :all, %{}) == true
+    test "domain :always scope inherits correctly as true" do
+      assert Info.resolve_scope_filter(DomainInheritedPost, :always, %{}) == true
     end
 
     test "domain provides scopes only, resource inherits them" do
       names = scope_names(ScopesOnlyPost)
-      assert :all in names
+      assert :always in names
       assert :own in names
       assert :published in names
     end
 
     test "domain provides resolver only, resource defines own scopes" do
       names = scope_names(ResolverOnlyPost)
-      assert :all in names
+      assert :always in names
       assert :own in names
     end
 
@@ -179,7 +179,7 @@ defmodule AshGrant.DomainInheritanceTest do
         |> AshGrant.Domain.Info.scopes()
         |> Enum.map(& &1.name)
 
-      assert :all in names
+      assert :always in names
       assert :own in names
     end
 
@@ -209,7 +209,7 @@ defmodule AshGrant.DomainInheritanceTest do
             extensions: [AshGrant]
 
           ash_grant do
-            scope(:all, true)
+            scope(:always, true)
           end
 
           attributes do
@@ -227,12 +227,12 @@ defmodule AshGrant.DomainInheritanceTest do
   # ── end-to-end authorization ─────────────────────────────
 
   describe "e2e: read with domain-inherited config" do
-    test "actor with :all scope reads all records" do
+    test "actor with :always scope reads all records" do
       id = Ash.UUID.generate()
       r1 = create!(DomainInheritedPost, %{title: "A", author_id: id})
       r2 = create!(DomainInheritedPost, %{title: "B", author_id: Ash.UUID.generate()})
 
-      ids = read_ids(DomainInheritedPost, actor(id, ["domain_inherited_post:*:read:all"]))
+      ids = read_ids(DomainInheritedPost, actor(id, ["domain_inherited_post:*:read:always"]))
 
       assert r1.id in ids
       assert r2.id in ids
@@ -270,7 +270,7 @@ defmodule AshGrant.DomainInheritanceTest do
   describe "e2e: write with domain-inherited config" do
     test "actor with create permission can create" do
       me = Ash.UUID.generate()
-      a = actor(me, ["domain_inherited_post:*:create:all"])
+      a = actor(me, ["domain_inherited_post:*:create:always"])
 
       result =
         DomainInheritedPost
@@ -282,7 +282,7 @@ defmodule AshGrant.DomainInheritanceTest do
 
     test "actor without create permission gets Forbidden" do
       me = Ash.UUID.generate()
-      a = actor(me, ["domain_inherited_post:*:read:all"])
+      a = actor(me, ["domain_inherited_post:*:read:always"])
 
       assert_raise Ash.Error.Forbidden, fn ->
         DomainInheritedPost
@@ -432,8 +432,8 @@ defmodule AshGrant.DomainInheritanceTest do
 
       a =
         actor(me, [
-          "domain_inherited_post:*:read:all",
-          "!domain_inherited_post:*:read:all"
+          "domain_inherited_post:*:read:always",
+          "!domain_inherited_post:*:read:always"
         ])
 
       assert_raise Ash.Error.Forbidden, fn ->

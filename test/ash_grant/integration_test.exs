@@ -30,8 +30,8 @@ defmodule AshGrant.IntegrationTest do
         case actor do
           nil -> []
           %{permissions: perms} -> perms
-          %{role: :admin} -> ["post:*:*:all"]
-          %{role: :editor} -> ["post:*:read:all", "post:*:update:own", "post:*:create:all"]
+          %{role: :admin} -> ["post:*:*:always"]
+          %{role: :editor} -> ["post:*:read:always", "post:*:update:own", "post:*:create:always"]
           %{role: :viewer} -> ["post:*:read:published"]
           _ -> []
         end
@@ -39,7 +39,7 @@ defmodule AshGrant.IntegrationTest do
 
       resource_name("post")
 
-      scope(:all, true)
+      scope(:always, true)
       scope(:own, expr(author_id == ^actor(:id)))
       scope(:published, expr(status == :published))
     end
@@ -77,16 +77,23 @@ defmodule AshGrant.IntegrationTest do
     ash_grant do
       resolver(fn actor, _context ->
         case actor do
-          nil -> []
-          %{role: :admin} -> ["comment:*:*:all"]
-          %{role: :user} -> ["comment:*:read:all", "comment:*:create:all", "comment:*:delete:own"]
-          _ -> []
+          nil ->
+            []
+
+          %{role: :admin} ->
+            ["comment:*:*:always"]
+
+          %{role: :user} ->
+            ["comment:*:read:always", "comment:*:create:always", "comment:*:delete:own"]
+
+          _ ->
+            []
         end
       end)
 
       resource_name("comment")
 
-      scope(:all, true)
+      scope(:always, true)
       scope(:own, expr(user_id == ^actor(:id)))
     end
 
@@ -168,7 +175,7 @@ defmodule AshGrant.IntegrationTest do
       permissions = resolver.(actor, %{})
 
       scope = Evaluator.get_scope(permissions, "post", "read")
-      assert scope == "all"
+      assert scope == "always"
     end
 
     test "editor gets 'own' scope for update" do
@@ -192,7 +199,7 @@ defmodule AshGrant.IntegrationTest do
 
   describe "scope filter resolution" do
     test "resolves 'all' scope to true" do
-      filter = Info.resolve_scope_filter(Post, :all, %{})
+      filter = Info.resolve_scope_filter(Post, :always, %{})
       assert filter == true
     end
 
@@ -211,8 +218,8 @@ defmodule AshGrant.IntegrationTest do
     test "deny overrides allow" do
       actor =
         custom_perms_actor([
-          "post:*:*:all",
-          "!post:*:delete:all"
+          "post:*:*:always",
+          "!post:*:delete:always"
         ])
 
       resolver = Info.resolver(Post)
@@ -226,9 +233,9 @@ defmodule AshGrant.IntegrationTest do
     test "multiple deny rules" do
       actor =
         custom_perms_actor([
-          "post:*:*:all",
-          "!post:*:delete:all",
-          "!post:*:update:all"
+          "post:*:*:always",
+          "!post:*:delete:always",
+          "!post:*:update:always"
         ])
 
       resolver = Info.resolver(Post)

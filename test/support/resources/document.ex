@@ -27,19 +27,19 @@ defmodule AshGrant.Test.Document do
           perms
 
         %{role: :admin} ->
-          ["document:*:*:all"]
+          ["document:*:*:always"]
 
         %{role: :author} ->
           [
-            "document:*:read:all",
-            "document:*:create:all",
+            "document:*:read:always",
+            "document:*:create:always",
             "document:*:update:draft",
             "document:*:update:pending_review"
           ]
 
         %{role: :reviewer} ->
           [
-            "document:*:read:all",
+            "document:*:read:always",
             "document:*:update:pending_review",
             "!document:*:delete:approved"
           ]
@@ -55,7 +55,7 @@ defmodule AshGrant.Test.Document do
     resource_name("document")
 
     # Status-based scopes
-    scope(:all, true)
+    scope(:always, true)
     scope(:draft, expr(status == :draft))
     scope(:pending_review, expr(status == :pending_review))
     scope(:approved, expr(status == :approved))

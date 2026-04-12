@@ -14,17 +14,26 @@ defmodule AshGrant.Test.Comment do
   ash_grant do
     resolver(fn actor, _context ->
       case actor do
-        nil -> []
-        %{permissions: perms} -> perms
-        %{role: :admin} -> ["comment:*:*:all"]
-        %{role: :user} -> ["comment:*:read:all", "comment:*:create:all", "comment:*:delete:own"]
-        _ -> []
+        nil ->
+          []
+
+        %{permissions: perms} ->
+          perms
+
+        %{role: :admin} ->
+          ["comment:*:*:always"]
+
+        %{role: :user} ->
+          ["comment:*:read:always", "comment:*:create:always", "comment:*:delete:own"]
+
+        _ ->
+          []
       end
     end)
 
     resource_name("comment")
 
-    scope(:all, true)
+    scope(:always, true)
     scope(:own, expr(user_id == ^actor(:id)))
   end
 

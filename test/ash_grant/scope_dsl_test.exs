@@ -14,7 +14,7 @@ defmodule AshGrant.ScopeDslTest do
     ash_grant do
       resolver(fn _actor, _context -> [] end)
 
-      scope(:all, [], true, description: "All records without restriction")
+      scope(:always, [], true, description: "All records without restriction")
 
       scope(:published, [], expr(status == :published),
         description: "Published posts visible to everyone"
@@ -41,9 +41,9 @@ defmodule AshGrant.ScopeDslTest do
     ash_grant do
       resolver(fn _actor, _context -> [] end)
 
-      scope(:all, true)
+      scope(:always, true)
       scope(:pending, expr(status == :pending))
-      scope(:all_pending, [:all], expr(status == :pending))
+      scope(:always_pending, [:always], expr(status == :pending))
     end
 
     attributes do
@@ -60,16 +60,16 @@ defmodule AshGrant.ScopeDslTest do
       assert length(scopes) == 3
 
       scope_names = Enum.map(scopes, & &1.name)
-      assert :all in scope_names
+      assert :always in scope_names
       assert :published in scope_names
       assert :draft in scope_names
     end
 
     test "scope has name and filter" do
       scopes = Info.scopes(TestPost)
-      all_scope = Enum.find(scopes, &(&1.name == :all))
+      all_scope = Enum.find(scopes, &(&1.name == :always))
 
-      assert all_scope.name == :all
+      assert all_scope.name == :always
       assert all_scope.filter == true
       # inherits can be nil or empty list when not specified
       assert all_scope.inherits in [nil, []]
@@ -88,10 +88,10 @@ defmodule AshGrant.ScopeDslTest do
   describe "scope inheritance" do
     test "scope can inherit from another scope" do
       scopes = Info.scopes(TestComment)
-      all_pending_scope = Enum.find(scopes, &(&1.name == :all_pending))
+      always_pending_scope = Enum.find(scopes, &(&1.name == :always_pending))
 
-      assert all_pending_scope.name == :all_pending
-      assert all_pending_scope.inherits == [:all]
+      assert always_pending_scope.name == :always_pending
+      assert always_pending_scope.inherits == [:always]
     end
   end
 
@@ -107,8 +107,8 @@ defmodule AshGrant.ScopeDslTest do
   end
 
   describe "Info.resolve_scope_filter/3" do
-    test "returns true for :all scope" do
-      filter = Info.resolve_scope_filter(TestPost, :all, %{})
+    test "returns true for :always scope" do
+      filter = Info.resolve_scope_filter(TestPost, :always, %{})
       assert filter == true
     end
 
@@ -125,8 +125,8 @@ defmodule AshGrant.ScopeDslTest do
     end
 
     test "combines inherited scope with own filter" do
-      filter = Info.resolve_scope_filter(TestComment, :all_pending, %{})
-      # :all is true, so result should just be the pending filter
+      filter = Info.resolve_scope_filter(TestComment, :always_pending, %{})
+      # :always is true, so result should just be the pending filter
       assert filter != nil
       refute filter == true
     end
@@ -134,7 +134,7 @@ defmodule AshGrant.ScopeDslTest do
 
   describe "scope description" do
     test "scope can have description" do
-      scope = Info.get_scope(TestPost, :all)
+      scope = Info.get_scope(TestPost, :always)
       assert scope.description == "All records without restriction"
     end
 
@@ -144,7 +144,7 @@ defmodule AshGrant.ScopeDslTest do
     end
 
     test "Info.scope_description/2 returns description for existing scope" do
-      assert Info.scope_description(TestPost, :all) == "All records without restriction"
+      assert Info.scope_description(TestPost, :always) == "All records without restriction"
       assert Info.scope_description(TestPost, :published) == "Published posts visible to everyone"
     end
 

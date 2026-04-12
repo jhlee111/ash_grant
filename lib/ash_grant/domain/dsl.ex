@@ -18,7 +18,7 @@ defmodule AshGrant.Domain.Dsl do
         ash_grant do
           resolver MyApp.PermissionResolver
 
-          scope :all, true
+          scope :always, true
           scope :own, expr(author_id == ^actor(:id))
         end
 
@@ -44,7 +44,7 @@ defmodule AshGrant.Domain.Dsl do
       ash_grant do
         resolver MyApp.PermissionResolver
 
-        scope :all, true
+        scope :always, true
         scope :own, expr(author_id == ^actor(:id))
       end
       """

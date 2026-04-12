@@ -117,7 +117,7 @@ defmodule AshGrant.Transformers.ResolveFieldGroupFields do
     IO.warn("""
     AshGrant: field_group #{inspect(group_name)} uses deprecated [:*] syntax in #{inspect(resource)}.
 
-    Replace [:*] with :all:
+    Replace [:*] with :always"
         field_group #{inspect(group_name)}, :all
         field_group #{inspect(group_name)}, :all, except: [:field1, :field2]
 

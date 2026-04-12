@@ -41,7 +41,7 @@ ash_grant do
   resolver MyApp.PermissionResolver
   # default_policies false (default)
 
-  scope :all, true
+  scope :always, true
   scope :own, expr(author_id == ^actor(:id))
 end
 
@@ -105,7 +105,7 @@ end
 When multiple resources share the same resolver and scopes, define them once at the domain level instead of repeating the same `ash_grant do` block in every resource.
 
 **When to use:**
-- 3+ resources in a domain share the same resolver and common scopes (`:all`, `:own`, etc.)
+- 3+ resources in a domain share the same resolver and common scopes (`:always`, `:own`, etc.)
 - You want a single place to change the resolver or add a scope for all resources
 
 **When NOT to use:**
@@ -122,7 +122,7 @@ defmodule MyApp.Blog do
   ash_grant do
     resolver MyApp.PermissionResolver
 
-    scope :all, true
+    scope :always, true
     scope :own, expr(author_id == ^actor(:id))
   end
 
@@ -145,7 +145,7 @@ defmodule MyApp.Blog.Post do
   ash_grant do
     default_policies true
     # No resolver needed — inherited from domain
-    # :all and :own scopes inherited from domain
+    # :always and :own scopes inherited from domain
     scope :published, expr(status == :published)  # Add resource-specific scopes
   end
 

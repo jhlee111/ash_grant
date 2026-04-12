@@ -20,7 +20,7 @@ defmodule AshGrant.TemporalScopeTest do
       resolver(fn _actor, _context -> [] end)
 
       # Boolean scope - no filtering
-      scope(:all, true)
+      scope(:always, true)
 
       # Temporal scope - records from today
       # Using fragment for database-level date comparison
@@ -114,7 +114,7 @@ defmodule AshGrant.TemporalScopeTest do
     ash_grant do
       resolver(fn _actor, _context -> [] end)
 
-      scope(:all, true)
+      scope(:always, true)
 
       # Only user's own transactions
       scope(:own, expr(user_id == ^actor(:id)))
@@ -224,8 +224,8 @@ defmodule AshGrant.TemporalScopeTest do
   end
 
   describe "scope resolution" do
-    test "resolves :all scope to true" do
-      filter = Info.resolve_scope_filter(Ledger, :all, %{})
+    test "resolves :always scope to true" do
+      filter = Info.resolve_scope_filter(Ledger, :always, %{})
       assert filter == true
     end
 
@@ -246,7 +246,7 @@ defmodule AshGrant.TemporalScopeTest do
     test "temporal scopes work with permission format" do
       # These would be valid permission strings
       permissions = [
-        "ledger:*:read:all",
+        "ledger:*:read:always",
         "ledger:*:update:today",
         "ledger:*:delete:today",
         "transaction:*:read:own",
@@ -262,7 +262,7 @@ defmodule AshGrant.TemporalScopeTest do
       assert Evaluator.has_access?(permissions, "transaction", "update")
 
       # Check scopes are correctly extracted
-      assert Evaluator.get_scope(permissions, "ledger", "read") == "all"
+      assert Evaluator.get_scope(permissions, "ledger", "read") == "always"
       assert Evaluator.get_scope(permissions, "ledger", "update") == "today"
       assert Evaluator.get_scope(permissions, "transaction", "read") == "own"
       assert Evaluator.get_scope(permissions, "transaction", "update") == "own_today"

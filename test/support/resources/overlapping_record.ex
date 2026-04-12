@@ -1,8 +1,8 @@
 defmodule AshGrant.Test.OverlappingRecord do
   @moduledoc """
-  Test resource for overlapping field_group definitions using `:all`.
+  Test resource for overlapping field_group definitions using `:always`.
 
-  Multiple field groups use `:all` (or `:all, except:`), which expand to
+  Multiple field groups use `:always` (or `:all, except:`), which expand to
   overlapping attribute lists. Without deduplication, a field would appear
   in multiple field_policies, causing Ash's "all must pass" semantics to
   deny access when only one group's check passes.
@@ -33,7 +33,7 @@ defmodule AshGrant.Test.OverlappingRecord do
     default_field_policies(true)
     resource_name("overlappingrecord")
 
-    scope(:all, true)
+    scope(:always, true)
 
     field_group(:public, [:name, :description, :price])
     field_group(:internal, :all, except: [:tax_code], inherits: [:public])

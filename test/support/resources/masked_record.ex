@@ -42,7 +42,7 @@ defmodule AshGrant.Test.MaskedRecord do
     default_field_policies(true)
     resource_name("maskedrecord")
 
-    scope(:all, true)
+    scope(:always, true)
 
     field_group(:public, [:name, :department])
 

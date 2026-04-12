@@ -9,7 +9,7 @@ defmodule AshGrant.Test.DomainMinimalPost do
   ash_grant do
     default_policies(true)
 
-    # Extra scope beyond domain's :all and :own
+    # Extra scope beyond domain's :always and :own
     scope(:published, expr(status == :published))
   end
 

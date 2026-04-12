@@ -6,10 +6,10 @@ defmodule AshGrant.PermissionableTest do
 
   describe "Permissionable protocol for BitString" do
     test "converts string to PermissionInput" do
-      input = Permissionable.to_permission_input("post:*:read:all")
+      input = Permissionable.to_permission_input("post:*:read:always")
 
       assert %PermissionInput{} = input
-      assert input.string == "post:*:read:all"
+      assert input.string == "post:*:read:always"
       assert input.description == nil
       assert input.source == nil
       assert input.metadata == nil
@@ -19,7 +19,7 @@ defmodule AshGrant.PermissionableTest do
   describe "Permissionable protocol for PermissionInput" do
     test "returns PermissionInput as-is" do
       original = %PermissionInput{
-        string: "post:*:read:all",
+        string: "post:*:read:always",
         description: "Read all posts",
         source: "admin_role"
       }
@@ -31,39 +31,39 @@ defmodule AshGrant.PermissionableTest do
 
   describe "Permissionable protocol for Permission" do
     test "converts Permission to PermissionInput" do
-      permission = Permission.parse!("post:*:read:all")
+      permission = Permission.parse!("post:*:read:always")
       input = Permissionable.to_permission_input(permission)
 
       assert %PermissionInput{} = input
-      assert input.string == "post:*:read:all"
+      assert input.string == "post:*:read:always"
     end
 
     test "preserves deny prefix in conversion" do
-      permission = Permission.parse!("!post:*:delete:all")
+      permission = Permission.parse!("!post:*:delete:always")
       input = Permissionable.to_permission_input(permission)
 
-      assert input.string == "!post:*:delete:all"
+      assert input.string == "!post:*:delete:always"
     end
   end
 
   describe "PermissionInput struct" do
     test "new/1 creates with just string" do
-      input = PermissionInput.new("post:*:read:all")
+      input = PermissionInput.new("post:*:read:always")
 
-      assert input.string == "post:*:read:all"
+      assert input.string == "post:*:read:always"
       assert input.description == nil
       assert input.source == nil
     end
 
     test "new/2 creates with options" do
       input =
-        PermissionInput.new("post:*:read:all",
+        PermissionInput.new("post:*:read:always",
           description: "Read posts",
           source: "editor_role",
           metadata: %{granted_at: ~U[2024-01-15 10:00:00Z]}
         )
 
-      assert input.string == "post:*:read:all"
+      assert input.string == "post:*:read:always"
       assert input.description == "Read posts"
       assert input.source == "editor_role"
       assert input.metadata == %{granted_at: ~U[2024-01-15 10:00:00Z]}
@@ -71,19 +71,19 @@ defmodule AshGrant.PermissionableTest do
 
     test "to_string returns the permission string" do
       input = %PermissionInput{
-        string: "post:*:read:all",
+        string: "post:*:read:always",
         description: "Read posts"
       }
 
-      assert PermissionInput.to_string(input) == "post:*:read:all"
-      assert to_string(input) == "post:*:read:all"
+      assert PermissionInput.to_string(input) == "post:*:read:always"
+      assert to_string(input) == "post:*:read:always"
     end
   end
 
   describe "Permission.from_input/1" do
     test "creates Permission from PermissionInput preserving metadata" do
       input = %PermissionInput{
-        string: "blog:*:read:all",
+        string: "blog:*:read:always",
         description: "Read all blogs",
         source: "editor_role",
         metadata: %{key: "value"}
@@ -95,7 +95,7 @@ defmodule AshGrant.PermissionableTest do
       assert permission.resource == "blog"
       assert permission.instance_id == "*"
       assert permission.action == "read"
-      assert permission.scope == "all"
+      assert permission.scope == "always"
       assert permission.deny == false
       assert permission.description == "Read all blogs"
       assert permission.source == "editor_role"
@@ -104,7 +104,7 @@ defmodule AshGrant.PermissionableTest do
 
     test "handles deny prefix" do
       input = %PermissionInput{
-        string: "!blog:*:delete:all",
+        string: "!blog:*:delete:always",
         description: "Cannot delete blogs"
       }
 
@@ -132,7 +132,7 @@ defmodule AshGrant.PermissionableTest do
     test "has_access? works with PermissionInput" do
       permissions = [
         %PermissionInput{
-          string: "blog:*:read:all",
+          string: "blog:*:read:always",
           description: "Read blogs"
         }
       ]
@@ -143,7 +143,7 @@ defmodule AshGrant.PermissionableTest do
 
     test "has_access? works with mixed strings and PermissionInput" do
       permissions = [
-        "post:*:read:all",
+        "post:*:read:always",
         %PermissionInput{
           string: "post:*:update:own",
           description: "Edit own posts",
@@ -158,18 +158,18 @@ defmodule AshGrant.PermissionableTest do
 
     test "get_scope works with PermissionInput" do
       permissions = [
-        %PermissionInput{string: "blog:*:read:all"},
+        %PermissionInput{string: "blog:*:read:always"},
         %PermissionInput{string: "blog:*:update:own"}
       ]
 
-      assert Evaluator.get_scope(permissions, "blog", "read") == "all"
+      assert Evaluator.get_scope(permissions, "blog", "read") == "always"
       assert Evaluator.get_scope(permissions, "blog", "update") == "own"
     end
 
     test "deny-wins with PermissionInput" do
       permissions = [
-        %PermissionInput{string: "blog:*:*:all", description: "All access"},
-        %PermissionInput{string: "!blog:*:delete:all", description: "Cannot delete"}
+        %PermissionInput{string: "blog:*:*:always", description: "All access"},
+        %PermissionInput{string: "!blog:*:delete:always", description: "Cannot delete"}
       ]
 
       assert Evaluator.has_access?(permissions, "blog", "read")
@@ -207,7 +207,7 @@ defmodule AshGrant.PermissionableTest do
     test "custom struct works with Evaluator" do
       permissions = [
         %RolePermission{
-          permission_string: "blog:*:read:all",
+          permission_string: "blog:*:read:always",
           label: "Read all blogs",
           role_name: "editor"
         },
@@ -225,7 +225,7 @@ defmodule AshGrant.PermissionableTest do
 
     test "custom struct metadata is preserved through normalization" do
       role_perm = %RolePermission{
-        permission_string: "blog:*:read:all",
+        permission_string: "blog:*:read:always",
         label: "Read all blogs",
         role_name: "editor"
       }
@@ -240,14 +240,14 @@ defmodule AshGrant.PermissionableTest do
 
     test "mixed custom structs and strings work together" do
       permissions = [
-        "post:*:read:all",
+        "post:*:read:always",
         %RolePermission{
           permission_string: "post:*:update:own",
           label: "Edit own posts",
           role_name: "author"
         },
         %PermissionInput{
-          string: "post:*:create:all",
+          string: "post:*:create:always",
           description: "Create posts"
         }
       ]
@@ -260,7 +260,7 @@ defmodule AshGrant.PermissionableTest do
     test "custom struct with 5-part permission works with Evaluator" do
       permissions = [
         %RolePermission{
-          permission_string: "employee:*:read:all:sensitive",
+          permission_string: "employee:*:read:always:sensitive",
           label: "Read sensitive employee data",
           role_name: "hr"
         }
@@ -272,7 +272,7 @@ defmodule AshGrant.PermissionableTest do
 
     test "custom struct 5-part metadata preserved through normalization" do
       role_perm = %RolePermission{
-        permission_string: "employee:*:read:all:confidential",
+        permission_string: "employee:*:read:always:confidential",
         label: "Read confidential",
         role_name: "director"
       }
@@ -288,15 +288,15 @@ defmodule AshGrant.PermissionableTest do
 
   describe "5-part PermissionInput" do
     test "converts 5-part string to PermissionInput" do
-      input = Permissionable.to_permission_input("employee:*:read:all:sensitive")
+      input = Permissionable.to_permission_input("employee:*:read:always:sensitive")
 
       assert %PermissionInput{} = input
-      assert input.string == "employee:*:read:all:sensitive"
+      assert input.string == "employee:*:read:always:sensitive"
     end
 
     test "Permission.from_input preserves field_group from 5-part string" do
       input = %PermissionInput{
-        string: "employee:*:read:all:sensitive",
+        string: "employee:*:read:always:sensitive",
         description: "Read sensitive fields",
         source: "hr_role"
       }
@@ -305,7 +305,7 @@ defmodule AshGrant.PermissionableTest do
 
       assert permission.resource == "employee"
       assert permission.action == "read"
-      assert permission.scope == "all"
+      assert permission.scope == "always"
       assert permission.field_group == "sensitive"
       assert permission.description == "Read sensitive fields"
       assert permission.source == "hr_role"
@@ -313,7 +313,7 @@ defmodule AshGrant.PermissionableTest do
 
     test "Permission.from_input handles 5-part deny" do
       input = %PermissionInput{
-        string: "!employee:*:read:all:confidential",
+        string: "!employee:*:read:always:confidential",
         description: "Cannot read confidential"
       }
 
@@ -341,7 +341,7 @@ defmodule AshGrant.PermissionableTest do
     test "Evaluator works with 5-part PermissionInput" do
       permissions = [
         %PermissionInput{
-          string: "employee:*:read:all:sensitive",
+          string: "employee:*:read:always:sensitive",
           description: "Read sensitive"
         }
       ]
@@ -352,8 +352,8 @@ defmodule AshGrant.PermissionableTest do
 
     test "Evaluator deny-wins with 5-part PermissionInput" do
       permissions = [
-        %PermissionInput{string: "employee:*:read:all:sensitive"},
-        %PermissionInput{string: "!employee:*:read:all"}
+        %PermissionInput{string: "employee:*:read:always:sensitive"},
+        %PermissionInput{string: "!employee:*:read:always"}
       ]
 
       refute Evaluator.has_access?(permissions, "employee", "read")
@@ -362,9 +362,9 @@ defmodule AshGrant.PermissionableTest do
 
     test "mixed 4-part and 5-part PermissionInput" do
       permissions = [
-        %PermissionInput{string: "employee:*:read:all:sensitive"},
+        %PermissionInput{string: "employee:*:read:always:sensitive"},
         %PermissionInput{string: "employee:*:update:own"},
-        "employee:*:create:all"
+        "employee:*:create:always"
       ]
 
       assert Evaluator.has_access?(permissions, "employee", "read")
@@ -380,7 +380,7 @@ defmodule AshGrant.PermissionableTest do
         resource: "blog",
         instance_id: "*",
         action: "read",
-        scope: "all",
+        scope: "always",
         deny: false,
         description: "Read all blogs",
         source: "admin_role",
@@ -393,7 +393,7 @@ defmodule AshGrant.PermissionableTest do
     end
 
     test "Permission.parse! sets metadata to nil by default" do
-      permission = Permission.parse!("blog:*:read:all")
+      permission = Permission.parse!("blog:*:read:always")
 
       assert permission.description == nil
       assert permission.source == nil
@@ -405,7 +405,7 @@ defmodule AshGrant.PermissionableTest do
         resource: "blog",
         instance_id: "*",
         action: "read",
-        scope: "all",
+        scope: "always",
         description: "Has metadata"
       }
 

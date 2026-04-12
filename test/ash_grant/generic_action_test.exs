@@ -18,8 +18,8 @@ defmodule AshGrant.GenericActionTest do
   are individually unique (one might send email, another processes payment), so
   type-based wildcards don't apply.
 
-  - `"service_request:*:ping:all"` — allows the specific "ping" action
-  - `"service_request:*:*:all"` — allows ALL actions (admin wildcard)
+  - `"service_request:*:ping:always"` — allows the specific "ping" action
+  - `"service_request:*:*:always"` — allows ALL actions (admin wildcard)
   """
   use AshGrant.DataCase, async: true
 
@@ -45,13 +45,13 @@ defmodule AshGrant.GenericActionTest do
     end
 
     test "actor with explicit action-name permission can run generic action" do
-      actor = custom_actor(permissions: ["service_request:*:ping:all"])
+      actor = custom_actor(permissions: ["service_request:*:ping:always"])
 
       assert {:ok, "pong"} = run_action(:ping, %{}, actor: actor)
     end
 
     test "actor with wildcard (*) permission can run generic action" do
-      actor = custom_actor(permissions: ["service_request:*:*:all"])
+      actor = custom_actor(permissions: ["service_request:*:*:always"])
 
       assert {:ok, "pong"} = run_action(:ping, %{}, actor: actor)
     end
@@ -67,14 +67,14 @@ defmodule AshGrant.GenericActionTest do
     end
 
     test "actor with only read permission cannot run generic action" do
-      actor = custom_actor(permissions: ["service_request:*:read:all"])
+      actor = custom_actor(permissions: ["service_request:*:read:always"])
 
       assert {:error, %Ash.Error.Forbidden{}} = run_action(:ping, %{}, actor: actor)
     end
 
     test "permission for different action name does not grant access" do
       # Has permission for check_status but not ping
-      actor = custom_actor(permissions: ["service_request:*:check_status:all"])
+      actor = custom_actor(permissions: ["service_request:*:check_status:always"])
 
       assert {:error, %Ash.Error.Forbidden{}} = run_action(:ping, %{}, actor: actor)
     end
@@ -133,8 +133,8 @@ defmodule AshGrant.GenericActionTest do
       actor =
         custom_actor(
           permissions: [
-            "service_request:*:ping:all",
-            "!service_request:*:ping:all"
+            "service_request:*:ping:always",
+            "!service_request:*:ping:always"
           ]
         )
 
@@ -145,8 +145,8 @@ defmodule AshGrant.GenericActionTest do
       actor =
         custom_actor(
           permissions: [
-            "service_request:*:*:all",
-            "!service_request:*:ping:all"
+            "service_request:*:*:always",
+            "!service_request:*:ping:always"
           ]
         )
 
@@ -157,9 +157,9 @@ defmodule AshGrant.GenericActionTest do
       actor =
         custom_actor(
           permissions: [
-            "service_request:*:ping:all",
-            "service_request:*:check_status:all",
-            "!service_request:*:check_status:all"
+            "service_request:*:ping:always",
+            "service_request:*:check_status:always",
+            "!service_request:*:check_status:always"
           ]
         )
 
@@ -178,7 +178,7 @@ defmodule AshGrant.GenericActionTest do
 
   describe "Ash.can? with generic action input" do
     test "returns true for authorized actor" do
-      actor = custom_actor(permissions: ["service_request:*:ping:all"])
+      actor = custom_actor(permissions: ["service_request:*:ping:always"])
 
       input = Ash.ActionInput.for_action(ServiceRequest, :ping, %{})
       assert {:ok, true} = Ash.can(input, actor)
@@ -266,7 +266,7 @@ defmodule AshGrant.GenericActionTest do
 
   describe "generic action with arguments" do
     test "authorized actor can run action with arguments" do
-      actor = custom_actor(permissions: ["service_request:*:check_status:all"])
+      actor = custom_actor(permissions: ["service_request:*:check_status:always"])
       request_id = Ash.UUID.generate()
 
       assert {:ok, status} =

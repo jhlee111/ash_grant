@@ -102,7 +102,7 @@ defmodule AshGrant.PolicyTest.FieldVisibilityAssertionTest do
       actors:
         viewer:
           permissions:
-            - "exceptrecord:*:read:all:public"
+            - "exceptrecord:*:read:always:public"
 
       tests:
         - name: "viewer sees public fields"
@@ -128,7 +128,7 @@ defmodule AshGrant.PolicyTest.FieldVisibilityAssertionTest do
       actors:
         viewer:
           permissions:
-            - "exceptrecord:*:read:all:public"
+            - "exceptrecord:*:read:always:public"
 
       tests:
         - name: "viewer cannot see sensitive"
@@ -273,7 +273,7 @@ defmodule AshGrant.PolicyTest.FieldVisibilityAssertionTest do
     # Use the DslGenerator to generate code for a parsed test
     parsed = %{
       resource: AshGrant.Test.ExceptRecord,
-      actors: %{viewer: %{permissions: ["exceptrecord:*:read:all:public"]}},
+      actors: %{viewer: %{permissions: ["exceptrecord:*:read:always:public"]}},
       tests: [test]
     }
 

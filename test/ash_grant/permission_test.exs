@@ -5,20 +5,20 @@ defmodule AshGrant.PermissionTest do
 
   describe "parse/1 - new four-part format" do
     test "parses full RBAC permission" do
-      assert {:ok, perm} = Permission.parse("blog:*:read:all")
+      assert {:ok, perm} = Permission.parse("blog:*:read:always")
       assert perm.resource == "blog"
       assert perm.instance_id == "*"
       assert perm.action == "read"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
       assert perm.deny == false
     end
 
     test "parses deny permission" do
-      assert {:ok, perm} = Permission.parse("!blog:*:delete:all")
+      assert {:ok, perm} = Permission.parse("!blog:*:delete:always")
       assert perm.resource == "blog"
       assert perm.instance_id == "*"
       assert perm.action == "delete"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
       assert perm.deny == true
     end
 
@@ -40,26 +40,26 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "parses full wildcard permission" do
-      assert {:ok, perm} = Permission.parse("*:*:*:all")
+      assert {:ok, perm} = Permission.parse("*:*:*:always")
       assert perm.resource == "*"
       assert perm.instance_id == "*"
       assert perm.action == "*"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
     end
 
     test "parses action type wildcard" do
-      assert {:ok, perm} = Permission.parse("blog:*:read*:all")
+      assert {:ok, perm} = Permission.parse("blog:*:read*:always")
       assert perm.action == "read*"
     end
   end
 
   describe "parse/1 - legacy format compatibility" do
     test "parses legacy three-part format (resource:action:scope)" do
-      assert {:ok, perm} = Permission.parse("blog:read:all")
+      assert {:ok, perm} = Permission.parse("blog:read:always")
       assert perm.resource == "blog"
       assert perm.instance_id == "*"
       assert perm.action == "read"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
     end
 
     test "parses legacy two-part format (resource:action)" do
@@ -71,7 +71,7 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "parses legacy deny permission" do
-      assert {:ok, perm} = Permission.parse("!blog:delete:all")
+      assert {:ok, perm} = Permission.parse("!blog:delete:always")
       assert perm.deny == true
       assert perm.instance_id == "*"
     end
@@ -89,7 +89,7 @@ defmodule AshGrant.PermissionTest do
 
   describe "parse!/1" do
     test "returns permission for valid string" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       assert perm.resource == "blog"
     end
 
@@ -102,8 +102,8 @@ defmodule AshGrant.PermissionTest do
 
   describe "to_string/1" do
     test "converts RBAC permission to four-part format" do
-      perm = %Permission{resource: "blog", instance_id: "*", action: "read", scope: "all"}
-      assert Permission.to_string(perm) == "blog:*:read:all"
+      perm = %Permission{resource: "blog", instance_id: "*", action: "read", scope: "always"}
+      assert Permission.to_string(perm) == "blog:*:read:always"
     end
 
     test "converts instance permission with empty scope" do
@@ -116,50 +116,50 @@ defmodule AshGrant.PermissionTest do
         resource: "blog",
         instance_id: "*",
         action: "delete",
-        scope: "all",
+        scope: "always",
         deny: true
       }
 
-      assert Permission.to_string(perm) == "!blog:*:delete:all"
+      assert Permission.to_string(perm) == "!blog:*:delete:always"
     end
 
     test "handles nil instance_id as *" do
-      perm = %Permission{resource: "blog", instance_id: nil, action: "read", scope: "all"}
-      assert Permission.to_string(perm) == "blog:*:read:all"
+      perm = %Permission{resource: "blog", instance_id: nil, action: "read", scope: "always"}
+      assert Permission.to_string(perm) == "blog:*:read:always"
     end
   end
 
   describe "matches?/3 - RBAC matching" do
     test "matches exact resource and action" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       assert Permission.matches?(perm, "blog", "read")
     end
 
     test "does not match different resource" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       refute Permission.matches?(perm, "comment", "read")
     end
 
     test "does not match different action" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       refute Permission.matches?(perm, "blog", "write")
     end
 
     test "matches wildcard resource" do
-      perm = Permission.parse!("*:*:read:all")
+      perm = Permission.parse!("*:*:read:always")
       assert Permission.matches?(perm, "blog", "read")
       assert Permission.matches?(perm, "comment", "read")
     end
 
     test "matches wildcard action" do
-      perm = Permission.parse!("blog:*:*:all")
+      perm = Permission.parse!("blog:*:*:always")
       assert Permission.matches?(perm, "blog", "read")
       assert Permission.matches?(perm, "blog", "write")
       assert Permission.matches?(perm, "blog", "delete")
     end
 
     test "action type wildcard requires action_type to match" do
-      perm = Permission.parse!("blog:*:read*:all")
+      perm = Permission.parse!("blog:*:read*:always")
       # read* is purely action_type matching — without action_type, nothing matches
       refute Permission.matches?(perm, "blog", "read")
       refute Permission.matches?(perm, "blog", "read_all")
@@ -171,7 +171,7 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "matches full wildcard" do
-      perm = Permission.parse!("*:*:*:all")
+      perm = Permission.parse!("*:*:*:always")
       assert Permission.matches?(perm, "blog", "read")
       assert Permission.matches?(perm, "comment", "delete")
       assert Permission.matches?(perm, "anything", "any_action")
@@ -206,7 +206,7 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "RBAC permission does not match instance query" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       refute Permission.matches_instance?(perm, "post_abc123xyz789ab", "read")
     end
   end
@@ -218,51 +218,51 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "returns false for RBAC permission" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       refute Permission.instance_permission?(perm)
     end
   end
 
   describe "deny?/1" do
     test "returns true for deny permission" do
-      perm = Permission.parse!("!blog:*:delete:all")
+      perm = Permission.parse!("!blog:*:delete:always")
       assert Permission.deny?(perm)
     end
 
     test "returns false for allow permission" do
-      perm = Permission.parse!("blog:*:read:all")
+      perm = Permission.parse!("blog:*:read:always")
       refute Permission.deny?(perm)
     end
   end
 
   describe "5-part format (field groups)" do
     test "parses 5-part permission string" do
-      assert {:ok, perm} = Permission.parse("employee:*:read:all:sensitive")
+      assert {:ok, perm} = Permission.parse("employee:*:read:always:sensitive")
       assert perm.resource == "employee"
       assert perm.instance_id == "*"
       assert perm.action == "read"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
       assert perm.field_group == "sensitive"
       assert perm.deny == false
     end
 
     test "parses 5-part with deny" do
-      assert {:ok, perm} = Permission.parse("!employee:*:read:all:confidential")
+      assert {:ok, perm} = Permission.parse("!employee:*:read:always:confidential")
       assert perm.deny == true
       assert perm.field_group == "confidential"
       assert perm.resource == "employee"
       assert perm.instance_id == "*"
       assert perm.action == "read"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
     end
 
     test "parses 4-part without field_group (backward compatible)" do
-      assert {:ok, perm} = Permission.parse("employee:*:read:all")
+      assert {:ok, perm} = Permission.parse("employee:*:read:always")
       assert perm.field_group == nil
       assert perm.resource == "employee"
       assert perm.instance_id == "*"
       assert perm.action == "read"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
     end
 
     test "to_string includes field_group when present" do
@@ -270,11 +270,11 @@ defmodule AshGrant.PermissionTest do
         resource: "employee",
         instance_id: "*",
         action: "read",
-        scope: "all",
+        scope: "always",
         field_group: "sensitive"
       }
 
-      assert Permission.to_string(perm) == "employee:*:read:all:sensitive"
+      assert Permission.to_string(perm) == "employee:*:read:always:sensitive"
     end
 
     test "to_string omits field_group when nil" do
@@ -282,20 +282,20 @@ defmodule AshGrant.PermissionTest do
         resource: "employee",
         instance_id: "*",
         action: "read",
-        scope: "all",
+        scope: "always",
         field_group: nil
       }
 
-      assert Permission.to_string(perm) == "employee:*:read:all"
+      assert Permission.to_string(perm) == "employee:*:read:always"
     end
 
     test "matches? works with 5-part permission" do
-      perm = Permission.parse!("employee:*:read:all:sensitive")
+      perm = Permission.parse!("employee:*:read:always:sensitive")
       assert Permission.matches?(perm, "employee", "read")
     end
 
     test "parse round-trip with field_group" do
-      {:ok, original} = Permission.parse("employee:*:read:all:sensitive")
+      {:ok, original} = Permission.parse("employee:*:read:always:sensitive")
       round_tripped = Permission.to_string(original)
       {:ok, reparsed} = Permission.parse(round_tripped)
 
@@ -317,20 +317,20 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "5-part with empty field_group" do
-      assert {:ok, perm} = Permission.parse("employee:*:read:all:")
+      assert {:ok, perm} = Permission.parse("employee:*:read:always:")
       assert perm.field_group == nil
     end
 
     test "5-part with action wildcard" do
-      assert {:ok, perm} = Permission.parse("employee:*:*:all:sensitive")
+      assert {:ok, perm} = Permission.parse("employee:*:*:always:sensitive")
       assert perm.resource == "employee"
       assert perm.action == "*"
-      assert perm.scope == "all"
+      assert perm.scope == "always"
       assert perm.field_group == "sensitive"
     end
 
     test "5-part with action type wildcard" do
-      assert {:ok, perm} = Permission.parse("employee:*:read*:all:sensitive")
+      assert {:ok, perm} = Permission.parse("employee:*:read*:always:sensitive")
       assert perm.action == "read*"
       assert perm.field_group == "sensitive"
       # read* requires action_type
@@ -341,7 +341,7 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "5-part with resource wildcard" do
-      assert {:ok, perm} = Permission.parse("*:*:read:all:sensitive")
+      assert {:ok, perm} = Permission.parse("*:*:read:always:sensitive")
       assert perm.resource == "*"
       assert perm.field_group == "sensitive"
       assert Permission.matches?(perm, "employee", "read")
@@ -349,7 +349,7 @@ defmodule AshGrant.PermissionTest do
     end
 
     test "5-part deny matches? returns true (deny flag is separate from matching)" do
-      perm = Permission.parse!("!employee:*:read:all:sensitive")
+      perm = Permission.parse!("!employee:*:read:always:sensitive")
       assert Permission.matches?(perm, "employee", "read")
       assert Permission.deny?(perm)
     end
@@ -437,17 +437,17 @@ defmodule AshGrant.PermissionTest do
 
   describe "matches?/4 with action_type" do
     test "read* matches :read type action with non-prefixed name" do
-      perm = Permission.parse!("blog:*:read*:all")
+      perm = Permission.parse!("blog:*:read*:always")
       assert Permission.matches?(perm, "blog", "list_published", :read)
     end
 
     test "read* does NOT match :update type with non-prefixed name" do
-      perm = Permission.parse!("blog:*:read*:all")
+      perm = Permission.parse!("blog:*:read*:always")
       refute Permission.matches?(perm, "blog", "list_published", :update)
     end
 
     test "backward compat: 3-arg matches? still works" do
-      perm = Permission.parse!("blog:*:read*:all")
+      perm = Permission.parse!("blog:*:read*:always")
       # read* requires action_type — 3-arg call (no action_type) never matches
       refute Permission.matches?(perm, "blog", "read_published")
       refute Permission.matches?(perm, "blog", "list_published")
@@ -462,8 +462,8 @@ defmodule AshGrant.PermissionTest do
 
   describe "String.Chars protocol" do
     test "converts to string" do
-      perm = Permission.parse!("blog:*:read:all")
-      assert "#{perm}" == "blog:*:read:all"
+      perm = Permission.parse!("blog:*:read:always")
+      assert "#{perm}" == "blog:*:read:always"
     end
   end
 end

@@ -28,7 +28,7 @@ defmodule AshGrant.Test.SharedDocument do
           perms
 
         %{role: :admin} ->
-          ["shared_document:*:*:all"]
+          ["shared_document:*:*:always"]
 
         %{role: :tenant_admin} ->
           [
@@ -54,7 +54,7 @@ defmodule AshGrant.Test.SharedDocument do
     resource_name("shared_document")
 
     # Basic ownership scopes
-    scope(:all, true)
+    scope(:always, true)
     scope(:created_by_me, expr(created_by_id == ^actor(:id)))
     scope(:shared_with_me, expr(id in ^actor(:shared_document_ids)))
 

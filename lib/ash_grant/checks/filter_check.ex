@@ -49,8 +49,8 @@ defmodule AshGrant.FilterCheck do
      the actor's permissions
   2. **Get all scopes**: Uses `AshGrant.Evaluator.get_all_scopes/3` to find
      all matching scopes (respecting deny-wins semantics)
-  3. **Check for global access**: If scopes include "all" or "global", returns
-     `true` (no filter needed)
+  3. **Check for global access**: If scopes include "always", "all", or "global",
+     returns `true` (no filter needed)
   4. **Resolve scopes to filters**: Uses inline scope DSL or `ScopeResolver`
      to get filter expressions
   5. **Combine filters**: Combines all filters with OR logic
@@ -71,7 +71,7 @@ defmodule AshGrant.FilterCheck do
 
   ### Basic Usage
 
-      # Permission: "post:*:read:all"
+      # Permission: "post:*:read:always"
       # Returns: true (no filter)
 
       # Permission: "post:*:read:own"
@@ -91,7 +91,7 @@ defmodule AshGrant.FilterCheck do
 
   The check returns one of:
 
-  - `true` - No filtering (actor has "all" or "global" scope)
+  - `true` - No filtering (actor has "always", "all", or "global" scope)
   - `false` - Block all (no matching permissions or denied)
   - `Ash.Expr.t()` - Filter expression to apply to the query
 
@@ -271,7 +271,7 @@ defmodule AshGrant.FilterCheck do
          context
        ) do
     # Check for global access from RBAC
-    has_global_access = "all" in scopes or "global" in scopes
+    has_global_access = "always" in scopes or "all" in scopes or "global" in scopes
 
     if has_global_access do
       true
@@ -415,6 +415,7 @@ defmodule AshGrant.FilterCheck do
       resolve_with_scope_resolver(scope_resolver, scope, context)
   end
 
+  defp resolve_with_scope_resolver(nil, "always", _context), do: true
   defp resolve_with_scope_resolver(nil, "all", _context), do: true
 
   defp resolve_with_scope_resolver(nil, scope, _context) do

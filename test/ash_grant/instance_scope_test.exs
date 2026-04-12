@@ -134,11 +134,11 @@ defmodule AshGrant.InstanceScopeTest do
 
     test "returns nil when denied" do
       permissions = [
-        "doc:doc_123:*:all",
-        "!doc:doc_123:delete:all"
+        "doc:doc_123:*:always",
+        "!doc:doc_123:delete:always"
       ]
 
-      assert Evaluator.get_instance_scope(permissions, "doc_123", "read") == "all"
+      assert Evaluator.get_instance_scope(permissions, "doc_123", "read") == "always"
       assert Evaluator.get_instance_scope(permissions, "doc_123", "delete") == nil
     end
 
@@ -169,8 +169,8 @@ defmodule AshGrant.InstanceScopeTest do
 
     test "returns empty list when denied" do
       permissions = [
-        "doc:doc_123:*:all",
-        "!doc:doc_123:delete:all"
+        "doc:doc_123:*:always",
+        "!doc:doc_123:delete:always"
       ]
 
       assert Evaluator.get_all_instance_scopes(permissions, "doc_123", "delete") == []

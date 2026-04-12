@@ -15,7 +15,7 @@ defmodule AshGrant.Test.TenantPost do
 
   | Scope | Filter |
   |-------|--------|
-  | :all | true |
+  | :always | true |
   | :same_tenant | tenant_id == ^tenant() |
   | :own | author_id == ^actor(:id) |
   | :own_in_tenant | [:same_tenant] + author_id == ^actor(:id) |
@@ -41,7 +41,7 @@ defmodule AshGrant.Test.TenantPost do
           perms
 
         %{role: :super_admin} ->
-          ["tenant_post:*:*:all"]
+          ["tenant_post:*:*:always"]
 
         %{role: :tenant_admin} ->
           [
@@ -68,7 +68,7 @@ defmodule AshGrant.Test.TenantPost do
     resource_name("tenant_post")
 
     # Key scope using ^tenant() - this is what we're testing!
-    scope(:all, true)
+    scope(:always, true)
     scope(:same_tenant, expr(tenant_id == ^tenant()))
     scope(:own, expr(author_id == ^actor(:id)))
     scope(:own_in_tenant, [:same_tenant], expr(author_id == ^actor(:id)))

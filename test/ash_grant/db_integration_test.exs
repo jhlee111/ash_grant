@@ -44,7 +44,7 @@ defmodule AshGrant.DbIntegrationTest do
 
   # === Tests ===
 
-  describe "scope :all - returns all records" do
+  describe "scope :always - returns all records" do
     test "admin with 'all' scope can read all posts" do
       # Create test data
       author1 = Ash.UUID.generate()
@@ -98,7 +98,7 @@ defmodule AshGrant.DbIntegrationTest do
 
       editor = editor_actor(editor_id)
 
-      # Editor has "post:*:read:all" so should see all posts
+      # Editor has "post:*:read:always" so should see all posts
       posts = read_posts(editor)
       assert length(posts) == 2
     end
@@ -206,8 +206,8 @@ defmodule AshGrant.DbIntegrationTest do
       actor =
         custom_perms_actor(
           [
-            "post:*:*:all",
-            "!post:*:destroy:all"
+            "post:*:*:always",
+            "!post:*:destroy:always"
           ],
           actor_id
         )
@@ -652,7 +652,7 @@ defmodule AshGrant.DbIntegrationTest do
   describe "write actions with attribute-based scope (resource: eval regression)" do
     test "update with :published scope succeeds for published record" do
       actor_id = Ash.UUID.generate()
-      actor = custom_perms_actor(["post:*:update:published", "post:*:read:all"], actor_id)
+      actor = custom_perms_actor(["post:*:update:published", "post:*:read:always"], actor_id)
       post = create_post!(%{title: "Pub Post", status: :published, author_id: actor_id})
 
       result =
@@ -666,7 +666,7 @@ defmodule AshGrant.DbIntegrationTest do
 
     test "update with :published scope is forbidden for draft record" do
       actor_id = Ash.UUID.generate()
-      actor = custom_perms_actor(["post:*:update:published", "post:*:read:all"], actor_id)
+      actor = custom_perms_actor(["post:*:update:published", "post:*:read:always"], actor_id)
       draft = create_post!(%{title: "Draft Post", status: :draft, author_id: actor_id})
 
       result =
@@ -679,7 +679,7 @@ defmodule AshGrant.DbIntegrationTest do
 
     test "destroy with :published scope is forbidden for draft record" do
       actor_id = Ash.UUID.generate()
-      actor = custom_perms_actor(["post:*:destroy:published", "post:*:read:all"], actor_id)
+      actor = custom_perms_actor(["post:*:destroy:published", "post:*:read:always"], actor_id)
       draft = create_post!(%{title: "Draft Post", status: :draft, author_id: actor_id})
 
       result =

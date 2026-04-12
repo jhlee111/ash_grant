@@ -87,7 +87,7 @@ defmodule AshGrant.Dsl do
           resolver MyApp.PermissionResolver
           resource_name "post"
 
-          scope :all, true
+          scope :always, true
           scope :own, expr(author_id == ^actor(:id))
           scope :published, expr(status == :published)
           scope :own_draft, [:own], expr(status == :draft)
@@ -157,7 +157,7 @@ defmodule AshGrant.Dsl do
     ## Examples
 
         # No filtering - access to all records
-        scope :all, true, description: "All records without restriction"
+        scope :always, true, description: "All records without restriction"
 
         # Filter to records owned by the actor
         scope :own, expr(author_id == ^actor(:id)),
@@ -186,7 +186,7 @@ defmodule AshGrant.Dsl do
         scope :archived, expr(status == :archived)
     """,
     examples: [
-      "scope :all, true",
+      "scope :always, true",
       "scope :own, expr(author_id == ^actor(:id))",
       "scope :published, expr(status == :published)",
       "scope :own_draft, [:own], expr(status == :draft)",
@@ -395,7 +395,7 @@ defmodule AshGrant.Dsl do
         resolver MyApp.PermissionResolver
         resource_name "blog"
 
-        scope :all, true
+        scope :always, true
         scope :own, expr(author_id == ^actor(:id))
         scope :published, expr(status == :published)
 

@@ -9,7 +9,7 @@ defmodule AshGrant.ScopeResolver do
 
   Some scopes have conventional meanings:
 
-  - `"all"` - No filtering, access to all records
+  - `"always"` (or `"all"`) - No filtering, access to all records
   - `"own"` - Records owned by the actor (requires `owner_field` config)
 
   ## Examples
@@ -21,7 +21,7 @@ defmodule AshGrant.ScopeResolver do
         require Ash.Expr
 
         @impl true
-        def resolve("all", _context), do: true
+        def resolve("always", _context), do: true
 
         @impl true
         def resolve("own", %{actor: actor}) do
@@ -51,7 +51,7 @@ defmodule AshGrant.ScopeResolver do
         require Ash.Expr
 
         @impl true
-        def resolve("all", _context), do: true
+        def resolve("always", _context), do: true
 
         @impl true
         def resolve("org_self", %{actor: actor}) do
@@ -101,7 +101,7 @@ defmodule AshGrant.ScopeResolver do
 
   ## Parameters
 
-  - `scope` - The scope string from the permission (e.g., "all", "own", "published")
+  - `scope` - The scope string from the permission (e.g., "always", "own", "published")
   - `context` - Context map containing:
     - `:actor` - The actor requesting access
     - `:resource` - The resource module

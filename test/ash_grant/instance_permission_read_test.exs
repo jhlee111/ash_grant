@@ -135,7 +135,7 @@ defmodule AshGrant.InstancePermissionReadTest do
 
     test "returns empty list when no matching instance permissions" do
       permissions = [
-        "shareddoc:*:read:all",
+        "shareddoc:*:read:always",
         "otherdoc:doc_abc:read:"
       ]
 

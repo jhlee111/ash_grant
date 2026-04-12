@@ -25,9 +25,9 @@ defmodule AshGrant.PolicyTest.EdgeCasesTest do
       actor = %{
         permissions: [
           # allow
-          "document:*:read:all",
+          "document:*:read:always",
           # deny (should win)
-          "!document:*:read:all"
+          "!document:*:read:always"
         ]
       }
 

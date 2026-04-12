@@ -399,7 +399,8 @@ defmodule AshGrant.PolicyTest.YamlParser do
   defp verify_scope_against_record(resource, actor, record, details) do
     scope_name = details[:scope]
 
-    if scope_name == nil or scope_name == "all" or scope_name == "global" do
+    if scope_name == nil or scope_name == "always" or scope_name == "all" or
+         scope_name == "global" do
       {:allow, details}
     else
       evaluate_scope_for_record(resource, actor, record, details, scope_name)

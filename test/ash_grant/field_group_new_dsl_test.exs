@@ -33,7 +33,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
           default_policies(true)
           default_field_policies(true)
           resource_name("all_fields_res")
-          scope(:all, true)
+          scope(:always, true)
 
           field_group(:everything, :all)
         end
@@ -71,7 +71,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
           default_policies(true)
           default_field_policies(true)
           resource_name("all_except_res")
-          scope(:all, true)
+          scope(:always, true)
 
           field_group(:public, :all, except: [:salary, :ssn])
         end
@@ -113,7 +113,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
             default_policies(true)
             default_field_policies(true)
             resource_name("except_no_all")
-            scope(:all, true)
+            scope(:always, true)
 
             field_group(:bad, [:name, :email], except: [:salary])
           end
@@ -152,7 +152,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
           default_policies(true)
           default_field_policies(true)
           resource_name("inherits_kw_res")
-          scope(:all, true)
+          scope(:always, true)
 
           field_group(:public, [:name, :department])
           field_group(:sensitive, [:phone, :address], inherits: [:public])
@@ -210,7 +210,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
           default_policies(true)
           default_field_policies(true)
           resource_name("inherits_all_except_res")
-          scope(:all, true)
+          scope(:always, true)
 
           field_group(:base, [:name])
           field_group(:editor, :all, except: [:admin_notes], inherits: [:base])
@@ -258,7 +258,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
               default_policies(true)
               default_field_policies(true)
               resource_name("deprecated_wildcard_res")
-              scope(:all, true)
+              scope(:always, true)
 
               field_group(:everything, [:*])
             end
@@ -278,7 +278,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
         end)
 
       assert warning =~ "deprecated"
-      assert warning =~ ":all"
+      assert warning =~ ":always"
 
       # Still resolves correctly
       assert :id in result.fields
@@ -302,7 +302,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
               default_policies(true)
               default_field_policies(true)
               resource_name("deprecated_wc_except_res")
-              scope(:all, true)
+              scope(:always, true)
 
               field_group(:public, [:*], except: [:salary])
             end
@@ -322,7 +322,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
         end)
 
       assert warning =~ "deprecated"
-      assert warning =~ ":all"
+      assert warning =~ ":always"
 
       assert :name in result.fields
       refute :salary in result.fields
@@ -333,7 +333,7 @@ defmodule AshGrant.FieldGroupNewDslTest do
   # FieldGroup struct type
   # ============================================
 
-  describe "FieldGroup struct with :all" do
+  describe "FieldGroup struct with :always" do
     test "fields can be :all atom before transformer resolution" do
       fg = %AshGrant.Dsl.FieldGroup{
         name: :everything,
