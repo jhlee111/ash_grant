@@ -339,6 +339,64 @@ defmodule AshGrant.Dsl do
     ]
   }
 
+  @resolve_argument %Spark.Dsl.Entity{
+    name: :resolve_argument,
+    describe: """
+    Declares an action argument that should be auto-populated from the record's
+    own relationships before scope evaluation, enabling argument-based scopes
+    like `expr(^arg(:center_id) in ^actor(:own_org_unit_ids))`.
+
+    The transformer generates an `argument` declaration and a lazy `change` on
+    each write action (create, update, destroy) on the resource. At runtime the
+    change only performs the DB load if one of the actor's in-play permissions
+    uses a scope that actually references `^arg(<name>)` — so scopes that do
+    not need the value pay nothing.
+
+    ## Examples
+
+        # Single-hop — Refund → Order.center_id
+        resolve_argument :center_id, from_path: [:order, :center_id]
+
+        # Multi-hop — Refund → Order.customer.organization_id
+        resolve_argument :organization_id,
+          from_path: [:order, :customer, :organization_id]
+
+        # Limit to specific write actions
+        resolve_argument :center_id,
+          from_path: [:order, :center_id],
+          for_actions: [:update, :destroy]
+    """,
+    examples: [
+      "resolve_argument :center_id, from_path: [:order, :center_id]",
+      "resolve_argument :organization_id, from_path: [:order, :customer, :organization_id]",
+      "resolve_argument :center_id, from_path: [:order, :center_id], for_actions: [:update]"
+    ],
+    target: AshGrant.Dsl.ResolveArgument,
+    args: [:name],
+    schema: [
+      name: [
+        type: :atom,
+        required: true,
+        doc:
+          "The argument name to populate — must be referenced as `^arg(<name>)` in at least one scope"
+      ],
+      from_path: [
+        type: {:list, :atom},
+        required: true,
+        doc:
+          "Path from this resource to the leaf attribute. Intermediate keys must be belongs_to " <>
+            "relationships; the final key must be an attribute. Example: `[:order, :center_id]`."
+      ],
+      for_actions: [
+        type: {:list, :atom},
+        required: false,
+        doc:
+          "Restrict argument resolution to specific write actions. " <>
+            "Defaults to all create/update/destroy actions on the resource."
+      ]
+    ]
+  }
+
   @scope_through %Spark.Dsl.Entity{
     name: :scope_through,
     describe: """
@@ -403,7 +461,7 @@ defmodule AshGrant.Dsl do
       end
       """
     ],
-    entities: [@scope, @field_group, @can_perform, @scope_through],
+    entities: [@scope, @field_group, @can_perform, @scope_through, @resolve_argument],
     schema: [
       resolver: [
         type: {:or, [{:behaviour, AshGrant.PermissionResolver}, {:fun, 2}]},
@@ -620,6 +678,32 @@ defmodule AshGrant.Dsl.FieldGroup do
           mask: [atom()] | nil,
           mask_with: (any(), atom() -> any()) | nil,
           description: String.t() | nil,
+          __spark_metadata__: map() | nil
+        }
+end
+
+defmodule AshGrant.Dsl.ResolveArgument do
+  @moduledoc """
+  Represents a `resolve_argument` declaration in the AshGrant DSL.
+
+  Declares that an action argument should be auto-populated from the resource's
+  own relationships so that argument-based scopes (e.g., `^arg(:center_id)`)
+  evaluate correctly without the scope itself having to traverse relationships.
+
+  ## Fields
+
+  - `:name` — the argument name
+  - `:from_path` — list of atoms walking relationships to the leaf attribute
+    (intermediates must be belongs_to, leaf must be an attribute)
+  - `:for_actions` — optional list of action names; defaults to all write actions
+  """
+
+  defstruct [:name, :from_path, :for_actions, :__spark_metadata__]
+
+  @type t :: %__MODULE__{
+          name: atom(),
+          from_path: [atom()],
+          for_actions: [atom()] | nil,
           __spark_metadata__: map() | nil
         }
 end

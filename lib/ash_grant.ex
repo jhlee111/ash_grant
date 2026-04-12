@@ -316,6 +316,7 @@ defmodule AshGrant do
       AshGrant.Transformers.ValidateScopeThroughs,
       AshGrant.Transformers.ResolveFieldGroupFields,
       AshGrant.Transformers.ValidateFieldGroups,
+      AshGrant.Transformers.AddArgumentResolvers,
       AshGrant.Transformers.AddDefaultPolicies,
       AshGrant.Transformers.AddFieldPolicies,
       AshGrant.Transformers.AddMaskingPreparation,

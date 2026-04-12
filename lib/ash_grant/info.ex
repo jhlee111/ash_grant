@@ -176,6 +176,15 @@ defmodule AshGrant.Info do
   end
 
   @doc """
+  Gets all `resolve_argument` declarations for a resource.
+  """
+  @spec resolve_arguments(Ash.Resource.t()) :: [AshGrant.Dsl.ResolveArgument.t()]
+  def resolve_arguments(resource) do
+    Spark.Dsl.Extension.get_entities(resource, [:ash_grant])
+    |> Enum.filter(&match?(%AshGrant.Dsl.ResolveArgument{}, &1))
+  end
+
+  @doc """
   Gets all field group definitions for a resource.
   """
   @spec field_groups(Ash.Resource.t()) :: [AshGrant.Dsl.FieldGroup.t()]

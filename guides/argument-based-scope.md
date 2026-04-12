@@ -29,7 +29,7 @@ actually need them.**
 
 ## Why argument-based instead of relational?
 
-| Property | Relational scope `order.center_id in ...` | Argument-based scope `^arg(:center_id) in ...` |
+| Property | Relational `order.center_id in ...` | Argument-based `^arg(:center_id) in ...` |
 |---|---|---|
 | Expression evaluator | DB-query fallback on writes | In-memory, always |
 | Composite inheritance | Fragile (see #83, #86) | Not involved |
@@ -43,20 +43,12 @@ The last two rows are where this pattern distinguishes itself. A scope like
 The pattern lets you add relational scopes alongside it **without** forcing
 every write to preload `order`.
 
-## Full example: Refund → Order → center_id
+## Using the DSL sugar (recommended)
 
-### The resources
+AshGrant provides a `resolve_argument` entity that wires up the argument and
+the lazy `change` automatically:
 
 ```elixir
-defmodule MyApp.Orders.Order do
-  use Ash.Resource, domain: MyApp.Orders, data_layer: AshPostgres.DataLayer
-
-  attributes do
-    uuid_primary_key :id
-    attribute :center_id, :uuid, public?: true, allow_nil?: false
-  end
-end
-
 defmodule MyApp.Orders.Refund do
   use Ash.Resource,
     domain: MyApp.Orders,
@@ -72,19 +64,25 @@ defmodule MyApp.Orders.Refund do
     scope :by_own_author, expr(author_id == ^actor(:id))
 
     # Argument-based: compares an action argument, not a relationship
-    scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+    scope :at_own_unit,
+      expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+
+    scope :at_own_unit_and_small,
+      [:at_own_unit],
+      expr(total_amount <= 100)
+
+    # Auto-generates :center_id argument + lazy change on every write action
+    resolve_argument :center_id, from_path: [:order, :center_id]
   end
 
   attributes do
     uuid_primary_key :id
     attribute :author_id, :uuid, public?: true, allow_nil?: false
-    attribute :amount,   :integer, public?: true, allow_nil?: false
+    attribute :total_amount, :integer, public?: true, allow_nil?: false
   end
 
   relationships do
-    belongs_to :order, MyApp.Orders.Order do
-      allow_nil? false
-    end
+    belongs_to :order, MyApp.Orders.Order, allow_nil?: false
   end
 
   policies do
@@ -94,13 +92,11 @@ defmodule MyApp.Orders.Refund do
 
   actions do
     defaults [:read, :destroy]
-    create :create, do: accept [:author_id, :amount, :order_id]
+    create :create, do: accept [:author_id, :total_amount, :order_id]
 
     update :update do
-      accept [:amount]
+      accept [:total_amount]
       require_atomic? false
-      argument :center_id, :uuid, allow_nil?: true
-      change {MyApp.Orders.ResolveCenterIdFromOrder, []}
     end
   end
 end
@@ -112,93 +108,67 @@ Notice what the scope **doesn't** say:
 - No dot-path `order.center_id`
 - Just a plain comparison between an argument and an actor attribute
 
-### The argument resolver
+### What the transformer generates
+
+`AshGrant.Transformers.AddArgumentResolvers` walks every scope at compile time
+and records which arguments each scope references. For each `resolve_argument`
+declaration, it then:
+
+1. Validates the path: intermediates must be `belongs_to` relationships, the
+   leaf must be an attribute. Invalid paths fail the compile.
+2. Validates that at least one scope references `^arg(:center_id)` — a
+   declaration no scope uses is a compile error.
+3. Adds an `argument :center_id, <inferred_type>, allow_nil?: true` to every
+   targeted write action (create, update, destroy).
+4. Installs `AshGrant.Changes.ResolveArgument` on every targeted write action,
+   with the compile-time list of "scopes that need this argument" baked in.
+
+### Multi-hop paths
 
 ```elixir
-defmodule MyApp.Orders.ResolveCenterIdFromOrder do
-  use Ash.Resource.Change
-  alias Ash.Changeset
-
-  @impl true
-  def change(changeset, _opts, change_ctx) do
-    actor = change_ctx.actor || changeset.context[:private][:actor]
-
-    if needs_center_id?(changeset.resource, actor) do
-      loaded = Ash.load!(changeset.data, :order, authorize?: false)
-      Changeset.set_argument(changeset, :center_id, loaded.order.center_id)
-    else
-      changeset
-    end
-  end
-
-  defp needs_center_id?(_resource, nil), do: false
-
-  defp needs_center_id?(resource, actor) do
-    actor
-    |> permissions_for()
-    |> Enum.any?(&scope_references_arg?(resource, &1, :center_id))
-  end
-
-  defp permissions_for(%{permissions: perms}), do: perms
-  defp permissions_for(_), do: []
-
-  # Walks the scope's resolved filter expression looking for `^arg(name)`.
-  defp scope_references_arg?(resource, perm_string, arg_name) do
-    with {:ok, parsed} <- AshGrant.Permission.parse(perm_string),
-         scope_atom when is_atom(scope_atom) <- safe_to_atom(parsed.scope),
-         filter when filter not in [nil, true, false] <-
-           AshGrant.Info.resolve_write_scope_filter(resource, scope_atom, %{}) do
-      references_template?(filter, {:_arg, arg_name})
-    else
-      _ -> false
-    end
-  end
-
-  defp safe_to_atom(s) when is_atom(s), do: s
-  defp safe_to_atom(s) when is_binary(s),
-    do: (try do: String.to_existing_atom(s), rescue: (ArgumentError -> nil))
-
-  defp references_template?(template, template), do: true
-  defp references_template?(%Ash.Query.Call{args: args}, template),
-    do: Enum.any?(args, &references_template?(&1, template))
-  defp references_template?(%Ash.Query.BooleanExpression{left: l, right: r}, t),
-    do: references_template?(l, t) or references_template?(r, t)
-  defp references_template?(%Ash.Query.Not{expression: e}, t),
-    do: references_template?(e, t)
-  defp references_template?(%{__function__?: true, arguments: args}, t),
-    do: Enum.any?(args, &references_template?(&1, t))
-  defp references_template?(%{__struct__: _, left: l, right: r}, t),
-    do: references_template?(l, t) or references_template?(r, t)
-  defp references_template?(list, t) when is_list(list),
-    do: Enum.any?(list, &references_template?(&1, t))
-  defp references_template?(_, _), do: false
-end
+resolve_argument :organization_id,
+  from_path: [:order, :customer, :organization_id]
 ```
 
-### What happens at runtime
+Works the same way — intermediates are belongs_to, leaf is an attribute.
+
+### Restricting to specific actions
+
+```elixir
+resolve_argument :center_id,
+  from_path: [:order, :center_id],
+  for_actions: [:update, :destroy]
+```
+
+Defaults to all write actions; use `for_actions:` to narrow.
+
+### Runtime behavior
+
+For each write action's execution:
+
+1. The change runs. If the actor is `nil` or none of the actor's permissions
+   are for a scope that references this argument → **no-op**, argument stays
+   unset.
+2. Otherwise:
+   - **create**: the change reads the first-hop foreign key from the
+     changeset's attributes (e.g., `:order_id`), loads the head record, then
+     walks any remaining path keys through loaded relationships.
+   - **update / destroy**: the change loads the relationship path on
+     `changeset.data` and reads the leaf attribute.
+3. `Changeset.set_argument(:center_id, value)` is set; authorization proceeds.
 
 #### Actor holds only `"refund:*:update:by_own_author"`
 
-1. Caller invokes `Refund.update(refund, %{amount: 200})` with the actor.
-2. `for_update/4` runs the `change`. `needs_center_id?/2` walks the actor's
-   permissions and asks: "does any scope in play reference `^arg(:center_id)`?"
-   The only in-play scope is `:by_own_author`, which compares `author_id`
-   directly. Answer: **no**.
-3. The change **skips `Ash.load!`** and returns the changeset unchanged.
-4. Authorization evaluates `author_id == ^actor(:id)` in-memory. No DB load.
+`:by_own_author` does not reference `^arg(:center_id)`. The change skips the
+DB load and returns the changeset unchanged. Authorization evaluates
+`author_id == ^actor(:id)` in-memory. Zero overhead.
 
 #### Actor holds only `"refund:*:update:at_own_unit"`
 
-1. `for_update/4` runs the `change`. `needs_center_id?/2` finds that
-   `:at_own_unit` references `^arg(:center_id)`. Answer: **yes**.
-2. The change calls `Ash.load!(refund, :order)` and `Changeset.set_argument(:center_id, loaded.order.center_id)`.
-3. Authorization evaluates `^arg(:center_id) in ^actor(:own_org_unit_ids)` —
-   filled in as `<loaded-center-id> in <actor-unit-list>`. Plain boolean.
-
-#### Actor holds both
-
-The change runs one load (deduped by Ash). Both scopes evaluate correctly:
-`by_own_author` from direct attributes, `at_own_unit` from the injected argument.
+`:at_own_unit` references `^arg(:center_id)`, which is in the
+`scopes_needing` set baked in at compile time. The change loads `:order`,
+sets the argument, and authorization evaluates
+`^arg(:center_id) in ^actor(:own_org_unit_ids)`.
 
 ## Why this is safe
 
@@ -208,17 +178,13 @@ actually updating a record from a different center.
 
 This pattern avoids that entirely: **the resource itself computes the argument
 from its own authoritative FK relationships.** The caller doesn't supply
-`:center_id`; the resource's `change` does. The only way an attacker could
-influence the argument is to influence the actual `order_id` — which would
-change what record is updated in the first place.
-
-If you ever need to accept a caller-supplied argument as an optimization (e.g.,
-it's already in hand from a prior query), validate it against the resource's
-own resolution before trusting it.
+`:center_id`; the change does. The only way an attacker could influence the
+argument is to influence the actual `order_id` — which would change what
+record is updated in the first place.
 
 ## When to use this pattern
 
-Prefer argument-based scope + resource-local argument resolution when:
+Prefer argument-based scope + `resolve_argument` when:
 
 - The authorization check reads through one or more relationships
   (`refund.order.center_id`, `comment.post.author_id`, etc.).
@@ -237,43 +203,107 @@ Prefer relational scopes (`expr(order.center_id in ...)`) when:
 
 ### `for_update`/`for_create`/`for_destroy` must receive the actor
 
-The `change` runs during `for_<action>/4`. It needs the actor to introspect
+The change runs during `for_<action>/4`. It needs the actor to introspect
 permissions. If your caller builds the changeset without the actor and only
 passes it to `Ash.update/2`, the change sees `nil` and skips the load — and
 the authorization fails with nil arguments.
 
-**Always pass `actor:` to `for_*/4` when using this pattern.** Ash's
-conventions recommend this anyway.
+**Always pass `actor:` to `for_*/4` when using this pattern.**
 
 ### `require_atomic? false` on update/destroy
 
-Functions-as-changes don't implement the atomic protocol by default. If your
-resource's data layer supports atomic updates (most do), set
-`require_atomic? false` on the action, or provide an `atomic/3` callback on
-the change.
+The generated change does not implement the atomic protocol. If your data
+layer supports atomic updates (most do), set `require_atomic? false` on
+affected actions.
 
-### The change should be idempotent
+### Relationship with the `write:` scope option
 
-The introspection walks the scope expressions each call. If you have many
-scopes and many writes, and the walk shows up in profiles, cache the
-per-resource "scope → uses arg X?" map. The logic is pure and compile-time
-computable from the DSL.
+The `write:` option on `scope` was designed to provide a simpler, in-memory-
+evaluable expression for write actions when the main filter uses relational
+traversal. With argument-based scopes + `resolve_argument`, the scope is
+already in-memory-evaluable and `write:` is typically not needed.
 
-## Relation to `default_policies`
+For new code, prefer this pattern over `write:`. `write:` remains supported
+for existing resources.
 
-`default_policies true` auto-generates a blanket `AshGrant.check()` policy for
-write actions. This pattern is fully compatible: declare the argument and
-change on the action, and `default_policies` does the rest.
+## Hand-rolled version (under the hood)
 
-If you want argument resolution to happen without explicitly wiring a change on
-every action, encapsulate the change + argument declaration in a small macro
-or a global action template.
+The DSL sugar is equivalent to the following hand-rolled wiring. Useful to
+know when you need a customized variant (e.g., different resolution logic for
+specific actions):
+
+```elixir
+# Resource — no resolve_argument entity
+ash_grant do
+  scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+end
+
+actions do
+  update :update do
+    accept [:total_amount]
+    require_atomic? false
+    argument :center_id, :uuid, allow_nil?: true
+    change {MyApp.Orders.ResolveCenterIdFromOrder, []}
+  end
+end
+```
+
+```elixir
+defmodule MyApp.Orders.ResolveCenterIdFromOrder do
+  use Ash.Resource.Change
+  alias Ash.Changeset
+
+  @impl true
+  def change(changeset, _opts, ctx) do
+    actor = ctx.actor || changeset.context[:private][:actor]
+
+    if needs_center_id?(changeset.resource, actor) do
+      loaded = Ash.load!(changeset.data, :order, authorize?: false)
+      Changeset.set_argument(changeset, :center_id, loaded.order.center_id)
+    else
+      changeset
+    end
+  end
+
+  defp needs_center_id?(_resource, nil), do: false
+
+  defp needs_center_id?(resource, %{permissions: perms}) when is_list(perms) do
+    Enum.any?(perms, &scope_references_center_id?(resource, &1))
+  end
+
+  defp needs_center_id?(_, _), do: false
+
+  defp scope_references_center_id?(resource, perm_string) do
+    with {:ok, parsed} <- AshGrant.Permission.parse(perm_string),
+         scope_atom when is_atom(scope_atom) <- safe_to_atom(parsed.scope),
+         filter when filter not in [nil, true, false] <-
+           AshGrant.Info.resolve_write_scope_filter(resource, scope_atom, %{}) do
+      AshGrant.ArgumentAnalyzer.references_arg?(filter, :center_id)
+    else
+      _ -> false
+    end
+  end
+
+  defp safe_to_atom(s) when is_atom(s), do: s
+
+  defp safe_to_atom(s) when is_binary(s) do
+    String.to_existing_atom(s)
+  rescue
+    ArgumentError -> nil
+  end
+end
+```
+
+Prefer the DSL sugar unless you need this kind of surgical control.
 
 ## Reference implementation
 
-See the test suite for a working implementation:
+See the test suite for working implementations of both styles:
 
-- `test/support/resources/auth_pattern_order.ex`
-- `test/support/resources/auth_pattern_refund.ex`
-- `test/support/auth_pattern/resolve_center_id_from_order.ex`
-- `test/ash_grant/argument_based_scope_test.exs`
+- `test/support/resources/auth_pattern_refund_dsl.ex` — DSL sugar
+- `test/support/resources/auth_pattern_refund.ex` — hand-rolled change module
+- `test/ash_grant/resolve_argument_dsl_test.exs` — DSL behavior tests
+- `test/ash_grant/argument_based_scope_test.exs` — hand-rolled behavior tests
+- `test/ash_grant/argument_analyzer_test.exs` — unit tests for the AST walker
+- `test/ash_grant/resolve_argument_validation_test.exs` — compile-time errors
+- `test/ash_grant/resolve_argument_property_test.exs` — property-based tests
