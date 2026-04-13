@@ -44,54 +44,39 @@ Scope Filter: true (no filtering)
 ───────────────────────────────────────────────────────────────────
 ```
 
-## Dual Read/Write Scope (`write:` Option)
+## Read vs write scope evaluation
 
-Scopes with `exists()` or dot-paths work automatically for both reads and writes via
-DB query fallback. The `write:` option is an optional override for explicit control:
+Scopes with `exists()` or dot-paths work for both reads and writes automatically:
 
-| `write:` value | Strategy | Behavior |
-|----------------|----------|----------|
-| _(omitted, no relationships)_ | In-memory | Evaluates filter in-memory (default) |
-| _(omitted, has relationships)_ | DB query | Queries DB with read scope (automatic) |
-| `write: expr(...)` | In-memory | Use this expression for writes (overrides DB query) |
-| `write: false` | Deny | Explicitly deny all writes with this scope |
-| `write: true` | Allow | Allow all writes with this scope (no filtering) |
+- **Read**: `FilterCheck` lowers the expression to SQL.
+- **Write**: `Check` evaluates it in memory where possible; for scopes with
+  relationship references it falls back to a DB query.
+
+For multi-hop write authorization (e.g., `refund.order.center_id in actor_units`),
+prefer argument-based scopes — they keep the scope expression in-memory-evaluable
+and push relationship traversal into the resource's own change pipeline:
 
 ```elixir
 ash_grant do
-  resolver MyApp.PermissionResolver
-
-  scope :always, true
-
-  # Relational scope — DB query fallback handles writes automatically
-  scope :team_member, expr(exists(team.memberships, user_id == ^actor(:id)))
-
-  # Explicitly deny writes
-  scope :org_member, expr(exists(org.users, id == ^actor(:id))),
-    write: false
-
-  # Explicit in-memory override (avoids DB round-trip)
-  scope :same_org, expr(exists(org.users, id == ^actor(:id))),
-    write: expr(org_id == ^actor(:org_id))
-
-  # Simple scopes — in-memory evaluation, no write: needed
-  scope :own, expr(author_id == ^actor(:id))
+  scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+  resolve_argument :center_id, from_path: [:order, :center_id]
 end
 ```
 
-**Inheritance:** Child scopes inherit their parent's `write:` expression. If a parent
-has `write: false`, it propagates to all children:
-
-```elixir
-scope :team_member, expr(exists(team.memberships, user_id == ^actor(:id))),
-  write: false
-scope :team_editor, [:team_member], expr(role == :editor)
-# team_editor inherits write: false — writes are denied
-```
+See the [Argument-Based Scope guide](argument-based-scope.md) for the full pattern.
 
 **Resolution functions:**
-- `AshGrant.Info.resolve_scope_filter/3` — always returns the read (filter) expression
-- `AshGrant.Info.resolve_write_scope_filter/3` — returns `write:` expression if set, otherwise falls back to `filter`
+- `AshGrant.Info.resolve_scope_filter/3` — resolved read filter (inheritance applied)
+- `AshGrant.Info.resolve_write_scope_filter/3` — resolved write filter (inheritance applied, `write:` option honored if present)
+
+### `write:` option (deprecated)
+
+The `write:` option was introduced as an escape hatch when the main `filter`
+could not be evaluated in memory on write actions. It is **deprecated as of
+0.14** — prefer argument-based scopes + `resolve_argument` for multi-hop
+cases, or use a separate scope name for read-only semantics.
+
+Using `write:` still works but emits a compile-time deprecation warning.
 
 ## Scope Descriptions
 

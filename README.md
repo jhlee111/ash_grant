@@ -107,7 +107,7 @@ Post |> Ash.read!(actor: viewer)
 - **[Argument-Based Scope](guides/argument-based-scope.md)** — Multi-hop authorization via action arguments + resource-local lazy loading, avoids DB-query fallback
 - **[Field-Level Permissions](guides/field-level-permissions.md)** — Field groups, whitelist/blacklist modes, inheritance, masking
 - **[Checks & Policies](guides/checks-and-policies.md)** — Check types, CanPerform calculations, DSL configuration, default_policies
-- **[Debugging & Introspection](guides/debugging-and-introspection.md)** — explain/4, permission introspection, write: option, scope descriptions
+- **[Debugging & Introspection](guides/debugging-and-introspection.md)** — explain/4, permission introspection, scope descriptions, read vs write evaluation
 - **[Policy Testing](guides/policy-testing.md)** — DSL and YAML tests, mix tasks, export/import
 
 ## Architecture

@@ -29,28 +29,32 @@ defmodule AshGrant.Dsl do
   | Option | Type | Description |
   |--------|------|-------------|
   | `inherits` | list of atoms | Parent scopes to inherit and combine with |
-  | `write` | expression, boolean, or nil | Write-specific expression. Falls back to `filter` if omitted. |
   | `description` | string | Human-readable description for explain/4 output |
+  | `write` | expression, boolean, or nil | **Deprecated.** Prefer argument-based scopes + `resolve_argument`. See below. |
 
-  ### Dual Read/Write Scope
+  ### Read vs write semantics
 
   The `filter` expression is used for read actions (converted to SQL via `FilterCheck`).
   For write actions, `Check` evaluates the scope — simple scopes use in-memory
   evaluation, while scopes with relationship references (`exists()` or dot-paths)
   automatically use a DB query to verify the scope.
 
-  The `write:` option is an optional override for explicit control:
+  For multi-hop authorization ("refund → order → center_id"), prefer
+  argument-based scopes together with `resolve_argument`:
 
-      # Explicitly deny writes
-      scope :readonly, expr(exists(org.users, id == ^actor(:id))),
-        write: false
+      scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+      resolve_argument :center_id, from_path: [:order, :center_id]
 
-      # Explicit in-memory expression (avoids DB round-trip)
-      scope :same_org, expr(exists(org.users, id == ^actor(:id))),
-        write: expr(org_id == ^actor(:org_id))
+  See `guides/argument-based-scope.md` for the full rationale and examples.
 
-  When `write:` is omitted, scopes with relationship references use a DB query
-  fallback; simple scopes use in-memory evaluation.
+  ### `write:` option (deprecated)
+
+  The `write:` option was introduced as an escape hatch for relational scopes
+  whose `filter` expression could not be evaluated in memory on write actions.
+  It is deprecated as of 0.14 — prefer argument-based scopes + `resolve_argument`,
+  or gate read-only semantics via separate scope names or the policy layer.
+
+  Using `write:` still works but emits a compile-time deprecation warning.
 
   ## CanPerform Entity
 
@@ -178,12 +182,16 @@ defmodule AshGrant.Dsl do
         # Relational scope — DB query fallback handles writes automatically
         scope :team_member, expr(exists(team.members, user_id == ^actor(:id)))
 
-        # Explicitly deny writes with this scope
-        scope :readonly, expr(exists(org.users, id == ^actor(:id))),
-          write: false
-
         # Description is optional - backward compatible
         scope :archived, expr(status == :archived)
+
+    For multi-hop authorization (e.g., "refund.order.center_id"), prefer
+    argument-based scopes paired with `resolve_argument`:
+
+        scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+        resolve_argument :center_id, from_path: [:order, :center_id]
+
+    The `write:` option is deprecated; see `guides/argument-based-scope.md`.
     """,
     examples: [
       "scope :always, true",
@@ -193,10 +201,16 @@ defmodule AshGrant.Dsl do
       ~s|scope :today, expr(fragment("DATE(inserted_at) = ?", ^context(:reference_date)))|,
       ~s|scope :own, expr(author_id == ^actor(:id)), description: "Records owned by the current user"|,
       "scope :team_member, expr(exists(team.members, user_id == ^actor(:id)))",
-      "scope :readonly, expr(exists(org.users, id == ^actor(:id))), write: false"
+      "scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))"
     ],
     target: AshGrant.Dsl.Scope,
     args: [:name, {:optional, :inherits}, :filter],
+    deprecations: [
+      write:
+        "`write:` is deprecated. Prefer argument-based scopes + `resolve_argument` " <>
+          "(see `guides/argument-based-scope.md`). For read-only semantics, define a " <>
+          "separate read-only scope or gate writes at the policy layer."
+    ],
     schema: [
       name: [
         type: :atom,
@@ -221,20 +235,15 @@ defmodule AshGrant.Dsl do
         type: {:or, [:boolean, :any]},
         required: false,
         doc: """
-        Optional override for write action evaluation. When omitted, scopes with
-        relationship references use a DB query fallback; simple scopes use in-memory
-        evaluation.
+        **Deprecated.** Prefer argument-based scopes + `resolve_argument`
+        (see `guides/argument-based-scope.md`).
 
-        Set to `false` to explicitly deny writes, or to an expression for explicit
-        in-memory evaluation (avoids DB round-trip).
+        Historical escape hatch: provides a write-side expression when the
+        main `filter` traverses relationships that cannot be evaluated in
+        memory. Set to `false` to deny writes, or to an expression that uses
+        only direct attributes.
 
-        ## Example
-
-            scope :readonly, expr(exists(org.users, id == ^actor(:id))),
-              write: false
-
-            scope :same_org, expr(exists(org.users, id == ^actor(:id))),
-              write: expr(org_id == ^actor(:org_id))
+        Still supported, but emits a compile-time deprecation warning.
         """
       ]
     ]
@@ -600,7 +609,7 @@ defmodule AshGrant.Dsl.Scope do
   - `:name` - The atom name of the scope (e.g., `:own`, `:published`)
   - `:inherits` - List of parent scope names to inherit from
   - `:filter` - The filter expression (`true` for no filtering, or an Ash.Expr)
-  - `:write` - Optional write-specific expression. Falls back to `:filter` if nil. Set to `false` to deny writes.
+  - `:write` - **Deprecated.** Optional write-specific expression. Prefer argument-based scopes with `resolve_argument`.
   - `:description` - Optional human-readable description for debugging/explain
   """
 

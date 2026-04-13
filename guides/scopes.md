@@ -190,23 +190,30 @@ For **write** actions, `Check` automatically uses a **DB query fallback** when t
 scope contains relationship references — the read scope expression is used as a DB
 query to verify the record matches the scope.
 
-> **Optional: `write:` override**
->
-> You can use the `write:` option to explicitly control write behavior:
+### Recommended: argument-based scopes for multi-hop authorization
+
+For write-action authorization that reaches through relationships
+(e.g., `refund → order → center_id`), prefer an argument-based scope paired
+with `resolve_argument`. The scope stays in-memory-evaluable and the resource
+populates the argument from its own relationships:
 
 ```elixir
 ash_grant do
-  # Explicitly deny writes with this scope
-  scope :org_member, expr(exists(org.users, id == ^actor(:id))),
-    write: false
-
-  # Explicit in-memory expression (avoids DB round-trip)
-  scope :same_org, expr(exists(org.users, id == ^actor(:id))),
-    write: expr(org_id == ^actor(:org_id))
+  scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+  resolve_argument :center_id, from_path: [:order, :center_id]
 end
 ```
 
-> See the [Debugging & Introspection guide](debugging-and-introspection.md#dual-readwrite-scope-write-option) for full details on the `write:` option.
+See [Argument-Based Scope](argument-based-scope.md) for the full pattern.
+
+> **Deprecated: `write:` override**
+>
+> The `write:` option was introduced as an escape hatch when the main
+> `filter` could not be evaluated in memory on write actions. It is
+> deprecated as of 0.14 — prefer argument-based scopes + `resolve_argument`
+> for multi-hop cases, or use a separate scope name for read-only semantics.
+>
+> Using `write:` still works but emits a compile-time deprecation warning.
 
 ## Business Scope Examples
 

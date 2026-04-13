@@ -218,13 +218,15 @@ affected actions.
 
 ### Relationship with the `write:` scope option
 
-The `write:` option on `scope` was designed to provide a simpler, in-memory-
-evaluable expression for write actions when the main filter uses relational
-traversal. With argument-based scopes + `resolve_argument`, the scope is
-already in-memory-evaluable and `write:` is typically not needed.
+The `write:` option on `scope` was an earlier escape hatch for the same
+problem this pattern solves: a simpler, in-memory-evaluable expression for
+write actions when the main filter traverses relationships.
 
-For new code, prefer this pattern over `write:`. `write:` remains supported
-for existing resources.
+With argument-based scopes + `resolve_argument`, the scope expression is
+already in-memory-evaluable and the relationship traversal lives in the
+change module. **`write:` is deprecated as of 0.14** — new code should use
+this pattern. Existing `write:` usage still compiles (with a deprecation
+warning) to give projects time to migrate.
 
 ## Hand-rolled version (under the hood)
 

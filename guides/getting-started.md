@@ -243,6 +243,8 @@ ash_grant do
 end
 ```
 
-For read actions, these compile to SQL (EXISTS subquery or JOIN). For write actions,
-AshGrant automatically uses a DB query fallback. See the [Scopes guide](scopes.md)
-for full details on relational scopes and the `write:` option.
+For read actions, these compile to SQL (EXISTS subquery or JOIN). For write
+actions, AshGrant automatically uses a DB query fallback. For multi-hop
+write authorization, prefer the argument-based pattern — see the
+[Argument-Based Scope guide](argument-based-scope.md). The
+[Scopes guide](scopes.md) covers relational scopes in detail.
