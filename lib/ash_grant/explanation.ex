@@ -18,6 +18,7 @@ defmodule AshGrant.Explanation do
   - `:scope_filter` - The resolved scope filter expression (for reads)
   - `:field_groups` - List of field group names the actor has access to (from 5-part permissions)
   - `:field_group_defs` - Field group definitions from the resource DSL
+  - `:resolve_arguments` - `resolve_argument` declarations active for this action, each annotated with the scope atoms that trigger the resolver at runtime (see `guides/argument-based-scope.md`)
 
   ## Example
 

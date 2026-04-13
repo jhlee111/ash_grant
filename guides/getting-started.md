@@ -243,8 +243,9 @@ ash_grant do
 end
 ```
 
-For read actions, these compile to SQL (EXISTS subquery or JOIN). For write
-actions, AshGrant automatically uses a DB query fallback. For multi-hop
-write authorization, prefer the argument-based pattern — see the
-[Argument-Based Scope guide](argument-based-scope.md). The
+For read actions, these compile to SQL (EXISTS subquery or JOIN). For simple
+write actions, AshGrant uses a DB query fallback that handles most cases
+automatically. For multi-hop authorization, composite inheritance, or scopes
+that wrap relationship references inside functions, prefer the argument-based
+pattern — see the [Argument-Based Scope guide](argument-based-scope.md). The
 [Scopes guide](scopes.md) covers relational scopes in detail.

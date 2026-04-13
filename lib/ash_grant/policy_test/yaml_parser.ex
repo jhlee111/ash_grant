@@ -40,6 +40,20 @@ defmodule AshGrant.PolicyTest.YamlParser do
             record:
               status: draft
 
+  ### Argument-based scopes
+
+  Scopes can reference action arguments via `^arg(:name)`. To exercise those
+  in a YAML test, supply an `arguments:` map alongside `record:`:
+
+      - name: "manager can update refund in their unit"
+        assert_can:
+          actor: unit_manager
+          action: update
+          record:
+            author_id: "u1"
+          arguments:
+            center_id: "center_A"
+
   ## Usage
 
       # Parse YAML file

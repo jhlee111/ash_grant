@@ -80,6 +80,15 @@ defmodule AshGrant.PolicyTest.Assertions do
   - An atom for action name shorthand: `:read`, `:update`
   - A keyword list with `:action` or `:action_type`
 
+  ## Third argument — record and/or arguments
+
+  The third argument may be:
+  - omitted — check permission only
+  - a bare map — treated as the record attributes
+  - a keyword list with `:record` and/or `:arguments` — the latter supplies
+    action-argument values for scopes that use `^arg(:name)` templates
+    (see `resolve_argument` and `guides/argument-based-scope.md`)
+
   ## Examples
 
       # Actor can perform :read action
@@ -93,6 +102,11 @@ defmodule AshGrant.PolicyTest.Assertions do
 
       # Actor can access record with specific attributes
       assert_can :reader, :read, %{status: :published}
+
+      # Argument-based scope — actor, record, AND action arguments
+      assert_can :manager, :update,
+        record: %{author_id: "u1"},
+        arguments: %{center_id: "center_A"}
   """
   defmacro assert_can(actor_name, action_spec) do
     quote do
@@ -119,6 +133,9 @@ defmodule AshGrant.PolicyTest.Assertions do
   @doc """
   Asserts that an actor cannot perform an action.
 
+  See `assert_can/3` for the accepted third-argument forms (bare record map
+  or `record:`/`arguments:` keyword list).
+
   ## Examples
 
       # Actor cannot perform :delete action
@@ -126,6 +143,11 @@ defmodule AshGrant.PolicyTest.Assertions do
 
       # Actor cannot access record with specific attributes
       assert_cannot :reader, :read, %{status: :draft}
+
+      # Argument-based scope — verify a value *outside* the actor's units is denied
+      assert_cannot :manager, :update,
+        record: %{author_id: "u1"},
+        arguments: %{center_id: "center_Z"}
   """
   defmacro assert_cannot(actor_name, action_spec) do
     quote do
