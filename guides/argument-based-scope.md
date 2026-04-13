@@ -210,6 +210,14 @@ the authorization fails with nil arguments.
 
 **Always pass `actor:` to `for_*/4` when using this pattern.**
 
+### Multi-tenancy
+
+`resolve_argument` forwards the changeset's `tenant` to the internal
+`Ash.get!`/`Ash.load!` calls. Paths that traverse resources with
+`multitenancy strategy: :attribute` resolve correctly as long as you call the
+action with `tenant:` set — the same tenant you would pass to any other
+multitenant action.
+
 ### `require_atomic? false` on update/destroy
 
 The generated change does not implement the atomic protocol. If your data

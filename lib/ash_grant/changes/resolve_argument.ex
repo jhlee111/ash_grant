@@ -33,6 +33,13 @@ defmodule AshGrant.Changes.ResolveArgument do
   referenced record was deleted), the change returns the changeset unchanged —
   the scope will then evaluate against a `nil` argument and typically fail
   closed (authorization denied).
+
+  ## Multi-tenancy
+
+  The changeset's `:tenant` is forwarded to the internal `Ash.get!`/`Ash.load!`
+  calls so that resources along `from_path` using attribute multitenancy can be
+  fetched correctly. Without this, those fetches would raise, be rescued, and
+  leave the argument unset — causing the scope to evaluate to `false`.
   """
 
   use Ash.Resource.Change
@@ -121,7 +128,7 @@ defmodule AshGrant.Changes.ResolveArgument do
     with %{source_attribute: source_attr, destination: destination} <-
            Ash.Resource.Info.relationship(cs.resource, first_rel),
          fk_value when not is_nil(fk_value) <- Changeset.get_attribute(cs, source_attr),
-         head when not is_nil(head) <- safe_get(destination, fk_value) do
+         head when not is_nil(head) <- safe_get(destination, fk_value, tenant_opts(cs)) do
       traverse(head, rest)
     else
       _ -> :skip
@@ -131,11 +138,18 @@ defmodule AshGrant.Changes.ResolveArgument do
   defp resolve_value(cs, path) do
     {rel_path, leaf} = split_relationship_path(cs.resource, path)
 
-    case safe_load(cs.data, build_load(rel_path)) do
+    case safe_load(cs.data, build_load(rel_path), tenant_opts(cs)) do
       {:ok, loaded} -> traverse_loaded(loaded, rel_path, leaf)
       :error -> :skip
     end
   end
+
+  # Forward the changeset's tenant so that target resources using attribute
+  # multitenancy can be fetched/loaded. Without this, `Ash.get!`/`Ash.load!`
+  # raise for attribute-multitenant resources and the change silently skips.
+  defp tenant_opts(%{tenant: nil}), do: []
+  defp tenant_opts(%{tenant: tenant}), do: [tenant: tenant]
+  defp tenant_opts(_), do: []
 
   # Walk down a path that's already loaded (for create case, we've already
   # loaded the first hop — traverse the rest).
@@ -199,16 +213,16 @@ defmodule AshGrant.Changes.ResolveArgument do
   defp build_load([rel]), do: rel
   defp build_load([rel | rest]), do: [{rel, build_load(rest)}]
 
-  defp safe_get(resource, id) do
-    Ash.get!(resource, id, authorize?: false)
+  defp safe_get(resource, id, extra_opts) do
+    Ash.get!(resource, id, Keyword.merge([authorize?: false], extra_opts))
   rescue
     _ -> nil
   end
 
-  defp safe_load(_data, nil), do: {:ok, nil}
+  defp safe_load(_data, nil, _extra_opts), do: {:ok, nil}
 
-  defp safe_load(data, load_spec) do
-    {:ok, Ash.load!(data, load_spec, authorize?: false)}
+  defp safe_load(data, load_spec, extra_opts) do
+    {:ok, Ash.load!(data, load_spec, Keyword.merge([authorize?: false], extra_opts))}
   rescue
     _ -> :error
   end

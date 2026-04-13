@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`resolve_argument` silently failed on CREATE for attribute-multitenant targets** (#99). `AshGrant.Changes.ResolveArgument` did not forward the changeset's tenant to `Ash.get!`/`Ash.load!`, so whenever any hop in `from_path` pointed to a resource with `multitenancy strategy: :attribute`, the fetch raised, the rescue returned `nil`, and the argument-based scope evaluated to `false` — denying the action. The change now passes `tenant: changeset.tenant` to both the create-path `safe_get/3` and the update/destroy-path `safe_load/3`.
+
 ## [0.14.0] - 2026-04-13
 
 This release is centred on a new **argument-based scope pattern** for

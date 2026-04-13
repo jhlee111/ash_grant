@@ -33,6 +33,12 @@ defmodule AshGrant.Test.Domain do
     # Uses ^tenant() scope expression
     resource(AshGrant.Test.TenantPost)
 
+    # Attribute-multitenant resources exercising `resolve_argument` on a
+    # CREATE action whose target relationship is also attribute-multitenant
+    # (regression coverage for issue #99).
+    resource(AshGrant.Test.TenantOrder)
+    resource(AshGrant.Test.TenantRefund)
+
     # Instance permission read test resource
     resource(AshGrant.Test.SharedDoc)
 
