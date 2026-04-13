@@ -184,13 +184,13 @@ When a user has `"feed:feed_abc:read:"`, they can read all posts where
 scope :name, filter_expression
 scope :name, [:parent_scopes], filter_expression
 scope :name, filter_expression, description: "Human-readable text"
-scope :name, filter_expression, write: write_expression
 ```
 
 - Use `true` for a scope that matches all records (no filtering).
 - Use `expr(...)` for attribute-based filtering.
 - Use the optional second argument (list of atoms) to inherit from parent scopes.
-- Use `write:` to provide a separate expression for write actions (see below).
+- `write:` option exists but is **deprecated** (see "DON'T: Use the `write:`
+  scope option" below) — prefer `resolve_argument` for multi-hop cases.
 
 ```elixir
 ash_grant do
@@ -204,45 +204,58 @@ ash_grant do
 end
 ```
 
-### Dual read/write scope (`write:` option)
+### Read vs write scope evaluation
 
-Scopes with `exists()` or dot-paths work automatically for both reads and writes.
-For reads, they are converted to SQL. For writes, a **DB query fallback** verifies
-the scope by querying the database with the read scope expression.
-
-You can optionally use the `write:` option to explicitly control write behavior:
+- **Reads** — scopes compile to SQL via `AshGrant.filter_check/1`.
+- **Writes** — scopes are evaluated by `AshGrant.check/1`. Simple attribute
+  scopes run in memory; single-hop relational scopes (`exists()`, dot-paths)
+  fall back to a DB query automatically. For multi-hop or composite cases,
+  use the `resolve_argument` entity (see next section).
 
 ```elixir
 ash_grant do
   resolver MyApp.PermissionResolver
 
-  # No write: needed — DB query fallback handles it automatically
-  scope :team_member, expr(exists(team.members, user_id == ^actor(:id)))
-
-  # Explicit override: in-memory expression (avoids DB round-trip)
-  scope :same_org, expr(exists(org.users, id == ^actor(:id))),
-    write: expr(org_id == ^actor(:org_id))
-
-  # Explicitly deny writes with this scope
-  scope :readonly, expr(exists(org.users, id == ^actor(:id))),
-    write: false
-
-  # No write: option — simple scopes use in-memory evaluation (no DB needed)
+  # Simple — in-memory for writes
   scope :own, expr(author_id == ^actor(:id))
+
+  # Single-hop relational — DB query fallback on writes
+  scope :team_member, expr(exists(team.members, user_id == ^actor(:id)))
 end
 ```
 
-| `write:` value | Strategy | Behavior for write actions |
-|----------------|----------|---------------------------|
-| omitted, no relationships | In-memory | Evaluates filter expression in-memory |
-| omitted, has relationships | DB query | Queries DB with read scope expression |
-| `expr(...)` | In-memory | Uses the provided expression |
-| `false` | Deny | Denies all write actions with this scope |
-| `true` | Allow | Allows all write actions (no filtering) |
+> **The `write:` scope option is deprecated as of 0.14.** See the "DON'T:
+> Use the `write:` scope option" rule below.
 
-Inheritance works with `write:`: child scopes inherit the parent's `write:`
-expression (or parent's `filter` if parent has no `write:`). If any parent
-returns `false`, the child is also denied.
+### `resolve_argument` entity (argument-based scopes)
+
+For authorization that reaches through one or more relationships, declare
+scopes against an action argument and let the resource populate the argument
+from its own relationships:
+
+```elixir
+ash_grant do
+  scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+
+  # The transformer auto-injects `argument :center_id` + a lazy change on
+  # every create/update/destroy action. The change only loads :order when
+  # an in-play permission uses a scope that references ^arg(:center_id).
+  resolve_argument :center_id, from_path: [:order, :center_id]
+end
+```
+
+Options:
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `from_path` | Yes | List of atoms walking belongs_to relationships to a leaf attribute. Example: `[:order, :center_id]`. Multi-hop is supported: `[:order, :customer, :organization_id]`. |
+| `for_actions` | No | Restrict injection to specific action names. Defaults to all create/update/destroy actions. |
+
+Compile-time validation:
+- Path intermediates must be `:belongs_to`; the leaf must be an attribute.
+- At least one scope must reference `^arg(<name>)` (dead declarations error out).
+
+See `guides/argument-based-scope.md` for the full rationale and examples.
 
 ### Field group entity
 
@@ -376,29 +389,65 @@ end
 - `filter_check` returns filter expressions — meaningless for writes.
 - `check` returns true/false — doesn't filter read results.
 
-### DO: Use `exists()` scopes freely — DB query fallback handles writes
+### DO: Use `exists()` scopes for simple single-hop writes — DB query fallback handles them
 
-Scopes with `exists()` or dot-paths work automatically for all action types.
-For writes, a DB query verifies the scope when no `write:` option is set.
+Scopes with `exists()` or dot-paths that traverse one belongs_to hop work
+automatically for reads and writes. For writes, a DB query verifies the scope.
 
 ```elixir
 # DO — works for both reads and writes automatically
 scope :team_member, expr(exists(team.memberships, user_id == ^actor(:id)))
 ```
 
-### DO: Use `write:` when you want explicit control
+### DO: Prefer argument-based scopes + `resolve_argument` for multi-hop or composite cases
 
-Use `write:` to override the automatic DB query strategy:
+When the authorization value lives one or more relationships away
+(e.g., `refund → order → center_id`), or when you inherit a relational parent
+into a composite child, prefer **argument-based scopes** over deep
+relationship traversal in the scope expression itself:
 
 ```elixir
-# Explicit in-memory expression (avoids DB query overhead)
-scope :same_org, expr(exists(org.users, id == ^actor(:id))),
-  write: expr(org_id == ^actor(:org_id))
+ash_grant do
+  # Scope compares an action argument, not a traversed relationship
+  scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+  scope :at_own_unit_and_small, [:at_own_unit], expr(total_amount <= 100)
 
-# Explicitly deny writes
-scope :readonly, expr(exists(org.users, id == ^actor(:id))),
-  write: false
+  # Declare how the argument is populated from the record's relationships.
+  # The transformer auto-injects an `argument :center_id` and a lazy change
+  # on every create/update/destroy action. The change only loads :order
+  # when an in-play permission uses a scope that references ^arg(:center_id).
+  resolve_argument :center_id, from_path: [:order, :center_id]
+end
 ```
+
+Why this is better than `expr(order.center_id in ^actor(...))` on writes:
+
+- Scope expression stays in-memory-evaluable — no DB query fallback.
+- Composite inheritance works without edge cases.
+- Scopes that don't reference the argument (e.g., `:by_own_author`) pay
+  zero cost — the lazy change skips the DB load for those actors.
+- The resource resolves its own FK, so callers can't tamper with the value.
+
+Requirements:
+
+- Always pass `actor:` to `for_update/4`, `for_create/4`, `for_destroy/4` —
+  the lazy change needs the actor to introspect permissions.
+- Set `require_atomic? false` on update/destroy actions if your data layer
+  defaults to atomic updates.
+
+See `guides/argument-based-scope.md` for the full pattern.
+
+### DON'T: Use the `write:` scope option (deprecated)
+
+The `write:` override has been **deprecated as of 0.14**. It was an escape
+hatch for relational scopes that couldn't be evaluated in memory on writes;
+argument-based scopes (above) subsume its use cases cleanly. Using `write:`
+still compiles but emits a compile-time deprecation warning.
+
+For new code:
+- Multi-hop / composite: use `resolve_argument` + argument-based scopes.
+- Read-only semantics: define a separate read-only scope name or gate at
+  the policy layer, not via `write: false`.
 
 ## Deny-Wins Semantics
 
