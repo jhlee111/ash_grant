@@ -55,14 +55,36 @@ end
 | Macro | Description |
 |-------|-------------|
 | `assert_can(actor, action)` | Actor can perform action |
-| `assert_can(actor, action, record)` | Actor can access specific record |
+| `assert_can(actor, action, record)` | Actor can access specific record (bare map) |
+| `assert_can(actor, action, [record: ..., arguments: ...])` | Actor can access record with action arguments |
 | `assert_cannot(actor, action)` | Actor cannot perform action |
-| `assert_cannot(actor, action, record)` | Actor cannot access specific record |
+| `assert_cannot(actor, action, record)` | Actor cannot access specific record (bare map) |
+| `assert_cannot(actor, action, [record: ..., arguments: ...])` | Actor cannot access record with action arguments |
 
 Action can be specified as:
 - Atom: `:read` (shorthand for `action: :read`)
 - Keyword: `action: :approve` (specific action name)
 - Keyword: `action_type: :update` (all actions of type)
+
+### Testing argument-based scopes
+
+For scopes that reference `^arg(:name)` (see
+[Argument-Based Scope](argument-based-scope.md)), pass an `arguments:` map
+alongside `record:` using the keyword-list form:
+
+```elixir
+assert_can :manager, :update,
+  record: %{author_id: "u1"},
+  arguments: %{center_id: "center_A"}
+
+assert_cannot :manager, :update,
+  record: %{author_id: "u1"},
+  arguments: %{center_id: "outside_unit"}
+```
+
+The `arguments` map is forwarded to `Ash.Expr.fill_template` as `:args`, so
+the scope's `^arg(:center_id)` resolves to the supplied value before
+evaluation against the record.
 
 ## YAML Format
 
@@ -112,6 +134,32 @@ tests:
       record:
         author_id: "other_user"
 ```
+
+### YAML — `arguments:` field for argument-based scopes
+
+YAML tests can provide action arguments for scopes that use `^arg(:name)`:
+
+```yaml
+  - name: "manager can update refund in their unit"
+    assert_can:
+      actor: unit_manager
+      action: update
+      record:
+        author_id: "u1"
+      arguments:
+        center_id: "center_A"
+
+  - name: "manager cannot update refund outside their unit"
+    assert_cannot:
+      actor: unit_manager
+      action: update
+      record:
+        author_id: "u1"
+      arguments:
+        center_id: "center_Z"
+```
+
+See [Argument-Based Scope](argument-based-scope.md) for when to use this pattern.
 
 ## Mix Tasks
 

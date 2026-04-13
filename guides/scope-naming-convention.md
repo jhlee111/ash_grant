@@ -71,6 +71,20 @@ The simple `:own` is kept for the common case of "my own record":
 scope :own, expr(user_id == ^actor(:id))
 ```
 
+> **When the scoped attribute is not on the record itself** — e.g., Refund
+> reaches `center_id` only through its `:order` relationship — write the
+> expression against an action argument rather than traversing the
+> relationship, and declare a `resolve_argument` to populate it:
+>
+> ```elixir
+> scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+> resolve_argument :center_id, from_path: [:order, :center_id]
+> ```
+>
+> The scope name stays `:at_own_unit` (the sentence test still passes:
+> "Actor can update refund at own unit"). See the
+> [Argument-Based Scope guide](argument-based-scope.md) for the full rationale.
+
 ### Rule 3: Resource state scopes — adjectives or participles
 
 For ABAC scopes based on record attributes, use names that describe the state:

@@ -288,8 +288,17 @@ end
 ```
 
 For **read** actions, these compile to SQL (EXISTS subquery or JOIN).
-For **write** actions, AshGrant automatically uses a DB query fallback to verify
-the record matches the scope.
+For **simple write** actions, AshGrant uses a DB query fallback to verify
+the record matches the scope — this covers most single-hop cases.
+
+For **multi-hop write authorization** (e.g., `refund → order → center_id`),
+composite scope inheritance, or scopes that wrap relationship references inside
+functions, prefer the **argument-based scope pattern**: declare scopes against
+action arguments (`^arg(:x)`) and let the resource populate the argument from
+its own relationships via `resolve_argument`. See the
+[Argument-Based Scope guide](argument-based-scope.md) for the full walkthrough
+of that pattern — it avoids the DB-query fallback's rough edges and pays zero
+cost for scopes that don't reference the argument.
 
 ### Method 3: `scope_through` — Parent-Child Propagation
 

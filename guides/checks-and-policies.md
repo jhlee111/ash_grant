@@ -136,6 +136,11 @@ ash_grant do
   scope :always, true
   scope :own, expr(owner_id == ^actor(:id))
 
+  # Argument-based scope + argument resolver
+  # (for multi-hop authorization — see the Argument-Based Scope guide)
+  scope :at_own_unit, expr(^arg(:center_id) in ^actor(:own_org_unit_ids))
+  resolve_argument :center_id, from_path: [:order, :center_id]
+
   # UI visibility calculations
   can_perform_actions [:update, :destroy]
 end
@@ -149,6 +154,16 @@ end
 | `can_perform_actions` | list of atoms | Batch-generate `CanPerform` calculations (e.g., `[:update, :destroy]`) |
 | `resource_name` | string | Resource name for permission matching. Default: derived from module name (last segment, snake_cased). `MyApp.Blog.Post` → `"post"`, `MyApp.CustomerOrder` → `"customer_order"` |
 | `instance_key` | atom | Field to match instance permission IDs against. Defaults to `:id` (primary key). See [Instance Key](permissions.md#instance-key) |
+
+**Entities inside `ash_grant do ... end`**
+
+| Entity | Description |
+|--------|-------------|
+| `scope :name, filter` | Named scope — see [Scopes](scopes.md) |
+| `field_group :name, fields` | Field-level access group — see [Field-Level Permissions](field-level-permissions.md) |
+| `can_perform :action` | Per-record boolean calculation |
+| `scope_through :rel` | Propagate parent instance permissions to this resource |
+| `resolve_argument :name, from_path: [...]` | Auto-populate an action argument from a relationship for argument-based scopes — see [Argument-Based Scope](argument-based-scope.md) |
 
 ### Default Policies Options
 
