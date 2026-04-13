@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`resolve_argument` was a silent no-op for non-plain-map actors** (#101). The `needs_resolution?/3` optimization read permissions straight off `actor.permissions` and returned `[]` for any actor that was not a literal map with a `:permissions` key. Real Ash resource structs carry no such field — permissions come from the configured `PermissionResolver` — so the change never ran in production, the argument stayed `nil`, and argument-based scopes always denied. `AshGrant.Changes.ResolveArgument` now routes through the resource's configured resolver (same source as `AshGrant.Check`/`FilterCheck`) and conservatively resolves the argument when the resolver is absent or raises, rather than skipping.
 - **`resolve_argument` silently failed on CREATE for attribute-multitenant targets** (#99). `AshGrant.Changes.ResolveArgument` did not forward the changeset's tenant to `Ash.get!`/`Ash.load!`, so whenever any hop in `from_path` pointed to a resource with `multitenancy strategy: :attribute`, the fetch raised, the rescue returned `nil`, and the argument-based scope evaluated to `false` — denying the action. The change now passes `tenant: changeset.tenant` to both the create-path `safe_get/3` and the update/destroy-path `safe_load/3`.
 
 ## [0.14.0] - 2026-04-13

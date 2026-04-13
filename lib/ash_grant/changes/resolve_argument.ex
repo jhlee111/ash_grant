@@ -18,8 +18,15 @@ defmodule AshGrant.Changes.ResolveArgument do
 
   ## Runtime contract
 
-  If the actor is nil, or none of the actor's permissions use a scope in
+  If the actor is nil, or none of the actor's permissions (as returned by the
+  resource's configured `AshGrant.PermissionResolver`) use a scope in
   `:scopes_needing`, the change is a no-op — no DB load is performed.
+
+  If the resource has no resolver configured, or the resolver raises/returns
+  an unexpected shape, the change conservatively resolves the argument
+  rather than skipping — otherwise production actors (Ash resource structs
+  that carry no literal `:permissions` field) would silently bypass the
+  resolver.
 
   Otherwise, the change resolves the path:
 
@@ -54,7 +61,7 @@ defmodule AshGrant.Changes.ResolveArgument do
 
     actor = actor_from_context(ctx, changeset)
 
-    if needs_resolution?(actor, changeset.resource, scopes_needing) do
+    if needs_resolution?(actor, changeset.resource, scopes_needing, changeset) do
       case resolve_value(changeset, path) do
         {:ok, value} -> Changeset.set_argument(changeset, name, value)
         :skip -> changeset
@@ -76,17 +83,62 @@ defmodule AshGrant.Changes.ResolveArgument do
 
   defp actor_from_context(_, _), do: nil
 
-  defp needs_resolution?(nil, _resource, _scopes_needing), do: false
-  defp needs_resolution?(_actor, _resource, []), do: false
+  defp needs_resolution?(nil, _resource, _scopes_needing, _changeset), do: false
+  defp needs_resolution?(_actor, _resource, [], _changeset), do: false
 
-  defp needs_resolution?(actor, resource, scopes_needing) do
-    actor
-    |> permissions()
-    |> Enum.any?(&permission_uses_listed_scope?(&1, resource, scopes_needing))
+  defp needs_resolution?(actor, resource, scopes_needing, changeset) do
+    case actor_permissions(actor, resource, changeset) do
+      :unknown ->
+        # Conservative fallback: we couldn't introspect the actor's
+        # permissions (no resolver configured, or resolver raised). Resolve
+        # the argument rather than skipping — otherwise the scope evaluates
+        # against nil and denies valid actions.
+        true
+
+      perms when is_list(perms) ->
+        Enum.any?(perms, &permission_uses_listed_scope?(&1, resource, scopes_needing))
+    end
   end
 
-  defp permissions(%{permissions: perms}) when is_list(perms), do: perms
-  defp permissions(_), do: []
+  # Determine the actor's permissions using the resource's configured
+  # PermissionResolver — the same source `AshGrant.Check`/`FilterCheck` use at
+  # authorization time. Falling back to the literal `actor.permissions` field
+  # only works for plain-map actors (as in `AshGrant.PolicyTest`); real Ash
+  # resource structs carry no such field, so relying on it made the
+  # optimization a silent no-op in production (#101).
+  defp actor_permissions(actor, resource, changeset) do
+    case AshGrant.Info.resolver(resource) do
+      nil ->
+        literal_permissions(actor)
+
+      resolver ->
+        resolve_permissions(resolver, actor, resolver_context(actor, resource, changeset))
+    end
+  rescue
+    _ -> :unknown
+  end
+
+  defp resolver_context(actor, resource, changeset) do
+    %{
+      actor: actor,
+      resource: resource,
+      tenant: changeset.tenant,
+      action: changeset.action
+    }
+  end
+
+  defp resolve_permissions(resolver, actor, context) when is_function(resolver, 2) do
+    resolver.(actor, context)
+  end
+
+  defp resolve_permissions(resolver, actor, context) when is_atom(resolver) do
+    resolver.resolve(actor, context)
+  end
+
+  defp resolve_permissions(_, _, _), do: :unknown
+
+  defp literal_permissions(%{permissions: perms}) when is_list(perms), do: perms
+  defp literal_permissions(_), do: :unknown
 
   defp permission_uses_listed_scope?(perm_string, resource, scopes_needing) do
     case AshGrant.Permission.parse(perm_string) do

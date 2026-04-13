@@ -7,5 +7,6 @@ defmodule AshGrant.Test.Auth.Domain do
     resource(AshGrant.Test.Auth.Refund)
     resource(AshGrant.Test.Auth.RefundDsl)
     resource(AshGrant.Test.Auth.RefundDefaults)
+    resource(AshGrant.Test.Auth.RefundStructActor)
   end
 end
