@@ -88,22 +88,15 @@ defmodule AshGrant.PolicyTest.DslGenerator do
   defp generate_assertion(test) do
     actor = ":#{test.actor}"
     action_spec = generate_action_spec(test)
-    record = generate_record(test[:record])
+    record = test[:record]
+    arguments = Map.get(test, :arguments, %{}) || %{}
 
     case test.type do
       :assert_can ->
-        if record do
-          "assert_can #{actor}, #{action_spec}, #{record}"
-        else
-          "assert_can #{actor}, #{action_spec}"
-        end
+        "assert_can #{actor}, #{action_spec}#{third_arg(record, arguments)}"
 
       :assert_cannot ->
-        if record do
-          "assert_cannot #{actor}, #{action_spec}, #{record}"
-        else
-          "assert_cannot #{actor}, #{action_spec}"
-        end
+        "assert_cannot #{actor}, #{action_spec}#{third_arg(record, arguments)}"
 
       :assert_fields_visible ->
         fields_list = generate_fields_list(test.fields)
@@ -114,6 +107,31 @@ defmodule AshGrant.PolicyTest.DslGenerator do
         "assert_fields_hidden #{actor}, #{action_spec}, #{fields_list}"
     end
   end
+
+  # Produce either `", %{...}"` (record only), `", [record: %{...}, arguments: %{...}]"`,
+  # `", [arguments: %{...}]"`, or empty string.
+  defp third_arg(nil, args) when args == %{}, do: ""
+
+  defp third_arg(record, args) when args == %{} do
+    ", " <> generate_record(record)
+  end
+
+  defp third_arg(record, args) do
+    parts =
+      []
+      |> maybe_add(:record, record, &generate_record/1)
+      |> maybe_add(:arguments, args, &generate_record/1)
+      |> Enum.reverse()
+      |> Enum.join(", ")
+
+    ", [" <> parts <> "]"
+  end
+
+  defp maybe_add(acc, _key, nil, _fmt), do: acc
+
+  defp maybe_add(acc, _key, empty, _fmt) when empty == %{}, do: acc
+
+  defp maybe_add(acc, key, value, fmt), do: ["#{key}: #{fmt.(value)}" | acc]
 
   defp generate_fields_list(fields) do
     inner = Enum.map_join(fields, ", ", &":#{&1}")

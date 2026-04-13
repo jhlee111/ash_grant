@@ -7,7 +7,14 @@ defmodule AshGrant.Explainer do
   with full details about why access was allowed or denied.
   """
 
-  alias AshGrant.{Explanation, Info, Permission, PermissionInput, Permissionable}
+  alias AshGrant.{
+    ArgumentAnalyzer,
+    Explanation,
+    Info,
+    Permission,
+    PermissionInput,
+    Permissionable
+  }
 
   @doc """
   Explains an authorization decision for a resource and action.
@@ -46,6 +53,7 @@ defmodule AshGrant.Explainer do
     {decision, reason, matching_allows} = determine_decision(evaluated)
     scope_filter = resolve_explain_scope_filter(decision, matching_allows, resource, context)
     field_groups = extract_field_groups(matching_allows)
+    resolve_arguments = build_resolve_arguments(resource, action)
 
     %Explanation{
       resource: resource,
@@ -58,9 +66,33 @@ defmodule AshGrant.Explainer do
       evaluated_permissions: evaluated,
       scope_filter: scope_filter,
       field_groups: field_groups,
-      field_group_defs: Info.field_groups(resource)
+      field_group_defs: Info.field_groups(resource),
+      resolve_arguments: resolve_arguments
     }
   end
+
+  # Collect resolve_argument declarations active for this action, annotated with
+  # the scopes that actually reference the argument. Declarations that no scope
+  # uses — or that are scoped to other actions via :for_actions — are omitted.
+  defp build_resolve_arguments(resource, action) do
+    arg_to_scopes = ArgumentAnalyzer.arg_to_scopes(resource)
+
+    resource
+    |> Info.resolve_arguments()
+    |> Enum.filter(&applies_to_action?(&1, action))
+    |> Enum.map(fn decl ->
+      %{
+        name: decl.name,
+        from_path: decl.from_path,
+        for_actions: decl.for_actions,
+        scopes_needing: Enum.sort(Map.get(arg_to_scopes, decl.name, []))
+      }
+    end)
+    |> Enum.reject(&(&1.scopes_needing == []))
+  end
+
+  defp applies_to_action?(%{for_actions: nil}, _action), do: true
+  defp applies_to_action?(%{for_actions: list}, action), do: action in list
 
   defp resolve_action_type(resource, action) do
     case Ash.Resource.Info.action(resource, action) do

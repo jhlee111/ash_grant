@@ -1,0 +1,48 @@
+resource: AshGrant.Test.Auth.RefundDsl
+
+actors:
+  unit_manager_A:
+    id: user_a
+    permissions:
+      - refund_dsl:*:update:at_own_unit
+    own_org_unit_ids:
+      - center_A
+      - center_B
+
+  author_user:
+    id: author_001
+    permissions:
+      - refund_dsl:*:update:by_own_author
+
+tests:
+  - name: "manager can update refund whose order center_id is in their units"
+    assert_can:
+      actor: unit_manager_A
+      action: update
+      record:
+        author_id: user_a
+      arguments:
+        center_id: center_A
+
+  - name: "manager cannot update refund whose order is in a different center"
+    assert_cannot:
+      actor: unit_manager_A
+      action: update
+      record:
+        author_id: user_a
+      arguments:
+        center_id: center_X
+
+  - name: "author can update own refund without any argument"
+    assert_can:
+      actor: author_user
+      action: update
+      record:
+        author_id: author_001
+
+  - name: "author cannot update another user's refund"
+    assert_cannot:
+      actor: author_user
+      action: update
+      record:
+        author_id: someone_else

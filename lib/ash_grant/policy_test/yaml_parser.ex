@@ -58,6 +58,7 @@ defmodule AshGrant.PolicyTest.YamlParser do
           action: atom() | nil,
           action_type: atom() | nil,
           record: map() | nil,
+          arguments: map(),
           fields: [atom()] | nil
         }
 
@@ -174,9 +175,13 @@ defmodule AshGrant.PolicyTest.YamlParser do
       actor: atomize_key(assertion["actor"]),
       action: parse_action(assertion["action"]),
       action_type: parse_action(assertion["action_type"]),
-      record: parse_record(assertion["record"])
+      record: parse_record(assertion["record"]),
+      arguments: parse_arguments(assertion["arguments"])
     }
   end
+
+  defp parse_arguments(nil), do: %{}
+  defp parse_arguments(args) when is_map(args), do: atomize_map(args)
 
   defp parse_field_assertion(type, name, assertion) do
     fields =
@@ -191,6 +196,7 @@ defmodule AshGrant.PolicyTest.YamlParser do
       action: parse_action(assertion["action"]),
       action_type: nil,
       record: nil,
+      arguments: %{},
       fields: fields
     }
   end
@@ -253,13 +259,15 @@ defmodule AshGrant.PolicyTest.YamlParser do
         true -> raise "Test must have action or action_type: #{inspect(test)}"
       end
 
+    arguments = Map.get(test, :arguments, %{})
+
     try do
       case test.type do
         :assert_can ->
-          do_assert_can(resource, actor, action_spec, test.record)
+          do_assert_can(resource, actor, action_spec, test.record, arguments)
 
         :assert_cannot ->
-          do_assert_cannot(resource, actor, action_spec, test.record)
+          do_assert_cannot(resource, actor, action_spec, test.record, arguments)
 
         :assert_fields_visible ->
           do_assert_fields_visible(resource, actor, action_spec, test.fields)
@@ -282,8 +290,8 @@ defmodule AshGrant.PolicyTest.YamlParser do
   end
 
   # Direct assertion implementation (without needing a module)
-  defp do_assert_can(resource, actor, action_spec, record) do
-    case check_permission(resource, actor, action_spec, record) do
+  defp do_assert_can(resource, actor, action_spec, record, arguments) do
+    case check_permission(resource, actor, action_spec, record, arguments) do
       {:allow, _} ->
         :ok
 
@@ -293,8 +301,8 @@ defmodule AshGrant.PolicyTest.YamlParser do
     end
   end
 
-  defp do_assert_cannot(resource, actor, action_spec, record) do
-    case check_permission(resource, actor, action_spec, record) do
+  defp do_assert_cannot(resource, actor, action_spec, record, arguments) do
+    case check_permission(resource, actor, action_spec, record, arguments) do
       {:deny, _} ->
         :ok
 
@@ -357,23 +365,24 @@ defmodule AshGrant.PolicyTest.YamlParser do
     end
   end
 
-  defp check_permission(resource, actor, {:action_type, type}, record) do
+  defp check_permission(resource, actor, {:action_type, type}, record, arguments) do
     actions = Ash.Resource.Info.actions(resource)
     matching = Enum.filter(actions, &(&1.type == type))
 
     if matching == [] do
       {:deny, %{reason: :no_matching_action_type}}
     else
-      find_first_allowed(matching, resource, actor, record)
+      find_first_allowed(matching, resource, actor, record, arguments)
     end
   end
 
-  defp check_permission(resource, actor, action, record) do
-    check_single_permission(resource, actor, action, record)
+  defp check_permission(resource, actor, action, record, arguments) do
+    check_single_permission(resource, actor, action, record, arguments)
   end
 
-  defp find_first_allowed(matching, resource, actor, record) do
-    results = Enum.map(matching, &check_single_permission(resource, actor, &1.name, record))
+  defp find_first_allowed(matching, resource, actor, record, arguments) do
+    results =
+      Enum.map(matching, &check_single_permission(resource, actor, &1.name, record, arguments))
 
     case Enum.find(results, fn {status, _} -> status == :allow end) do
       nil -> {:deny, %{reason: :no_permission}}
@@ -381,37 +390,40 @@ defmodule AshGrant.PolicyTest.YamlParser do
     end
   end
 
-  defp check_single_permission(resource, actor, action, nil) do
+  defp check_single_permission(resource, actor, action, nil, _arguments) do
     AshGrant.Introspect.can?(resource, action, actor)
   end
 
-  defp check_single_permission(resource, actor, action, record) do
+  defp check_single_permission(resource, actor, action, record, arguments) do
     case AshGrant.Introspect.can?(resource, action, actor) do
-      {:deny, _} = deny -> deny
-      {:allow, details} -> verify_scope_against_record(resource, actor, record, details)
+      {:deny, _} = deny ->
+        deny
+
+      {:allow, details} ->
+        verify_scope_against_record(resource, actor, record, details, arguments)
     end
   end
 
-  defp verify_scope_against_record(_resource, _actor, _record, %{scope: nil} = details) do
+  defp verify_scope_against_record(_resource, _actor, _record, %{scope: nil} = details, _args) do
     {:allow, details}
   end
 
-  defp verify_scope_against_record(resource, actor, record, details) do
+  defp verify_scope_against_record(resource, actor, record, details, arguments) do
     scope_name = details[:scope]
 
     if scope_name == nil or scope_name == "always" or scope_name == "all" or
          scope_name == "global" do
       {:allow, details}
     else
-      evaluate_scope_for_record(resource, actor, record, details, scope_name)
+      evaluate_scope_for_record(resource, actor, record, details, scope_name, arguments)
     end
   end
 
-  defp evaluate_scope_for_record(resource, actor, record, details, scope_name) do
+  defp evaluate_scope_for_record(resource, actor, record, details, scope_name, arguments) do
     scope_atom = if is_binary(scope_name), do: String.to_atom(scope_name), else: scope_name
     filter = AshGrant.Info.resolve_scope_filter(resource, scope_atom, %{actor: actor})
 
-    if Assertions.evaluate_filter_against_record(filter, record, actor, resource) do
+    if Assertions.evaluate_filter_against_record(filter, record, actor, resource, arguments) do
       {:allow, details}
     else
       {:deny, %{reason: :scope_mismatch}}

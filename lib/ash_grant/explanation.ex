@@ -64,6 +64,13 @@ defmodule AshGrant.Explanation do
           field_group: String.t() | nil
         }
 
+  @type resolve_argument_entry :: %{
+          name: atom(),
+          from_path: [atom()],
+          for_actions: [atom()] | nil,
+          scopes_needing: [atom()]
+        }
+
   @type t :: %__MODULE__{
           resource: module(),
           action: atom(),
@@ -75,7 +82,8 @@ defmodule AshGrant.Explanation do
           evaluated_permissions: [evaluated_permission()],
           scope_filter: term() | nil,
           field_groups: [String.t()],
-          field_group_defs: [AshGrant.Dsl.FieldGroup.t()]
+          field_group_defs: [AshGrant.Dsl.FieldGroup.t()],
+          resolve_arguments: [resolve_argument_entry()]
         }
 
   defstruct [
@@ -89,7 +97,8 @@ defmodule AshGrant.Explanation do
     matching_permissions: [],
     evaluated_permissions: [],
     field_groups: [],
-    field_group_defs: []
+    field_group_defs: [],
+    resolve_arguments: []
   ]
 
   @doc """
@@ -123,6 +132,7 @@ defmodule AshGrant.Explanation do
       matching_section(explanation, color),
       if(verbose, do: evaluated_section(explanation, color), else: nil),
       scope_section(explanation, color),
+      resolve_arguments_section(explanation, color),
       field_group_section(explanation, color),
       footer(color)
     ]
@@ -275,6 +285,29 @@ defmodule AshGrant.Explanation do
     Field Groups:
       Actor's groups: #{maybe_color(actor_groups, :bright, color)}
     #{groups_info}
+    """
+  end
+
+  defp resolve_arguments_section(%{resolve_arguments: []} = _explanation, _color), do: nil
+
+  defp resolve_arguments_section(explanation, color) do
+    entries =
+      Enum.map_join(explanation.resolve_arguments, "\n", fn entry ->
+        path = entry.from_path |> Enum.map(&inspect/1) |> Enum.join(" → ")
+        scopes = entry.scopes_needing |> Enum.map_join(", ", &inspect/1)
+
+        scope_hint =
+          if scopes == "",
+            do: " (referenced by no scope — should not happen)",
+            else: " (triggers for scopes: #{scopes})"
+
+        "  • #{maybe_color(inspect(entry.name), :yellow, color)} ← #{path}#{scope_hint}"
+      end)
+
+    """
+
+    Argument Resolution (runtime load fires only when an in-play permission uses a listed scope):
+    #{entries}
     """
   end
 
