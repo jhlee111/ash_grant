@@ -52,6 +52,18 @@ Based on the change analysis, check EACH of these. Ask the user for confirmation
 - New command or workflow → Common Commands needs update?
 - New test pattern → Test Structure needs update?
 
+**usage-rules.md:**
+- This file is the AI-agent-facing rulebook consumers of AshGrant follow — treat it with the same seriousness as README.
+- New DSL option or entity → add to the DSL Configuration table / new section?
+- New recommended pattern → add as a "DO:" rule?
+- Deprecated or removed option → add as a "DON'T:" rule and update any examples still using it?
+- Changed behaviour for an existing rule → update the rule's example and explanation?
+
+**guides/*.md:**
+- New feature has a dedicated guide → add cross-links from every other guide whose topic touches it (audit `grep -l "<new-feature>" guides/` and check omissions as deliberately as inclusions).
+- Pattern was recommended-against → ensure the old-pattern guide text reflects the new recommendation.
+- Examples in existing guides still compile / make sense after the change?
+
 **CHANGELOG.md:**
 - NOT updated here. CHANGELOG is updated during `/release` only.
 

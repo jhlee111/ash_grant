@@ -66,6 +66,17 @@ Check ALL of these before creating release branch:
 - Architecture section reflects new modules?
 - Any new commands, patterns, or test structures?
 
+**usage-rules.md:**
+- AI-agent-facing rulebook — audit as seriously as README.
+- New DSL options / entities / recommended patterns since last release are surfaced as "DO:" rules?
+- Deprecated or removed options are surfaced as "DON'T:" rules?
+- Examples still reflect current API (e.g., post-deprecation they no longer demonstrate the deprecated path)?
+
+**guides/*.md:**
+- Final cross-link audit: `grep -l "<new-feature>" guides/` should match the guides where the feature is relevant. Missing entries indicate a gap.
+- Any guide still recommending a pattern that is now deprecated or replaced?
+- Examples tested / still compile after API changes in the release window?
+
 **mix.exs:**
 - `@version` updated to new version
 
@@ -86,7 +97,7 @@ mix format --check-formatted
 
 ```bash
 git checkout -b release/v<version>
-git add mix.exs CHANGELOG.md README.md <any other changed docs>
+git add mix.exs CHANGELOG.md README.md usage-rules.md <guides/*.md if touched> <any other changed docs>
 git commit -m "release: v<version>"
 git push -u origin release/v<version>
 gh pr create --title "release: v<version>" --body "..."
