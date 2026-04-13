@@ -35,7 +35,7 @@ defmodule AshGrant.MixProject do
   defp deps do
     [
       {:igniter, "~> 0.6", only: [:dev, :test]},
-      {:ash, ash_version("~> 3.7")},
+      {:ash, ash_version("~> 3.19")},
       {:spark, spark_version("~> 2.0")},
       {:yaml_elixir, "~> 2.9", optional: true},
 

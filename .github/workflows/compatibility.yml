@@ -65,7 +65,7 @@ jobs:
 
   # Test with minimum supported Ash version (floor)
   floor:
-    name: Ash Floor (3.7)
+    name: Ash Floor (3.19)
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
 
@@ -95,17 +95,17 @@ jobs:
       - name: Fetch deps with Ash floor version
         run: mix deps.get
         env:
-          ASH_VERSION: "3.7.0"
+          ASH_VERSION: "3.19.0"
 
       - name: Compile
         run: mix compile --warnings-as-errors
         env:
-          ASH_VERSION: "3.7.0"
+          ASH_VERSION: "3.19.0"
 
       - name: Test
         run: mix test
         env:
-          ASH_VERSION: "3.7.0"
+          ASH_VERSION: "3.19.0"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
 
   # Manual: test against specific Ash version or main branch
