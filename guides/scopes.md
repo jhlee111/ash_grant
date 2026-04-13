@@ -190,6 +190,23 @@ For **write** actions, `Check` automatically uses a **DB query fallback** when t
 scope contains relationship references — the read scope expression is used as a DB
 query to verify the record matches the scope.
 
+> **Tip: use the foreign key column directly when the check is really about it.**
+>
+> Expressions like `expr(not is_nil(team.id))` reach through a belongs_to
+> relationship to check something the record already knows — its own FK column:
+>
+> ```elixir
+> # ❌ Traverses the relationship; forces the DB-query fallback on writes.
+> scope :has_team, expr(not is_nil(team.id))
+>
+> # ✅ Direct FK — evaluates in memory, no DB round-trip.
+> scope :has_team, expr(not is_nil(team_id))
+> ```
+>
+> Use the relationship form only when you genuinely need a value stored on the
+> related record (and for multi-hop cases, prefer the argument-based pattern
+> below).
+
 ### Recommended: argument-based scopes for multi-hop authorization
 
 For write-action authorization that reaches through relationships
