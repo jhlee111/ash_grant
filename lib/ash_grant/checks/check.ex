@@ -437,6 +437,13 @@ defmodule AshGrant.Check do
     }
   end
 
+  defp resolve_permissions(nil, _actor, %{resource: resource}) do
+    raise ArgumentError,
+          "AshGrant: no resolver configured for #{inspect(resource)}. " <>
+            "Set `resolver` in the resource's `ash_grant` block, or on the " <>
+            "domain via `AshGrant.Domain`."
+  end
+
   defp resolve_permissions(resolver, actor, context) when is_function(resolver, 2) do
     resolver.(actor, context)
   end

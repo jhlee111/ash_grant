@@ -200,27 +200,50 @@ defmodule AshGrant.DomainInheritanceTest do
   # ── validation ───────────────────────────────────────────
 
   describe "validation" do
-    test "compile error when no resolver in resource or domain" do
-      assert_raise Spark.Error.DslError, ~r/No resolver configured/, fn ->
-        defmodule NoResolverResource do
-          use Ash.Resource,
-            domain: AshGrant.Test.Domain,
-            data_layer: Ash.DataLayer.Ets,
-            extensions: [AshGrant]
+    test "compile warning when no resolver in resource or domain" do
+      # The compile-time check is a Spark verifier. Spark wraps verifier
+      # failures in `Spark.Warning.warn` (see the `catch` in
+      # `Spark.Dsl.__verify_spark_dsl__/1`), so the "no resolver"
+      # DslError surfaces as a compile warning rather than a compile error.
+      warnings =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          defmodule NoResolverResource do
+            use Ash.Resource,
+              domain: AshGrant.Test.Domain,
+              data_layer: Ash.DataLayer.Ets,
+              extensions: [AshGrant]
 
-          ash_grant do
-            scope(:always, true)
-          end
+            ash_grant do
+              scope(:always, true)
+            end
 
-          attributes do
-            uuid_primary_key(:id)
-          end
+            attributes do
+              uuid_primary_key(:id)
+            end
 
-          actions do
-            defaults([:read])
+            actions do
+              defaults([:read])
+            end
           end
+        end)
+
+      assert warnings =~ "No resolver configured"
+    end
+
+    test "runtime guard raises with a clear error when no resolver is configured" do
+      # `AshGrant.Test.NoResolverPost` compiles with a warning but not an
+      # error. Attempting to authorize an action on it must surface our
+      # explicit "no resolver configured" message so misconfigurations fail
+      # loudly at runtime. Ash wraps the ArgumentError in Ash.Error.Unknown,
+      # so we assert on the wrapped error's message.
+      error =
+        assert_raise Ash.Error.Unknown, fn ->
+          AshGrant.Test.NoResolverPost
+          |> Ash.Changeset.for_create(:create, %{title: "t"}, actor: %{})
+          |> Ash.create!()
         end
-      end
+
+      assert Exception.message(error) =~ "no resolver configured"
     end
   end
 

@@ -40,10 +40,26 @@ defmodule AshGrant.Info do
 
   @doc """
   Gets the permission resolver for a resource.
+
+  Falls back to the resolver on the resource's domain (if the domain uses the
+  `AshGrant.Domain` extension) when the resource does not define its own.
+  Merging at runtime avoids a compile-time cycle between resource and domain
+  that occurs when the domain also has `code_interface` declarations.
   """
-  @spec resolver(Ash.Resource.t()) :: module() | function() | nil
+  @spec resolver(resource :: Ash.Resource.t()) :: module() | function() | nil
   def resolver(resource) do
-    Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :resolver)
+    case Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :resolver) do
+      nil -> domain_resolver(resource)
+      resolver -> resolver
+    end
+  end
+
+  @spec domain_resolver(resource :: Ash.Resource.t()) :: module() | function() | nil
+  defp domain_resolver(resource) do
+    case Ash.Resource.Info.domain(resource) do
+      nil -> nil
+      domain -> AshGrant.Domain.Info.resolver(domain)
+    end
   end
 
   @doc """
@@ -173,11 +189,42 @@ defmodule AshGrant.Info do
 
   @doc """
   Gets all scope definitions for a resource.
+
+  Merges resource-defined scopes with scopes inherited from the domain (if the
+  domain uses the `AshGrant.Domain` extension). Resource scopes take precedence
+  over domain scopes with the same name. Merging at runtime avoids a
+  compile-time cycle between resource and domain that occurs when the domain
+  also has `code_interface` declarations.
   """
-  @spec scopes(Ash.Resource.t()) :: [AshGrant.Dsl.Scope.t()]
+  @spec scopes(resource :: Ash.Resource.t()) :: [AshGrant.Dsl.Scope.t()]
   def scopes(resource) do
-    Spark.Dsl.Extension.get_entities(resource, [:ash_grant])
-    |> Enum.filter(&match?(%AshGrant.Dsl.Scope{}, &1))
+    resource_scopes =
+      Spark.Dsl.Extension.get_entities(resource, [:ash_grant])
+      |> Enum.filter(&match?(%AshGrant.Dsl.Scope{}, &1))
+
+    merge_domain_scopes(resource, resource_scopes)
+  end
+
+  @spec merge_domain_scopes(
+          resource :: Ash.Resource.t(),
+          resource_scopes :: [AshGrant.Dsl.Scope.t()]
+        ) :: [AshGrant.Dsl.Scope.t()]
+  defp merge_domain_scopes(resource, resource_scopes) do
+    case Ash.Resource.Info.domain(resource) do
+      nil ->
+        resource_scopes
+
+      domain ->
+        resource_names = MapSet.new(resource_scopes, & &1.name)
+
+        domain_only =
+          Enum.reject(
+            AshGrant.Domain.Info.scopes(domain),
+            &MapSet.member?(resource_names, &1.name)
+          )
+
+        resource_scopes ++ domain_only
+    end
   end
 
   @doc """
