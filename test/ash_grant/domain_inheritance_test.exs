@@ -231,15 +231,26 @@ defmodule AshGrant.DomainInheritanceTest do
     end
 
     test "runtime guard raises with a clear error when no resolver is configured" do
+      domain_name =
+        Module.concat(__MODULE__, "NoResolverDomain#{System.unique_integer([:positive])}")
+
       module_name =
         Module.concat(__MODULE__, "NoResolverPost#{System.unique_integer([:positive])}")
 
       warnings =
         ExUnit.CaptureIO.capture_io(:stderr, fn ->
           Code.compile_string("""
+          defmodule #{inspect(domain_name)} do
+            use Ash.Domain, validate_config_inclusion?: false
+
+            resources do
+              resource(#{inspect(module_name)})
+            end
+          end
+
           defmodule #{inspect(module_name)} do
             use Ash.Resource,
-              domain: AshGrant.Test.Domain,
+              domain: #{inspect(domain_name)},
               data_layer: Ash.DataLayer.Ets,
               authorizers: [Ash.Policy.Authorizer],
               extensions: [AshGrant]
