@@ -17,7 +17,7 @@ defmodule AshGrant.Test.NoResolverPost do
 
   ash_grant do
     default_policies(true)
-    scope(:all, true)
+    scope(:always, true)
   end
 
   attributes do

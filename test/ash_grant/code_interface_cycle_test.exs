@@ -48,7 +48,7 @@ defmodule AshGrant.CodeInterfaceCycleTest do
         |> Info.scopes()
         |> Enum.map(& &1.name)
 
-      assert :all in names
+      assert :always in names
       assert :own in names
     end
 
@@ -58,9 +58,9 @@ defmodule AshGrant.CodeInterfaceCycleTest do
   end
 
   describe "end-to-end authorization" do
-    test "read via domain code_interface succeeds with :all permission" do
+    test "read via domain code_interface succeeds with :always permission" do
       id = Ash.UUID.generate()
-      actor = %{id: id, permissions: ["code_interface_cycle_post:*:read:all"]}
+      actor = %{id: id, permissions: ["code_interface_cycle_post:*:read:always"]}
 
       CodeInterfaceCyclePost
       |> Ash.Changeset.for_create(:create, %{title: "A", author_id: id}, authorize?: false)

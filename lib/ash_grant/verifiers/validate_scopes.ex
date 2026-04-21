@@ -1,10 +1,9 @@
 defmodule AshGrant.Verifiers.ValidateScopes do
   @moduledoc """
-  Spark DSL verifier that emits helpful warnings for common scope
-  configuration issues:
+  Spark DSL verifier that validates scope-adjacent configuration:
 
-  - Warns if `:all` scope is not defined on the resource or its domain
   - Warns about deprecated `owner_field` and `scope_resolver` usage
+  - Raises a DslError if `instance_key` does not exist as an attribute
 
   Implemented as a verifier so that it can safely reach into the resource's
   domain (via `AshGrant.Domain.Info`) without risking the compile-time cycle
@@ -23,16 +22,16 @@ defmodule AshGrant.Verifiers.ValidateScopes do
   alias Spark.Dsl.Verifier
 
   @impl Spark.Dsl.Verifier
-  @spec verify(dsl_state :: map()) :: :ok
+  @spec verify(dsl_state :: map()) :: :ok | {:error, Spark.Error.DslError.t()}
   def verify(dsl_state) do
     resource = Verifier.get_persisted(dsl_state, :module)
 
     if resolver_configured?(dsl_state) do
-      validate_common_scopes(dsl_state, resource)
       validate_deprecated_options(dsl_state, resource)
+      validate_instance_key(dsl_state, resource)
+    else
+      :ok
     end
-
-    :ok
   end
 
   @spec resolver_configured?(dsl_state :: map()) :: boolean()
@@ -42,38 +41,6 @@ defmodule AshGrant.Verifiers.ValidateScopes do
         nil -> false
         domain -> AshGrant.Domain.Info.resolver(domain) != nil
       end
-  end
-
-  @spec validate_common_scopes(dsl_state :: map(), resource :: module()) :: :ok
-  defp validate_common_scopes(dsl_state, resource) do
-    scope_names = scope_names_for(dsl_state)
-
-    unless :all in scope_names do
-      IO.warn(
-        """
-        AshGrant: scope :all is not defined in #{inspect(resource)}.
-        Consider adding: scope :all, true
-
-        This scope is commonly used for permissions like "#{derive_resource_name(resource)}:*:read:all"
-        """,
-        []
-      )
-    end
-
-    :ok
-  end
-
-  @spec scope_names_for(dsl_state :: map()) :: [atom()]
-  defp scope_names_for(dsl_state) do
-    resource_names = scope_entities(dsl_state) |> Enum.map(& &1.name)
-
-    domain_names =
-      case Verifier.get_persisted(dsl_state, :domain) do
-        nil -> []
-        domain -> AshGrant.Domain.Info.scopes(domain) |> Enum.map(& &1.name)
-      end
-
-    Enum.uniq(resource_names ++ domain_names)
   end
 
   @spec validate_deprecated_options(dsl_state :: map(), resource :: module()) :: :ok
@@ -112,17 +79,29 @@ defmodule AshGrant.Verifiers.ValidateScopes do
     :ok
   end
 
-  @spec scope_entities(dsl_state :: map()) :: [AshGrant.Dsl.Scope.t()]
-  defp scope_entities(dsl_state) do
-    Verifier.get_entities(dsl_state, [:ash_grant])
-    |> Enum.filter(&match?(%AshGrant.Dsl.Scope{}, &1))
-  end
+  @spec validate_instance_key(dsl_state :: map(), resource :: module()) ::
+          :ok | {:error, Spark.Error.DslError.t()}
+  defp validate_instance_key(dsl_state, resource) do
+    instance_key = Verifier.get_option(dsl_state, [:ash_grant], :instance_key)
 
-  @spec derive_resource_name(resource :: module()) :: String.t()
-  defp derive_resource_name(resource) do
-    resource
-    |> Module.split()
-    |> List.last()
-    |> Macro.underscore()
+    if instance_key && instance_key != :id do
+      attributes = Verifier.get_entities(dsl_state, [:attributes])
+      attr_names = Enum.map(attributes, & &1.name)
+
+      if instance_key in attr_names do
+        :ok
+      else
+        {:error,
+         Spark.Error.DslError.exception(
+           module: resource,
+           path: [:ash_grant, :instance_key],
+           message:
+             "instance_key :#{instance_key} does not exist as an attribute on #{inspect(resource)}. " <>
+               "Available attributes: #{inspect(attr_names)}"
+         )}
+      end
+    else
+      :ok
+    end
   end
 end
