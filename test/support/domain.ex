@@ -78,10 +78,5 @@ defmodule AshGrant.Test.Domain do
     # and without the optional `load_actor/1` callback)
     resource(AshGrant.Test.IdLoadablePost)
     resource(AshGrant.Test.NoLoadActorPost)
-
-    # Used by domain_inheritance_test to exercise the runtime resolver guard.
-    # Compiling this resource emits a compile warning from
-    # AshGrant.Verifiers.ValidateResolverPresent (expected).
-    resource(AshGrant.Test.NoResolverPost)
   end
 end

@@ -231,14 +231,46 @@ defmodule AshGrant.DomainInheritanceTest do
     end
 
     test "runtime guard raises with a clear error when no resolver is configured" do
-      # `AshGrant.Test.NoResolverPost` compiles with a warning but not an
-      # error. Attempting to authorize an action on it must surface our
-      # explicit "no resolver configured" message so misconfigurations fail
-      # loudly at runtime. Ash wraps the ArgumentError in Ash.Error.Unknown,
-      # so we assert on the wrapped error's message.
+      module_name =
+        Module.concat(__MODULE__, "NoResolverPost#{System.unique_integer([:positive])}")
+
+      warnings =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          Code.compile_string("""
+          defmodule #{inspect(module_name)} do
+            use Ash.Resource,
+              domain: AshGrant.Test.Domain,
+              data_layer: Ash.DataLayer.Ets,
+              authorizers: [Ash.Policy.Authorizer],
+              extensions: [AshGrant]
+
+            ash_grant do
+              default_policies(true)
+              scope(:always, true)
+            end
+
+            attributes do
+              uuid_primary_key(:id)
+              attribute(:title, :string, public?: true, allow_nil?: false)
+            end
+
+            actions do
+              defaults([:read, :destroy, create: :*, update: :*])
+            end
+          end
+          """)
+        end)
+
+      assert warnings =~ "No resolver configured"
+
+      # The verifier still surfaces the misconfiguration, but because the
+      # module is compiled inside the test it no longer breaks CI's global
+      # warnings-as-errors compile step. Attempting to authorize an action on
+      # it must raise our runtime guard message. Ash wraps the ArgumentError in
+      # Ash.Error.Unknown, so we assert on the wrapped error's message.
       error =
         assert_raise Ash.Error.Unknown, fn ->
-          AshGrant.Test.NoResolverPost
+          module_name
           |> Ash.Changeset.for_create(:create, %{title: "t"}, actor: %{})
           |> Ash.create!()
         end
