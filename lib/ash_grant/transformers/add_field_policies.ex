@@ -87,22 +87,9 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
         end
       end)
 
-    # Add catch-all: field_policy :* -> authorize_if always()
-    catch_all = %Ash.Policy.FieldPolicy{
-      __identifier__: System.unique_integer(),
-      fields: [:*],
-      bypass?: false,
-      condition: [],
-      policies: [
-        %Ash.Policy.Check{
-          type: :authorize_if,
-          check_module: Ash.Policy.Check.Static,
-          check: {Ash.Policy.Check.Static, [result: true]},
-          check_opts: [result: true]
-        }
-      ]
-    }
-
+    # Add catch-all: field_policy :* -> authorize_if always(). rebuild_field_policy_cache/1
+    # expands the :* into the concrete ungrouped fields so they stay visible.
+    catch_all = build_catch_all([:*])
     dsl_state = Transformer.add_entity(dsl_state, [:field_policies], catch_all)
 
     # Rebuild the field-to-policy cache since CacheFieldPolicies may have
@@ -136,6 +123,25 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     }
   end
 
+  # Catch-all policy: the given ungrouped fields are visible to anyone with row
+  # access (authorize_if always()).
+  defp build_catch_all(fields) do
+    %Ash.Policy.FieldPolicy{
+      __identifier__: System.unique_integer(),
+      fields: fields,
+      bypass?: false,
+      condition: [],
+      policies: [
+        %Ash.Policy.Check{
+          type: :authorize_if,
+          check_module: Ash.Policy.Check.Static,
+          check: {Ash.Policy.Check.Static, [result: true]},
+          check_opts: [result: true]
+        }
+      ]
+    }
+  end
+
   # Rebuild the :fields_to_field_policies persisted cache.
   # This replicates the logic from Ash.Policy.Authorizer.Transformers.CacheFieldPolicies
   # because that transformer runs within the Authorizer extension and may execute
@@ -144,11 +150,28 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     all_field_policies =
       Transformer.get_entities(dsl_state, [:field_policies])
 
+    # Fields explicitly named by a concrete (non-`:*`) field policy.
+    explicit_fields =
+      all_field_policies
+      |> Enum.flat_map(fn fp -> if fp.fields == [:*], do: [], else: fp.fields end)
+      |> MapSet.new()
+
+    # A `:*` catch-all covers the remaining (ungrouped) valid fields. Ash looks
+    # the cache up by concrete field name, so `:*` must be expanded here — a
+    # literal `:*` key is never matched, which would leave ungrouped fields with
+    # no policy and forbidden for everyone.
+    ungrouped_fields =
+      dsl_state
+      |> valid_field_policy_targets()
+      |> MapSet.difference(explicit_fields)
+      |> MapSet.to_list()
+
     fields_to_field_policies =
       all_field_policies
       |> Enum.reduce(%{}, fn field_policy, acc ->
-        field_policy.fields
-        |> Enum.reduce(acc, fn field, acc ->
+        fields = if field_policy.fields == [:*], do: ungrouped_fields, else: field_policy.fields
+
+        Enum.reduce(fields, acc, fn field, acc ->
           Map.update(acc, field, [field_policy], &(&1 ++ [field_policy]))
         end)
       end)

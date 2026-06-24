@@ -74,6 +74,22 @@ defmodule AshGrant.PerRecordFieldVisibilityTest do
     end
   end
 
+  describe "ungrouped fields" do
+    test "a public field in no field_group is visible to any actor with row access", %{
+      mine: mine,
+      other: other
+    } do
+      # owner_id is in no field_group — it must stay visible (covered by the
+      # catch-all), not become %Ash.ForbiddenField{}.
+      actor = %{id: "u1", permissions: ["ownedrecord:*:read:always:public"]}
+      results = read(actor)
+
+      refute forbidden?(find(results, mine.id).owner_id)
+      assert find(results, mine.id).owner_id == "u1"
+      assert find(results, other.id).owner_id == "u2"
+    end
+  end
+
   describe "backward-compat: trivial scope stays action-wide" do
     test "a trivial-scope sensitive grant shows the field on every row", %{
       mine: mine,
