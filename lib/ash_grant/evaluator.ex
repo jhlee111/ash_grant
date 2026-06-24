@@ -462,6 +462,64 @@ defmodule AshGrant.Evaluator do
   end
 
   @doc """
+  Returns the ALLOW permissions that grant visibility of `required_group` on some
+  rows, for per-record field-group authorization (issue #117 phase ②).
+
+  Unlike `get_all_field_groups/4`, this INCLUDES instance permissions (whose
+  field_group `get_all_field_groups` discards) and keeps each grant's `scope` and
+  `instance_id` intact, so a per-record predicate can be built from the result
+  (`AshGrant.FieldFilterCheck`).
+
+  A permission contributes when it is an allow, matches the resource and action
+  (for any `instance_id`), and either is group-less (4-part — grants every group)
+  or its `field_group` equals or inherits toward `required_group`.
+
+  `resource_module` is the resource module (needed to resolve field-group
+  inheritance); `required_group` is the field-group atom.
+  """
+  @spec field_group_grants(permissions(), module(), String.t(), atom(), atom() | nil) ::
+          [Permission.t()]
+  def field_group_grants(permissions, resource_module, action, required_group, action_type \\ nil) do
+    resource_name = AshGrant.Info.resource_name(resource_module)
+
+    permissions
+    |> normalize_permissions()
+    |> Enum.filter(fn perm ->
+      not Permission.deny?(perm) and
+        Permission.matches_resource?(perm.resource, resource_name) and
+        Permission.matches_action?(perm.action, action, action_type) and
+        grants_field_group?(resource_module, perm.field_group, required_group)
+    end)
+  end
+
+  # A group-less (4-part) grant has no field_group — it grants every group.
+  defp grants_field_group?(_resource_module, nil, _required), do: true
+
+  defp grants_field_group?(resource_module, field_group, required) when is_binary(field_group) do
+    field_group == to_string(required) or
+      field_group_inherits_toward?(resource_module, field_group, required)
+  end
+
+  defp field_group_inherits_toward?(resource_module, field_group, required) do
+    group_atom = String.to_existing_atom(field_group)
+    inherits_toward?(resource_module, group_atom, required)
+  rescue
+    # Unknown field-group string (e.g. a typo) cannot inherit toward anything.
+    ArgumentError -> false
+  end
+
+  defp inherits_toward?(resource_module, group_atom, target) do
+    case AshGrant.Info.get_field_group(resource_module, group_atom) do
+      nil ->
+        false
+
+      fg ->
+        parents = fg.inherits || []
+        target in parents or Enum.any?(parents, &inherits_toward?(resource_module, &1, target))
+    end
+  end
+
+  @doc """
   Finds all matching permissions (both allow and deny).
 
   ## Examples
