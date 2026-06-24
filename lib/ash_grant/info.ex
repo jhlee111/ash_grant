@@ -80,6 +80,20 @@ defmodule AshGrant.Info do
   end
 
   @doc """
+  Gets the `field_group_permissions` signaling mode (`:strict | :warn | :off`).
+
+  Precedence: the resource-level option, else the global
+  `config :ash_grant, :field_group_permissions`, else `:warn`.
+  Governs how a deny rule that carries a field_group (an invalid combination)
+  is signaled — see `AshGrant.PermissionValidation`.
+  """
+  @spec field_group_permissions(Ash.Resource.t()) :: :strict | :warn | :off
+  def field_group_permissions(resource) do
+    Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :field_group_permissions) ||
+      Application.get_env(:ash_grant, :field_group_permissions, :warn)
+  end
+
+  @doc """
   Gets all scope_through entities for a resource.
 
   Returns an empty list if none are configured.

@@ -292,6 +292,12 @@ defmodule AshGrant.Check do
     # Resolve permissions
     permissions = resolve_permissions(resolver, actor, context)
 
+    AshGrant.PermissionValidation.validate(
+      permissions,
+      AshGrant.Info.field_group_permissions(resource_module),
+      resource: resource_module
+    )
+
     # Check access using evaluator
     case AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type) do
       false ->

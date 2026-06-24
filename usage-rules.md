@@ -61,6 +61,26 @@ Instance permissions with a scope name impose an attribute-based condition.
 
 When the 5th part is omitted (4-part format), all fields are visible.
 
+### DON'T: Combine a deny (`!`) with a field_group
+
+Field-group access is **positive-only**. A deny rule must not carry a field_group
+(5th part) — express column restrictions in the resource's `field_group`
+definition (`inherits`/`except`/`mask`) and grant groups positively instead.
+
+```elixir
+# DON'T — a deny carrying a field_group is invalid; it over-denies the whole action
+"!employee:*:read:always:sensitive"
+
+# DO — grant the group that contains exactly the fields the actor may see
+"employee:*:read:always:public"     # everything except sensitive/confidential
+```
+
+The `field_group_permissions` option on the `ash_grant` block controls how an
+invalid field-group deny is signaled (it never changes the outcome, which is
+already fail-closed): `:off` (silent), `:warn` (logs a warning — default), or
+`:strict` (raises `AshGrant.PermissionValidation.InvalidPermissionError`). Set a
+global default with `config :ash_grant, field_group_permissions: :strict`.
+
 ## Resource Setup
 
 ### Always include these three things

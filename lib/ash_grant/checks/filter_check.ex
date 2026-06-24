@@ -228,6 +228,12 @@ defmodule AshGrant.FilterCheck do
     # Resolve permissions
     permissions = resolve_permissions(resolver, actor, context)
 
+    AshGrant.PermissionValidation.validate(
+      permissions,
+      AshGrant.Info.field_group_permissions(resource_module),
+      resource: resource_module
+    )
+
     # Get RBAC scopes (instance_id = "*")
     scopes =
       AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action_name, action_type)

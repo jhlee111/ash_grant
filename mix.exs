@@ -1,7 +1,7 @@
 defmodule AshGrant.MixProject do
   use Mix.Project
 
-  @version "0.14.2"
+  @version "0.15.0"
   @source_url "https://github.com/jhlee111/ash_grant"
 
   def project do
