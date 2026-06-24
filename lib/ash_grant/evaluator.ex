@@ -408,11 +408,21 @@ defmodule AshGrant.Evaluator do
   When an actor has multiple permissions with different field groups, these are merged
   as a union to determine the combined set of accessible fields.
 
+  A matching group-less (4-part) allow grant means "all fields are visible". Since
+  unrestricted access dominates the union (all fields ∪ anything = all fields), such a
+  grant collapses the result to `[]` — the same "unrestricted" signal consumers use
+  when there is no field restriction at all. A broader group-less grant is therefore
+  never narrowed by a more specific field-group grant (additive allow semantics).
+
   ## Examples
 
       iex> permissions = ["employee:*:read:always:sensitive", "employee:*:read:always:billing"]
       iex> AshGrant.Evaluator.get_all_field_groups(permissions, "employee", "read")
       ["sensitive", "billing"]
+
+      iex> permissions = ["employee:*:read:always", "employee:*:read:always:sensitive"]
+      iex> AshGrant.Evaluator.get_all_field_groups(permissions, "employee", "read")
+      []
 
       iex> permissions = ["employee:*:read:always:sensitive", "!employee:*:read:always"]
       iex> AshGrant.Evaluator.get_all_field_groups(permissions, "employee", "read")
@@ -431,13 +441,23 @@ defmodule AshGrant.Evaluator do
     if has_deny do
       []
     else
-      permissions
-      |> Enum.filter(fn perm ->
-        not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
-      |> Enum.map(& &1.field_group)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
+      matching_allows =
+        Enum.filter(permissions, fn perm ->
+          not Permission.deny?(perm) and
+            Permission.matches?(perm, resource, action, action_type)
+        end)
+
+      # A group-less (4-part) allow grant means "all fields are visible" and
+      # dominates the union, so it collapses the result to [] (unrestricted).
+      # Without this, adding a narrower field-group grant on top of a broad
+      # group-less grant would silently subtract access (see issue #116).
+      if Enum.any?(matching_allows, &is_nil(&1.field_group)) do
+        []
+      else
+        matching_allows
+        |> Enum.map(& &1.field_group)
+        |> Enum.uniq()
+      end
     end
   end
 

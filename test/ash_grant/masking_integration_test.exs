@@ -153,6 +153,41 @@ defmodule AshGrant.MaskingIntegrationTest do
       assert result.phone == "010-1234-5678"
       assert result.address == "123 Main St"
     end
+
+    test "actor with group-less grant + :sensitive sees unmasked — group-less wins (issue #116)",
+         %{record: record} do
+      # Regression for issue #116 on the masking path. A group-less (4-part)
+      # read grant means "all fields visible, unmasked". Adding the masking
+      # :sensitive grant on top must NOT start masking phone/address — additive
+      # allow grants never subtract access. Before the fix, get_all_field_groups
+      # dropped the group-less grant and ApplyMasking masked phone/address down
+      # to the :sensitive group.
+      actor = %{
+        permissions: [
+          "maskedrecord:*:read:always",
+          "maskedrecord:*:read:always:sensitive"
+        ]
+      }
+
+      results = read_records(actor)
+      result = find_record(results, record.id)
+
+      assert result != nil, "record not found"
+
+      # Group-less grant => no masking, every field raw.
+      assert result.name == "John Doe"
+      assert result.department == "Engineering"
+      assert result.phone == "010-1234-5678"
+      assert result.address == "123 Main St"
+      assert result.salary == 80_000
+      assert result.email == "john@example.com"
+
+      # phone/address must NOT be masked, and nothing is forbidden.
+      refute result.phone == "*************"
+      refute result.address == "***********"
+      refute forbidden_field?(result.salary)
+      refute forbidden_field?(result.email)
+    end
   end
 
   describe "masking with multiple records" do

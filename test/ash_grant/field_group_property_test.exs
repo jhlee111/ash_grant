@@ -260,6 +260,44 @@ defmodule AshGrant.FieldGroupPropertyTest do
         assert groups == []
       end
     end
+
+    property "a matching group-less grant makes the union unrestricted ([]) (issue #116)" do
+      check all(
+              resource <- resource_gen(),
+              action <- action_gen(),
+              scope <- scope_gen(),
+              groups <- list_of(non_nil_field_group_gen(), min_length: 1, max_length: 3)
+            ) do
+        group_perms = Enum.map(groups, &"#{resource}:*:#{action}:always:#{&1}")
+        group_less = "#{resource}:*:#{action}:#{scope}"
+
+        # A group-less (4-part) grant for the same resource/action means "all
+        # fields visible" and dominates the union, so the result collapses to []
+        # whether the group-less grant comes first or last. A more specific
+        # field-group grant must never narrow a broader group-less one.
+        assert Evaluator.get_all_field_groups([group_less | group_perms], resource, action) == []
+        assert Evaluator.get_all_field_groups(group_perms ++ [group_less], resource, action) == []
+      end
+    end
+
+    property "a group-less grant for a different action does not collapse the union (issue #116)" do
+      check all(
+              resource <- resource_gen(),
+              action <- action_gen(),
+              other_action <- action_gen() |> filter(&(&1 != action)),
+              group <- non_nil_field_group_gen()
+            ) do
+        permissions = [
+          "#{resource}:*:#{other_action}:always",
+          "#{resource}:*:#{action}:always:#{group}"
+        ]
+
+        # The group-less grant is on `other_action`, so it must not match the
+        # `action` query — the union stays restricted to the named group. Guards
+        # against the group-less collapse leaking across actions (over-grant).
+        assert Evaluator.get_all_field_groups(permissions, resource, action) == [group]
+      end
+    end
   end
 
   # ============================================
