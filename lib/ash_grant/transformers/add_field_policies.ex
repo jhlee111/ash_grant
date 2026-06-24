@@ -113,6 +113,13 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
   end
 
   defp build_field_policy(group_name, fields) do
+    # `ash_field_policy?: true, access_type: :filter` are normally injected by
+    # `Ash.Policy.FieldPolicy.transform/1` for checks declared via the field_policy
+    # DSL. We build the struct manually (bypassing that transform), so we set them
+    # here — without `access_type: :filter` a FilterCheck is treated as
+    # non-filterable and Ash raises "partial filter for a field policy".
+    opts = [field_group: group_name, ash_field_policy?: true, access_type: :filter]
+
     %Ash.Policy.FieldPolicy{
       __identifier__: System.unique_integer(),
       fields: fields,
@@ -121,9 +128,9 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
       policies: [
         %Ash.Policy.Check{
           type: :authorize_if,
-          check_module: AshGrant.FieldCheck,
-          check: {AshGrant.FieldCheck, [field_group: group_name]},
-          check_opts: [field_group: group_name]
+          check_module: AshGrant.FieldFilterCheck,
+          check: {AshGrant.FieldFilterCheck, opts},
+          check_opts: opts
         }
       ]
     }
