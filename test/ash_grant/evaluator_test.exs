@@ -290,13 +290,52 @@ defmodule AshGrant.EvaluatorTest do
       assert Evaluator.get_all_field_groups(permissions, "employee", "write") == []
     end
 
-    test "get_all_field_groups ignores permissions without field_group" do
+    test "get_all_field_groups returns [] when a group-less grant is present (issue #116)" do
+      # A group-less (4-part) grant means "all fields visible". It dominates the
+      # union, so combined with any field-group grant the result is still
+      # unrestricted ([]). Adding an allow grant must never subtract access.
       permissions = [
         "employee:*:read:always:sensitive",
         "employee:*:read:own"
       ]
 
+      assert Evaluator.get_all_field_groups(permissions, "employee", "read") == []
+    end
+
+    test "get_all_field_groups: group-less grant dominates regardless of order (issue #116)" do
+      assert Evaluator.get_all_field_groups(
+               ["employee:*:read:always", "employee:*:read:always:sensitive"],
+               "employee",
+               "read"
+             ) == []
+
+      assert Evaluator.get_all_field_groups(
+               ["employee:*:read:always:sensitive", "employee:*:read:always"],
+               "employee",
+               "read"
+             ) == []
+    end
+
+    test "get_all_field_groups: group-less grant for a different action does not collapse (issue #116)" do
+      # Over-grant guard: the group-less grant is on :update, so a :read query
+      # must stay restricted to :sensitive. matches?/4 filters by action before
+      # the group-less check, so the :update grant never enters the union.
+      permissions = [
+        "employee:*:update:always",
+        "employee:*:read:always:sensitive"
+      ]
+
       assert Evaluator.get_all_field_groups(permissions, "employee", "read") == ["sensitive"]
+    end
+
+    test "get_all_field_groups: deny wins over a group-less grant (issue #116)" do
+      # A matching deny short-circuits to [] — byte-identical to the
+      # "unrestricted" signal — but here it means DENIED. Consumers gate field
+      # access on has_access?, which returns false, so deny-wins is preserved.
+      permissions = ["employee:*:read:always", "!employee:*:read:always"]
+
+      assert Evaluator.get_all_field_groups(permissions, "employee", "read") == []
+      refute Evaluator.has_access?(permissions, "employee", "read")
     end
   end
 
@@ -502,6 +541,14 @@ defmodule AshGrant.EvaluatorTest do
       assert Evaluator.get_all_field_groups(permissions, "employee", "by_department", :read) == [
                "sensitive"
              ]
+    end
+
+    test "group-less grant collapses the union via action_type (issue #116)" do
+      # The group-less read* grant matches the custom by_department read action
+      # via action_type, so it dominates the union and yields [] (unrestricted).
+      permissions = ["employee:*:read*:always", "employee:*:read*:always:sensitive"]
+
+      assert Evaluator.get_all_field_groups(permissions, "employee", "by_department", :read) == []
     end
   end
 

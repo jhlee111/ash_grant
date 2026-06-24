@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.2] - 2026-06-23
+
+### Fixed
+
+- **Group-less (4-part) read grant was silently narrowed by a field-group grant** (#116). `AshGrant.Evaluator.get_all_field_groups/4` dropped group-less allow grants via `Enum.reject(&is_nil/1)`, so a broad "all fields" grant (`employee:*:read:always`) combined with a narrow field-group grant (`employee:*:read:always:sensitive`) downgraded the actor to **only** the narrow group's fields — every other field became `%Ash.ForbiddenField{}`, and via `AshGrant.Preparations.ApplyMasking` fields that should have been raw started being masked. Adding an allow grant must never subtract access. The union now collapses to `[]` (the "unrestricted" signal every consumer already understands) whenever any matching allow grant is group-less, so a broader group-less grant is never narrowed by a more specific field-group grant. A group-less grant scoped to a *different* action is correctly excluded and does not over-grant.
+
 ## [0.14.1] - 2026-04-13
 
 Two fixes that make `resolve_argument` (introduced in 0.14.0) actually

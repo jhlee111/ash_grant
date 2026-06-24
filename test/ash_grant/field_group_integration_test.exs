@@ -172,6 +172,40 @@ defmodule AshGrant.FieldGroupIntegrationTest do
       assert forbidden_field?(result.email)
     end
 
+    test "group-less grant + narrow field_group grant — sees all fields (issue #116)", %{
+      record: record
+    } do
+      # Regression for issue #116: a broad group-less (4-part) read grant means
+      # "all fields visible". Adding a narrow field-group (5-part) grant must NOT
+      # narrow the actor down to that group — additive allow grants never subtract
+      # access. Before the fix, get_all_field_groups dropped the group-less grant
+      # and the actor was silently downgraded to :public only.
+      actor = %{
+        permissions: [
+          "sensitiverecord:*:read:always",
+          "sensitiverecord:*:read:always:public"
+        ]
+      }
+
+      results = read_records(actor)
+      result = find_record(results, record.id)
+
+      assert result != nil, "record not found in results"
+
+      # All fields visible — the group-less grant dominates the union.
+      assert result.name == "John Doe"
+      assert result.department == "Engineering"
+      assert result.position == "Senior Developer"
+      assert result.phone == "010-1234-5678"
+      assert result.address == "123 Main St"
+      assert result.salary == 80_000
+      assert result.email == "john@example.com"
+
+      # Fields OUTSIDE the narrow :public group must not be forbidden.
+      refute forbidden_field?(result.salary)
+      refute forbidden_field?(result.email)
+    end
+
     test "field_group hierarchy: :confidential subsumes :public", %{record: record} do
       # An actor with :confidential should see everything a :public actor sees plus more
       public_actor = %{permissions: ["sensitiverecord:*:read:always:public"]}
