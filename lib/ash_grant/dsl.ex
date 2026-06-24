@@ -588,6 +588,25 @@ defmodule AshGrant.Dsl do
         With this, `"feed:feed_abc:read:"` generates `WHERE feed_id IN ('feed_abc')`
         instead of `WHERE id IN ('feed_abc')`.
         """
+      ],
+      field_group_permissions: [
+        type: {:in, [:strict, :warn, :off]},
+        doc: """
+        Controls signaling when a resolved permission is a deny (`!` prefix) that
+        also carries a `field_group` (5th part) — an invalid combination.
+
+        Field-group access is positive-only: column restrictions belong in the
+        `field_group` definition (`inherits`/`except`/`mask`), not in a deny rule.
+        A deny carrying a field_group currently over-denies the entire action
+        (fail-closed). This option only changes *signaling*, never the outcome.
+
+        - `:off`    — silent (legacy behavior)
+        - `:warn`   — over-denial plus a `Logger.warning` (default)
+        - `:strict` — raise `AshGrant.PermissionValidation.InvalidPermissionError`
+
+        Defaults to `:warn`. A global default may be set with
+        `config :ash_grant, field_group_permissions: :strict`.
+        """
       ]
     ]
   }

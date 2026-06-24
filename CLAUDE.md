@@ -58,6 +58,7 @@ mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
 
 - **`AshGrant.Check`** (`lib/ash_grant/checks/check.ex`) - SimpleCheck for write actions (returns true/false)
 - **`AshGrant.FilterCheck`** (`lib/ash_grant/checks/filter_check.ex`) - FilterCheck for read actions (returns filter expression)
+- **`AshGrant.PermissionValidation`** (`lib/ash_grant/permission_validation.ex`) - Validates resolved permissions and signals invalid deny+field_group combinations per the `field_group_permissions` mode (`:off`/`:warn`/`:strict`); never changes the authorization outcome
 
 ### Calculations
 

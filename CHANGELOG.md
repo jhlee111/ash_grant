@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-06-24
+
+### Added
+
+- **`field_group_permissions` option + validation for invalid field-group denies** (#117). A permission that is a deny (`!` prefix) **and** carries a `field_group` (5th part) — e.g. `"!employee:*:read:always:sensitive"` — is invalid: field-group access is positive-only, so column restrictions belong in the resource's `field_group` definition (`inherits`/`except`/`mask`), not in a deny rule. Such a deny currently over-denies the *entire* action (fail-closed) rather than the named group. The new `field_group_permissions` option on the `ash_grant` block controls how this is signaled, without changing the authorization outcome:
+  - `:off` — silent (legacy behavior)
+  - `:warn` — over-denial plus a `Logger.warning` (**default**)
+  - `:strict` — raise `AshGrant.PermissionValidation.InvalidPermissionError`
+
+  A global default may be set with `config :ash_grant, field_group_permissions: :strict`. Introduced `AshGrant.PermissionValidation` and `AshGrant.Info.field_group_permissions/1`; `AshGrant.Evaluator.normalize_permissions/1` is now public.
+
 ## [0.14.2] - 2026-06-23
 
 ### Fixed

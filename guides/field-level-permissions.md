@@ -55,6 +55,18 @@ The 5th part of the permission string specifies the field group:
 
 Fields not in the actor's field group are replaced with `%Ash.ForbiddenField{}`.
 
+> #### Field groups are grant-only {: .warning}
+>
+> A field_group can only appear on an **allow** permission. A deny rule that
+> carries a field_group (e.g. `"!employee:*:read:always:sensitive"`) is invalid —
+> field-group access is positive-only, so column restrictions belong in the
+> `field_group` definition (`inherits`/`except`/`mask`), not in a deny rule. In a
+> hierarchy, "all fields except X" is already expressible as a positive grant of
+> the lower group (here, `:public`). The `field_group_permissions` option
+> (`:off` / `:warn` (default) / `:strict`) controls whether an invalid
+> field-group deny is silent, logged, or raises — it never changes the
+> (fail-closed) outcome.
+
 ## Mode A: Manual Field Policies
 
 Write Ash `field_policies` using `AshGrant.field_check/1`:

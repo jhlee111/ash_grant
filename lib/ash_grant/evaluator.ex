@@ -554,11 +554,18 @@ defmodule AshGrant.Evaluator do
     |> normalize_permissions()
   end
 
-  # Private functions
+  @doc """
+  Normalizes a list of permission representations into `%AshGrant.Permission{}` structs.
 
-  defp normalize_permissions(permissions) do
+  Accepts strings, `%AshGrant.Permission{}` structs, `%AshGrant.PermissionInput{}`,
+  and `Permissionable` maps — the same inputs the evaluator and checks accept.
+  """
+  @spec normalize_permissions(permissions()) :: [Permission.t()]
+  def normalize_permissions(permissions) do
     Enum.map(permissions, &normalize_permission/1)
   end
+
+  # Private functions
 
   defp normalize_permission(%Permission{} = perm), do: perm
 

@@ -69,6 +69,12 @@ defmodule AshGrant.FieldCheck do
 
     permissions = resolve_permissions(resolver, actor, context)
 
+    AshGrant.PermissionValidation.validate(
+      permissions,
+      AshGrant.Info.field_group_permissions(resource_module),
+      resource: resource_module
+    )
+
     actor_field_groups =
       AshGrant.Evaluator.get_all_field_groups(
         permissions,
