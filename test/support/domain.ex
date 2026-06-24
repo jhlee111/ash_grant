@@ -48,6 +48,9 @@ defmodule AshGrant.Test.Domain do
     # field_group_permissions :strict test resource (issue #117)
     resource(AshGrant.Test.StrictFieldGroupRecord)
 
+    # Per-record field visibility test resource (field groups + :own scope, #117 ②)
+    resource(AshGrant.Test.OwnedRecord)
+
     # Field masking test resource
     resource(AshGrant.Test.MaskedRecord)
 

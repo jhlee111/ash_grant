@@ -119,7 +119,7 @@ defmodule AshGrant.OverlappingFieldPoliciesTest do
   defp find_policy_by_group(policies, group_name) do
     Enum.find(policies, fn policy ->
       Enum.any?(policy.policies, fn check ->
-        check.check_module == AshGrant.FieldCheck and
+        check.check_module == AshGrant.FieldFilterCheck and
           check.check_opts[:field_group] == group_name
       end)
     end)

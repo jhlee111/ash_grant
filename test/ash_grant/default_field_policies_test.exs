@@ -49,7 +49,7 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
       assert :email in confidential_policy.fields
     end
 
-    test "field policies use FieldCheck with correct field_group" do
+    test "field policies use FieldFilterCheck with correct field_group" do
       field_policies = Ash.Policy.Info.field_policies(AshGrant.Test.SensitiveRecord)
 
       # Find the policy for public fields
@@ -57,7 +57,7 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
       assert public_policy != nil
 
       [check] = public_policy.policies
-      assert check.check_module == AshGrant.FieldCheck
+      assert check.check_module == AshGrant.FieldFilterCheck
       assert check.check_opts[:field_group] == :public
     end
   end
