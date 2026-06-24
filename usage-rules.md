@@ -80,6 +80,17 @@ invalid field-group deny is signaled (it never changes the outcome, which is
 already fail-closed): `:off` (silent), `:warn` (logs a warning — default), or
 `:strict` (raises `AshGrant.PermissionValidation.InvalidPermissionError`). Set a
 global default with `config :ash_grant, field_group_permissions: :strict`.
+Field-group visibility is **per-record**: with `default_field_policies: true`, a
+non-trivial scope or a specific instance id on a 5-part grant restricts the
+group's fields to the matching rows only (forbidden elsewhere). Combine a broad
+row grant with a narrow field grant to vary field visibility by record:
+
+```elixir
+# public fields on all rows, sensitive fields only on owned rows
+["employee:*:read:always:public", "employee:*:read:own:sensitive"]
+```
+
+A trivial scope (`always`) keeps the group visible on every row (action-wide).
 
 ## Resource Setup
 

@@ -66,6 +66,35 @@ Fields not in the actor's field group are replaced with `%Ash.ForbiddenField{}`.
 > (`:off` / `:warn` (default) / `:strict`) controls whether an invalid
 > field-group deny is silent, logged, or raises — it never changes the
 > (fail-closed) outcome.
+## Per-Record Field Visibility
+
+Field-group access can vary **per record**. When an actor's *row* access is
+broader than their *field-group* access for some group, the group's fields are
+visible only on the records the grant applies to, and `%Ash.ForbiddenField{}`
+elsewhere — in the same result set:
+
+```elixir
+# public fields on every readable row, sensitive fields only on owned rows
+["employee:*:read:always:public", "employee:*:read:own:sensitive"]
+
+# sensitive fields only on a specific instance
+["employee:*:read:always:public", "employee:emp_123:read::sensitive"]
+```
+
+For field group `G`, visibility on a row is the OR of the row predicate of every
+allow grant that reaches `G` (directly or via inheritance): the scope expression
+for RBAC grants (`employee:*:read:own:G`), `id in [...]` for instance grants
+(`employee:emp_123:read::G`). A **trivial scope** (`always`) yields a constant
+`true` — visible on every row, identical to action-wide behavior. A group-less
+(4-part) grant with a scope grants *all* fields on the rows matching that scope.
+
+> #### Caveat: ordering by a per-record-hidden field {: .warning}
+>
+> Ash applies sorting and filtering at the data layer, *before* field visibility
+> is resolved. Sorting a query by a field that is `%Ash.ForbiddenField{}` on some
+> rows still orders those rows by their true (hidden) value — an ordering oracle.
+> The value itself is never returned, but relative order can be inferred. Avoid
+> exposing sorts/filters on fields an actor may not see on every row.
 
 ## Mode A: Manual Field Policies
 

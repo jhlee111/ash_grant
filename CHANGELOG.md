@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-06-24
+
+### Added
+
+- **Per-record field visibility** (#117 phase ②). Field-group access can now vary **per record** instead of per action. An actor whose row access is broader than their field-group access sees a field on some records and `%Ash.ForbiddenField{}` on others, in the same result set — the pattern the action-wide model could not express:
+
+  ```elixir
+  # public on every readable row, sensitive only on rows the actor owns
+  ["employee:*:read:always:public", "employee:*:read:own:sensitive"]
+
+  # sensitive only on a specific instance
+  ["employee:*:read:always:public", "employee:emp_123:read::sensitive"]
+  ```
+
+  `default_field_policies: true` now generates field policies backed by the new `AshGrant.FieldFilterCheck` (an `Ash.Policy.FilterCheck`) instead of the action-wide `AshGrant.FieldCheck` (a `SimpleCheck`). For each field group it builds a per-row predicate from the actor's reaching grants — the scope expression for RBAC grants, `id in [...]` for instance grants — OR-combined, with downward inheritance. A new `AshGrant.Evaluator.field_group_grants/5` enumerates those grants (including instance permissions, which `get_all_field_groups/4` discards).
+
+  **Backward-compatible**: a trivial-scope grant (`resource:*:read:always:group`) resolves to `true` → visible on all rows, identical to the previous action-wide behavior; masking and the #116 group-less collapse are unchanged.
+
+### Fixed
+
+- **Ungrouped public fields were forbidden for every actor** under `default_field_policies: true`. A public attribute in no field group (e.g. a timestamp or foreign key) became `%Ash.ForbiddenField{}` for everyone, because the generated catch-all `field_policy :*` was keyed literally in the rebuilt field-policy cache while Ash looks fields up concretely. The cache now expands `:*` into the concrete ungrouped fields, so they stay visible (matching the catch-all's documented intent).
+
 ## [0.15.0] - 2026-06-24
 
 ### Added

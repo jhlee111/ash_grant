@@ -59,6 +59,8 @@ mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
 - **`AshGrant.Check`** (`lib/ash_grant/checks/check.ex`) - SimpleCheck for write actions (returns true/false)
 - **`AshGrant.FilterCheck`** (`lib/ash_grant/checks/filter_check.ex`) - FilterCheck for read actions (returns filter expression)
 - **`AshGrant.PermissionValidation`** (`lib/ash_grant/permission_validation.ex`) - Validates resolved permissions and signals invalid deny+field_group combinations per the `field_group_permissions` mode (`:off`/`:warn`/`:strict`); never changes the authorization outcome
+- **`AshGrant.FieldFilterCheck`** (`lib/ash_grant/checks/field_filter_check.ex`) - FilterCheck for **per-record** field-group visibility; generated into `field_policies` by `AddFieldPolicies`. Builds a per-row predicate from `Evaluator.field_group_grants/5` (a field is visible on some records, `%Ash.ForbiddenField{}` on others)
+- **`AshGrant.FieldCheck`** (`lib/ash_grant/checks/field_check.ex`) - legacy action-wide SimpleCheck for field groups (superseded by `FieldFilterCheck` in generation; still present)
 
 ### Calculations
 
