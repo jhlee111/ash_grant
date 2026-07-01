@@ -513,6 +513,66 @@ defmodule AshGrant.BusinessScenariosTest do
       refute other_cust.id in ids
     end
 
+    test "empty assigned-territories list yields zero rows, not all rows (no-access edge)" do
+      # Seed customers in arbitrary territories the actor is NOT assigned to. These
+      # seeds are load-bearing: the admin baseline below asserts they exist and are
+      # readable, so a later 0-row result proves the filter is APPLIED rather than
+      # the table being empty (which would make `== []` pass vacuously). Do not remove.
+      _cust1 = generate(customer(territory_id: Ash.UUID.generate()))
+      _cust2 = generate(customer(territory_id: Ash.UUID.generate()))
+      assert length(Customer |> Ash.read!(actor: admin_actor())) == 2
+
+      # Actor holds the territory scope but is assigned to no territories: the
+      # "has access to nothing" state.
+      actor =
+        custom_actor(
+          permissions: ["customer:*:read:assigned_territories"],
+          territory_ids: []
+        )
+
+      customers = Customer |> Ash.read!(actor: actor)
+
+      # `territory_id in ^[]` must compile to a false filter ("no rows"), NOT to a
+      # dropped filter ("all rows"). If this ever regressed to "no filter", it would
+      # be a silent full-table data leak on any list endpoint; if it raised, an outage.
+      assert customers == []
+    end
+
+    test "nil assigned-territories list yields zero rows (no-access edge)" do
+      _cust1 = generate(customer(territory_id: Ash.UUID.generate()))
+      _cust2 = generate(customer(territory_id: Ash.UUID.generate()))
+      assert length(Customer |> Ash.read!(actor: admin_actor())) == 2
+
+      # Pins the observed behavior for a nil actor list. Unlike the empty-list case
+      # (deterministic SQL `IN ()` -> false), nil-safety rides on how Ash lowers
+      # `x in ^nil`; this locks the currently-observed 0-rows-no-error result so a
+      # future Ash change on the nil path would be caught here.
+      actor =
+        custom_actor(
+          permissions: ["customer:*:read:assigned_territories"],
+          territory_ids: nil
+        )
+
+      customers = Customer |> Ash.read!(actor: actor)
+
+      assert customers == []
+    end
+
+    test "missing assigned-territories key yields zero rows (no-access edge)" do
+      _cust1 = generate(customer(territory_id: Ash.UUID.generate()))
+      _cust2 = generate(customer(territory_id: Ash.UUID.generate()))
+      assert length(Customer |> Ash.read!(actor: admin_actor())) == 2
+
+      # Most production-realistic no-access shape: an actor map that simply omits the
+      # attribute. `^actor(:territory_ids)` resolves the missing key to nil, so this
+      # collapses to the nil case above — still zero rows, no error.
+      actor = custom_actor(permissions: ["customer:*:read:assigned_territories"])
+
+      customers = Customer |> Ash.read!(actor: actor)
+
+      assert customers == []
+    end
+
     test "regional_manager can see customers in same region, not other regions" do
       region_id = Ash.UUID.generate()
       other_region = Ash.UUID.generate()
