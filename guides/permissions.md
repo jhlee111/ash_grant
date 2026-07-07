@@ -293,3 +293,34 @@ This pattern is useful for:
 - Revoking specific permissions from broad grants
 - Creating "except" rules (e.g., "all except delete")
 - Implementing inheritance with overrides
+
+## Multiple Matching Grants (OR-Composition)
+
+When an actor holds several allow permissions matching the same resource and
+action (e.g. from multiple roles, or a role plus an add-on bundle), their
+scopes **OR-compose**: access is granted when ANY grant's scope passes.
+Grants are purely additive — adding a narrower grant on top of a broader one
+never subtracts access. Deny rules are the only subtractive device.
+
+```elixir
+permissions = [
+  "schedule:*:cancel:online_content",  # narrow add-on bundle
+  "schedule:*:*:always"                # blanket grant
+]
+
+# cancel on ANY schedule -> allowed (the :always grant passes)
+# The narrow grant does not shadow the blanket one, and permission
+# order never changes the outcome.
+```
+
+This applies uniformly across every evaluation path (#123):
+
+- **Read** (`AshGrant.FilterCheck`) — matching grants' scope filters are
+  OR-ed into a single query filter
+- **Write / generic** (`AshGrant.Check`) — the action is authorized when any
+  grant's scope passes (`AshGrant.Evaluator.get_write_scopes/4`)
+- **UI** (`AshGrant.Calculation.CanPerform`) and **policy tests**
+  (`assert_can/3`) — the same union
+
+To restrict access, use a `!` deny rule — never rely on one grant
+"overriding" another.

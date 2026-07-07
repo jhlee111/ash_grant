@@ -132,7 +132,7 @@ AshGrant.Introspect.available_permissions(Post)
 
 ```elixir
 AshGrant.Introspect.can?(Post, :read, user)
-# => {:allow, %{scope: "all", instance_ids: nil, field_groups: []}}
+# => {:allow, %{scope: "all", scopes: ["all"], instance_ids: nil, field_groups: []}}
 
 AshGrant.Introspect.can?(Post, :destroy, user)
 # => {:deny, %{reason: :no_permission}}
@@ -227,7 +227,7 @@ AshGrant.Introspect.explain_by_identifier(
 
 ```elixir
 AshGrant.Introspect.can_by_identifier("user_1", "post", :read)
-# => {:allow, %{scope: "always", instance_ids: nil, field_groups: []}}
+# => {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: []}}
 
 AshGrant.Introspect.can_by_identifier("user_1", "post", :destroy)
 # => {:deny, %{reason: :no_permission}}

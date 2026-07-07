@@ -217,6 +217,82 @@ defmodule AshGrant.EvaluatorTest do
     end
   end
 
+  describe "get_write_scopes/4" do
+    test "unions the scopes of ALL matching allow grants (#123)" do
+      # gs_net regression: a narrow add-on grant must not shadow a blanket grant
+      permissions = [
+        "schedule:*:cancel:online_content",
+        "schedule:*:*:always"
+      ]
+
+      assert {:scopes, scopes} =
+               Evaluator.get_write_scopes(permissions, "schedule", "cancel", :update)
+
+      assert Enum.sort(scopes) == ["always", "online_content"]
+    end
+
+    test "result does not depend on permission order" do
+      permissions = ["schedule:*:cancel:online_content", "schedule:*:*:always"]
+
+      {:scopes, forward} =
+        Evaluator.get_write_scopes(permissions, "schedule", "cancel", :update)
+
+      {:scopes, reversed} =
+        permissions
+        |> Enum.reverse()
+        |> Evaluator.get_write_scopes("schedule", "cancel", :update)
+
+      assert Enum.sort(forward) == Enum.sort(reversed)
+    end
+
+    test "returns :denied when any deny rule matches" do
+      permissions = ["blog:*:*:always", "!blog:*:delete:always"]
+      assert Evaluator.get_write_scopes(permissions, "blog", "delete") == :denied
+    end
+
+    test "deny beats a scope-less grant" do
+      permissions = ["blog:update", "!blog:*:update:always"]
+      assert Evaluator.get_write_scopes(permissions, "blog", "update") == :denied
+    end
+
+    test "returns an empty scope list when nothing matches" do
+      permissions = ["blog:*:read:always"]
+      assert Evaluator.get_write_scopes(permissions, "blog", "update") == {:scopes, []}
+    end
+
+    test "a scope-less grant collapses the union to :unrestricted" do
+      # A grant with no scope (legacy 2-part, or 4-part with empty scope) applies
+      # to every record, so it dominates the union — mirrors the group-less
+      # collapse in get_all_field_groups/4 (#116).
+      for permissions <- [
+            ["blog:update", "blog:*:update:own"],
+            ["blog:*:update:own", "blog:update"],
+            ["blog:*:update:"]
+          ] do
+        assert Evaluator.get_write_scopes(permissions, "blog", "update") == :unrestricted
+      end
+    end
+
+    test "instance permissions do not contribute (RBAC-only, like get_all_scopes)" do
+      permissions = ["doc:doc_123:update:draft"]
+      assert Evaluator.get_write_scopes(permissions, "doc", "update") == {:scopes, []}
+    end
+
+    test "deduplicates scopes across grants" do
+      permissions = ["blog:*:update:own", "blog:*:*:own"]
+      assert Evaluator.get_write_scopes(permissions, "blog", "update") == {:scopes, ["own"]}
+    end
+
+    test "matches prefix patterns by action type" do
+      permissions = ["blog:*:update*:own", "blog:*:*:always"]
+
+      assert {:scopes, scopes} =
+               Evaluator.get_write_scopes(permissions, "blog", "archive_post", :update)
+
+      assert Enum.sort(scopes) == ["always", "own"]
+    end
+  end
+
   describe "find_matching/3" do
     test "finds all matching permissions" do
       permissions = [

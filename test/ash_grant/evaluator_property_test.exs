@@ -381,4 +381,52 @@ defmodule AshGrant.EvaluatorPropertyTest do
       end
     end
   end
+
+  describe "get_write_scopes/4 union semantics (#123)" do
+    property "result is invariant under permutation of the permission list" do
+      check all(
+              resource <- resource_gen(),
+              action <- action_gen(),
+              scopes <- list_of(scope_gen(), max_length: 5),
+              deny_scopes <- list_of(scope_gen(), max_length: 2),
+              include_bare_grant <- boolean()
+            ) do
+        allows = Enum.map(scopes, &"#{resource}:*:#{action}:#{&1}")
+        denies = Enum.map(deny_scopes, &"!#{resource}:*:#{action}:#{&1}")
+        bare = if include_bare_grant, do: ["#{resource}:#{action}"], else: []
+        permissions = allows ++ denies ++ bare
+
+        baseline =
+          normalize_write_scopes(Evaluator.get_write_scopes(permissions, resource, action))
+
+        for permuted <- [
+              Enum.reverse(permissions),
+              Enum.sort(permissions),
+              Enum.shuffle(permissions)
+            ] do
+          assert normalize_write_scopes(Evaluator.get_write_scopes(permuted, resource, action)) ==
+                   baseline
+        end
+      end
+    end
+
+    property "the first-match scope (get_scope) is contained in the union" do
+      check all(
+              resource <- resource_gen(),
+              action <- action_gen(),
+              scopes <- list_of(scope_gen(), min_length: 1, max_length: 5)
+            ) do
+        permissions = Enum.map(scopes, &"#{resource}:*:#{action}:#{&1}")
+
+        first = Evaluator.get_scope(permissions, resource, action)
+        assert first == hd(scopes)
+
+        assert {:scopes, union} = Evaluator.get_write_scopes(permissions, resource, action)
+        assert first in union
+      end
+    end
+  end
+
+  defp normalize_write_scopes({:scopes, scopes}), do: {:scopes, Enum.sort(scopes)}
+  defp normalize_write_scopes(other), do: other
 end

@@ -498,6 +498,25 @@ Evaluation rules:
 2. If no deny matches and at least one allow matches → **allowed**
 3. If **no** rules match → **denied** (deny by default)
 
+### DO: Rely on grants OR-composing — never on one grant shadowing another
+
+When several allow permissions match the same resource and action (multiple
+roles, add-on bundles), their scopes **OR-compose** on every path (read
+filters, write checks, `can_perform`, policy tests): access is granted when
+ANY grant's scope passes. Adding a narrower grant on top of a broader one
+never subtracts access, and permission order never changes the outcome.
+
+```elixir
+permissions = [
+  "schedule:*:cancel:online_content",  # narrow add-on bundle
+  "schedule:*:*:always"                # blanket grant
+]
+# cancel on ANY schedule ✓ — the blanket grant passes; order is irrelevant
+```
+
+To restrict an action, use a `!` deny rule — a scoped allow grant can only
+ever ADD access.
+
 ## PermissionResolver Behaviour
 
 Implement `AshGrant.PermissionResolver` to provide permissions for actors.

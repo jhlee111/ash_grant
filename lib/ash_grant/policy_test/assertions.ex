@@ -402,26 +402,29 @@ defmodule AshGrant.PolicyTest.Assertions do
   end
 
   defp check_scope_against_record(resource, _action, actor, record, permission_details, arguments) do
-    scope_name = permission_details[:scope]
+    # OR-compose all matching grants' scopes (#123): the record passes when ANY
+    # grant's scope accepts it — mirroring AshGrant.Check's write-path union.
+    # Callers that only supply :scope (singular) keep working via the fallback.
+    scope_names = permission_details[:scopes] || [permission_details[:scope]]
 
-    if scope_name == nil or scope_name == "always" or scope_name == "all" or
-         scope_name == "global" do
-      # No scope restriction or universal scope - record check passes
+    if Enum.any?(scope_names, &scope_passes?(resource, actor, record, &1, arguments)) do
       {:allow, permission_details}
     else
-      # Get the scope filter and evaluate against the record
-      scope_atom = if is_binary(scope_name), do: String.to_atom(scope_name), else: scope_name
-      context = %{actor: actor}
-      filter = AshGrant.Info.resolve_scope_filter(resource, scope_atom, context)
-
-      case evaluate_filter_against_record(filter, record, actor, resource, arguments) do
-        true ->
-          {:allow, permission_details}
-
-        false ->
-          {:deny, %{reason: :scope_mismatch, scope: scope_name, record: record}}
-      end
+      {:deny, %{reason: :scope_mismatch, scopes: scope_names, record: record}}
     end
+  end
+
+  # nil = no scope restriction (e.g. instance permission); "always"/"all"/
+  # "global" are universal scopes — all pass without filter evaluation.
+  defp scope_passes?(_resource, _actor, _record, scope_name, _arguments)
+       when scope_name in [nil, "always", "all", "global"],
+       do: true
+
+  defp scope_passes?(resource, actor, record, scope_name, arguments) do
+    scope_atom = if is_binary(scope_name), do: String.to_atom(scope_name), else: scope_name
+    filter = AshGrant.Info.resolve_scope_filter(resource, scope_atom, %{actor: actor})
+
+    evaluate_filter_against_record(filter, record, actor, resource, arguments)
   end
 
   @doc false
