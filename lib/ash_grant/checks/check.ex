@@ -77,11 +77,12 @@ defmodule AshGrant.Check do
 
   1. **Resolve permissions**: Calls the configured `PermissionResolver` to get
      the actor's permissions
-  2. **Check access**: Uses `AshGrant.Evaluator.has_access?/3` to verify
-     the actor has a matching permission (deny-wins semantics)
-  3. **Get scope**: Extracts the scope from the matching permission
-  4. **Verify scope**: Uses `Ash.Expr.eval/2` to evaluate the scope filter
-     against the target record
+  2. **Collect scopes**: Uses `AshGrant.Evaluator.get_write_scopes/4` to gather
+     the scopes of ALL matching allow grants (deny-wins semantics)
+  3. **Verify scopes**: Evaluates each scope filter with `Ash.Expr.eval/2`
+     against the target record — the action is authorized if ANY grant's
+     scope passes. Grants are additive: a narrow grant never shadows a
+     broader one (issue #123), matching the read path's OR-composition
 
   ## Scope Evaluation
 
@@ -116,6 +117,13 @@ defmodule AshGrant.Check do
 
       scope :readonly, expr(exists(org.users, id == ^actor(:id))),
         write: false
+
+  > #### write: false is per-grant, not per-actor {: .warning}
+  >
+  > `write: false` makes a grant carrying that scope never authorize a write —
+  > but the actor's other matching grants are still evaluated (scopes
+  > OR-compose, issue #123). To hard-block an action for an actor regardless
+  > of their other grants, use a `!` deny permission.
 
   ## Relational Scopes and DB Query Fallback
 
@@ -298,10 +306,21 @@ defmodule AshGrant.Check do
       resource: resource_module
     )
 
-    # Check access using evaluator
-    case AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type) do
-      false ->
-        # RBAC check failed — try scope_through (parent instance permissions)
+    # OR-compose ALL matching grants' scopes (#123): grants are additive, so
+    # the action is authorized when ANY grant's scope passes — a narrow grant
+    # must never shadow a broader one. `!` deny is the only subtractive device.
+    write_scopes =
+      AshGrant.Evaluator.get_write_scopes(permissions, resource_name, action_name, action_type)
+
+    case write_scopes do
+      :unrestricted ->
+        true
+
+      {:scopes, [_ | _] = scopes} ->
+        Enum.any?(scopes, &check_scope_access(&1, scope_resolver, context, authorizer, opts))
+
+      _denied_or_no_match ->
+        # No usable RBAC grant — try scope_through (parent instance permissions)
         check_scope_through_write(
           resource_module,
           permissions,
@@ -309,13 +328,6 @@ defmodule AshGrant.Check do
           action_type,
           authorizer
         )
-
-      true ->
-        # Has permission, now check scope
-        scope =
-          AshGrant.Evaluator.get_scope(permissions, resource_name, action_name, action_type)
-
-        check_scope_access(scope, scope_resolver, context, authorizer, opts)
     end
   end
 

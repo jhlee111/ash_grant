@@ -32,7 +32,7 @@ defmodule AshGrant.Introspect do
 
       # Debugging: Can user do this?
       Introspect.can?(Post, :update, user)
-      # => {:allow, %{scope: "own", instance_ids: nil, field_groups: []}}
+      # => {:allow, %{scope: "own", scopes: ["own"], instance_ids: nil, field_groups: []}}
 
       # API: What actions are available?
       Introspect.allowed_actions(Post, user)
@@ -219,7 +219,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> AshGrant.Introspect.can_by_identifier("user_1", "post", :read)
-      {:allow, %{scope: "always", instance_ids: nil, field_groups: []}}
+      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: []}}
 
   """
   @spec can_by_identifier(term(), String.t(), atom(), keyword()) ::
@@ -505,7 +505,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> Introspect.can?(Post, :read, %{role: :editor})
-      {:allow, %{scope: "always", instance_ids: nil, field_groups: []}}
+      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: []}}
 
       iex> Introspect.can?(Post, :destroy, %{role: :viewer})
       {:deny, %{reason: :no_permission}}
@@ -558,7 +558,10 @@ defmodule AshGrant.Introspect do
 
     cond do
       scopes != [] ->
-        {:allow, %{scope: hd(scopes), instance_ids: nil, field_groups: field_groups}}
+        # :scopes carries ALL matching grants' scopes (union, #123);
+        # :scope stays as the first one for backward compatibility.
+        {:allow,
+         %{scope: hd(scopes), scopes: scopes, instance_ids: nil, field_groups: field_groups}}
 
       instance_ids != [] ->
         {:allow, %{scope: nil, instance_ids: instance_ids, field_groups: field_groups}}

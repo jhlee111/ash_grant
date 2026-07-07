@@ -102,7 +102,7 @@ Post |> Ash.read!(actor: viewer)
 ## Guides
 
 - **[Getting Started](guides/getting-started.md)** — Module-based resolvers, explicit policies, domain-level DSL, resolver patterns
-- **[Permissions](guides/permissions.md)** — Permission format, wildcards, RBAC, instance permissions, instance_key, scope_through, deny-wins
+- **[Permissions](guides/permissions.md)** — Permission format, wildcards, RBAC, instance permissions, instance_key, scope_through, deny-wins, multi-grant OR-composition
 - **[Scopes](guides/scopes.md)** — Scope DSL, inheritance, combination rules, multi-tenancy, relational scopes, business examples
 - **[Scope Naming Convention](guides/scope-naming-convention.md)** — Predicate naming, sentence test, RBAC/ABAC patterns, AND/OR composition
 - **[Argument-Based Scope](guides/argument-based-scope.md)** — Multi-hop authorization via action arguments + resource-local lazy loading, avoids DB-query fallback

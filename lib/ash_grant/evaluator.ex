@@ -73,6 +73,9 @@ defmodule AshGrant.Evaluator do
       Evaluator.get_all_scopes(permissions, "blog", "read")
       # => ["own", "published"]
 
+      Evaluator.get_write_scopes(permissions, "blog", "read")
+      # => {:scopes, ["own", "published"]}
+
   ### Instance Permissions
 
       # Instance permission format: resource:instance_id:action:
@@ -106,8 +109,9 @@ defmodule AshGrant.Evaluator do
   |----------|---------|
   | `has_access?/3` | Check if actor can perform action on resource type |
   | `has_instance_access?/3` | Check if actor can perform action on specific instance |
-  | `get_scope/3` | Get first matching scope (for SimpleCheck) |
+  | `get_scope/3` | Get first matching scope (introspection only) |
   | `get_all_scopes/3` | Get all matching scopes (for FilterCheck) |
+  | `get_write_scopes/4` | Union of matching grant scopes (for Check) |
   | `get_field_group/3` | Get first matching field group from 5-part permissions |
   | `get_all_field_groups/3` | Get all matching field groups (union for field access) |
   | `get_instance_scope/3` | Get scope from instance permission (for ABAC conditions) |
@@ -289,6 +293,14 @@ defmodule AshGrant.Evaluator do
   Returns the scope from the first matching allow permission.
   Returns nil if no matching permission is found or if the match is a deny.
 
+  > #### First match only {: .warning}
+  >
+  > Returns the scope of whichever matching allow permission appears first in
+  > the list — an order-dependent answer that ignores every other grant.
+  > Authorization must use `get_write_scopes/4` (union) instead, as
+  > `AshGrant.Check` does since issue #123. This function remains for
+  > introspection and single-grant convenience.
+
   ## Examples
 
       iex> permissions = ["blog:*:read:always", "blog:*:update:own"]
@@ -358,6 +370,70 @@ defmodule AshGrant.Evaluator do
       |> Enum.map(& &1.scope)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
+    end
+  end
+
+  @doc """
+  Gets the scopes of ALL matching allow permissions for boolean (write-path)
+  authorization, OR-composing multiple grants (issue #123).
+
+  `AshGrant.Check` authorizes a write action when ANY of the returned scopes
+  passes — the same union semantics `AshGrant.FilterCheck` and
+  `AshGrant.Calculation.CanPerform` apply on the read path. Grants are
+  additive: adding a narrower grant on top of a broader one must never
+  subtract access (the write-path analogue of the group-less collapse in
+  `get_all_field_groups/4`, issue #116).
+
+  Returns:
+
+  - `:denied` — a deny rule matches (deny-wins)
+  - `:unrestricted` — a matching allow grant has no scope (legacy 2-part
+    format, or an empty 4th part); such a grant applies to every record and
+    dominates the union
+  - `{:scopes, scopes}` — the deduplicated scopes of all matching allow
+    permissions, in permission-list order (`{:scopes, []}` when nothing
+    matches)
+
+  ## Examples
+
+      iex> permissions = ["schedule:*:cancel:online_content", "schedule:*:*:always"]
+      iex> AshGrant.Evaluator.get_write_scopes(permissions, "schedule", "cancel", :update)
+      {:scopes, ["online_content", "always"]}
+
+      iex> permissions = ["blog:*:*:always", "!blog:*:delete:always"]
+      iex> AshGrant.Evaluator.get_write_scopes(permissions, "blog", "delete")
+      :denied
+
+      iex> AshGrant.Evaluator.get_write_scopes(["blog:update"], "blog", "update")
+      :unrestricted
+
+  """
+  @spec get_write_scopes(permissions(), String.t(), String.t(), atom() | nil) ::
+          :denied | :unrestricted | {:scopes, [String.t()]}
+  def get_write_scopes(permissions, resource, action, action_type \\ nil) do
+    permissions = normalize_permissions(permissions)
+
+    has_deny =
+      Enum.any?(permissions, fn perm ->
+        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
+      end)
+
+    if has_deny do
+      :denied
+    else
+      matching_allows =
+        Enum.filter(permissions, fn perm ->
+          not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
+        end)
+
+      # A scope-less grant applies to every record and dominates the union
+      # (the write-path analogue of get_all_field_groups/4's group-less
+      # collapse, issue #116).
+      if Enum.any?(matching_allows, &is_nil(&1.scope)) do
+        :unrestricted
+      else
+        {:scopes, matching_allows |> Enum.map(& &1.scope) |> Enum.uniq()}
+      end
     end
   end
 
