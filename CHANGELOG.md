@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-07-06
+
+### Fixed
+
+- **Write actions resolved only ONE grant's scope — adding a narrow grant to a role holding a blanket grant revoked the action** (#123). `AshGrant.Check` used `Evaluator.get_scope/4`, which returns the scope of whichever matching allow permission appears *first* in the resolver's list, ignoring every other grant. An actor holding `["schedule:*:cancel:online_content", "schedule:*:*:always"]` was forbidden from canceling a regular class — the additive grant acted as a revocation — and the outcome depended on permission-list order (i.e. DB row order). Write and generic actions now OR-compose **all** matching grants' scopes via the new `AshGrant.Evaluator.get_write_scopes/4` and authorize when **any** scope passes: the union semantics `FilterCheck` (read) and `CanPerform` (UI) have always applied, and the write-path analogue of #116's group-less collapse — adding an allow grant must never subtract access. Deny rules still win over the whole union, a scope-less grant (legacy 2-part format) still short-circuits to unrestricted, and each scope keeps its own evaluation strategy (in-memory or DB-query fallback). The same union now flows through the tooling: `Introspect.can?/4` allow-details carry `scopes:` (all matching grants' scopes) next to the backward-compatible `scope:` (first match), and `AshGrant.PolicyTest` record assertions (`assert_can/3` / `assert_cannot/3`) evaluate the union, so policy tests agree with runtime.
+
+### Changed
+
+- **`write: false` is per-grant, not per-actor** (consequence of #123). A scope with `write: false` prevents grants carrying *that scope* from authorizing a write; the actor's other matching grants are still evaluated. Previously it could hard-block the whole action whenever it happened to be the first matching grant. To hard-block an action regardless of an actor's other grants, use a `!` deny permission.
+
 ## [0.16.0] - 2026-06-24
 
 ### Added
