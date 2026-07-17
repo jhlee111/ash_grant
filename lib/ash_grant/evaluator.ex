@@ -18,6 +18,17 @@ defmodule AshGrant.Evaluator do
   This is similar to Apache Shiro's authorization model and provides a secure
   default (deny by default) with the ability to revoke permissions at any level.
 
+  > #### Pass an action type when grants may use type wildcards {: .warning}
+  >
+  > Every entry point here defaults `action_type` to `nil`. A type wildcard
+  > (`"@read"`, or the deprecated `"read*"`) can only be evaluated against an Ash
+  > action type, so with `nil` it is silently skipped — and the result may be
+  > **wrong**, not just uninformed. The examples below use literal action names and
+  > are unaffected, but if your permissions contain type wildcards, pass the type
+  > (`has_access?(perms, "blog", "list", :read)`) or use `AshGrant.Introspect.can?/4`,
+  > which resolves it from the resource module. `AshGrant.IndeterminateMatch` reports
+  > calls that hit this. See #126.
+
   ## Why Deny-Wins?
 
   The deny-wins pattern is useful for:
@@ -130,6 +141,19 @@ defmodule AshGrant.Evaluator do
 
   Implements deny-wins: if any deny rule matches, access is denied.
 
+  ## Pass an `action_type` if any grant may be a type wildcard
+
+  Type wildcards (`"@read"`, or the deprecated `"read*"`) match on the Ash action
+  **type**, so they cannot be evaluated without an `action_type` and are treated as
+  non-matching. Omitting it where such a grant exists therefore produces an answer that
+  is not merely uninformed but potentially **wrong** — `has_access?(["blog:*:@read:always"],
+  "blog", "read")` returns `false`, while the same grant authorizes `:read` actions once a
+  type is supplied.
+
+  `AshGrant.IndeterminateMatch` reports exactly those calls (`:warn` by default, `:strict`
+  to raise). If you have the resource module, prefer `AshGrant.Introspect.can?/4`, which
+  resolves the action type for you.
+
   ## Examples
 
       iex> permissions = ["blog:*:read:always", "blog:*:write:own"]
@@ -140,25 +164,28 @@ defmodule AshGrant.Evaluator do
       iex> AshGrant.Evaluator.has_access?(permissions, "blog", "delete")
       false
 
+  A type wildcard needs the type. Without it the grant cannot be evaluated, and the
+  `false` reflects that — not a real denial:
+
+      iex> permissions = ["blog:*:@read:always"]
+      iex> AshGrant.Evaluator.has_access?(permissions, "blog", "list_published", :read)
+      true
+
   """
   @spec has_access?(permissions(), String.t(), String.t(), atom() | nil) :: boolean()
   def has_access?(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
 
-    # Check for deny rules first (deny wins)
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
-
-    if has_deny do
-      false
-    else
-      # Check for allow rules
-      Enum.any?(permissions, fn perm ->
-        not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
+    # Body threads its match predicate so IndeterminateMatch can re-run it with type
+    # wildcards forced. Without an action_type they silently fail to match, so the
+    # answer may be fabricated; the guard signals that and never changes it.
+    compute = fn match ->
+      not denied?(permissions, match) and
+        Enum.any?(permissions, &(not Permission.deny?(&1) and match.(&1)))
     end
+
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
   end
 
   @doc """
@@ -315,26 +342,27 @@ defmodule AshGrant.Evaluator do
   @spec get_scope(permissions(), String.t(), String.t(), atom() | nil) :: String.t() | nil
   def get_scope(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
+    compute = &first_matching_field(permissions, &1, :scope)
 
-    # First check if denied
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
+  end
 
-    if has_deny do
+  # First matching allow permission's `field` (`:scope` or `:field_group`), or nil.
+  # deny-wins: a matching deny short-circuits to nil.
+  defp first_matching_field(permissions, match, field) do
+    if denied?(permissions, match) do
       nil
     else
-      # Find first matching allow permission and return its scope
-      permissions
-      |> Enum.find(fn perm ->
-        not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
-      |> case do
+      case Enum.find(permissions, &(not Permission.deny?(&1) and match.(&1))) do
         nil -> nil
-        perm -> perm.scope
+        perm -> Map.fetch!(perm, field)
       end
     end
+  end
+
+  defp denied?(permissions, match) do
+    Enum.any?(permissions, &(Permission.deny?(&1) and match.(&1)))
   end
 
   @doc """
@@ -353,24 +381,21 @@ defmodule AshGrant.Evaluator do
   @spec get_all_scopes(permissions(), String.t(), String.t(), atom() | nil) :: [String.t()]
   def get_all_scopes(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
 
-    # Check for deny first
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
-
-    if has_deny do
-      []
-    else
-      permissions
-      |> Enum.filter(fn perm ->
-        not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
-      |> Enum.map(& &1.scope)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
+    compute = fn match ->
+      if denied?(permissions, match) do
+        []
+      else
+        permissions
+        |> Enum.filter(&(not Permission.deny?(&1) and match.(&1)))
+        |> Enum.map(& &1.scope)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+      end
     end
+
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
   end
 
   @doc """
@@ -412,23 +437,20 @@ defmodule AshGrant.Evaluator do
           :denied | :unrestricted | {:scopes, [String.t()]}
   def get_write_scopes(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
+    compute = &write_scopes(permissions, &1)
 
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
+  end
 
-    if has_deny do
+  defp write_scopes(permissions, match) do
+    if denied?(permissions, match) do
       :denied
     else
-      matching_allows =
-        Enum.filter(permissions, fn perm ->
-          not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-        end)
+      matching_allows = Enum.filter(permissions, &(not Permission.deny?(&1) and match.(&1)))
 
-      # A scope-less grant applies to every record and dominates the union
-      # (the write-path analogue of get_all_field_groups/4's group-less
-      # collapse, issue #116).
+      # A scope-less grant applies to every record and dominates the union (the
+      # write-path analogue of get_all_field_groups/4's group-less collapse, issue #116).
       if Enum.any?(matching_allows, &is_nil(&1.scope)) do
         :unrestricted
       else
@@ -457,24 +479,10 @@ defmodule AshGrant.Evaluator do
   @spec get_field_group(permissions(), String.t(), String.t(), atom() | nil) :: String.t() | nil
   def get_field_group(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
+    compute = &first_matching_field(permissions, &1, :field_group)
 
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
-
-    if has_deny do
-      nil
-    else
-      permissions
-      |> Enum.find(fn perm ->
-        not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
-      |> case do
-        nil -> nil
-        perm -> perm.field_group
-      end
-    end
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
   end
 
   @doc """
@@ -508,31 +516,26 @@ defmodule AshGrant.Evaluator do
   @spec get_all_field_groups(permissions(), String.t(), String.t(), atom() | nil) :: [String.t()]
   def get_all_field_groups(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
+    compute = &all_field_groups(permissions, &1)
 
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
-      end)
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
+  end
 
-    if has_deny do
+  defp all_field_groups(permissions, match) do
+    if denied?(permissions, match) do
       []
     else
-      matching_allows =
-        Enum.filter(permissions, fn perm ->
-          not Permission.deny?(perm) and
-            Permission.matches?(perm, resource, action, action_type)
-        end)
+      matching_allows = Enum.filter(permissions, &(not Permission.deny?(&1) and match.(&1)))
 
-      # A group-less (4-part) allow grant means "all fields are visible" and
-      # dominates the union, so it collapses the result to [] (unrestricted).
-      # Without this, adding a narrower field-group grant on top of a broad
-      # group-less grant would silently subtract access (see issue #116).
+      # A group-less (4-part) allow grant means "all fields are visible" and dominates
+      # the union, so it collapses the result to [] (unrestricted). Without this, adding
+      # a narrower field-group grant on top of a broad group-less grant would silently
+      # subtract access (see issue #116).
       if Enum.any?(matching_allows, &is_nil(&1.field_group)) do
         []
       else
-        matching_allows
-        |> Enum.map(& &1.field_group)
-        |> Enum.uniq()
+        matching_allows |> Enum.map(& &1.field_group) |> Enum.uniq()
       end
     end
   end
@@ -557,15 +560,26 @@ defmodule AshGrant.Evaluator do
           [Permission.t()]
   def field_group_grants(permissions, resource_module, action, required_group, action_type \\ nil) do
     resource_name = AshGrant.Info.resource_name(resource_module)
+    permissions = normalize_permissions(permissions)
+    match = &Permission.matches_action?(&1.action, action, action_type)
 
-    permissions
-    |> normalize_permissions()
-    |> Enum.filter(fn perm ->
-      not Permission.deny?(perm) and
-        Permission.matches_resource?(perm.resource, resource_name) and
-        Permission.matches_action?(perm.action, action, action_type) and
-        grants_field_group?(resource_module, perm.field_group, required_group)
-    end)
+    compute = fn match ->
+      Enum.filter(permissions, fn perm ->
+        not Permission.deny?(perm) and
+          Permission.matches_resource?(perm.resource, resource_name) and
+          match.(perm) and
+          grants_field_group?(resource_module, perm.field_group, required_group)
+      end)
+    end
+
+    AshGrant.IndeterminateMatch.guard(
+      compute,
+      match,
+      permissions,
+      resource_name,
+      action,
+      action_type
+    )
   end
 
   # A group-less (4-part) grant has no field_group — it grants every group.
@@ -608,9 +622,11 @@ defmodule AshGrant.Evaluator do
   """
   @spec find_matching(permissions(), String.t(), String.t(), atom() | nil) :: [Permission.t()]
   def find_matching(permissions, resource, action, action_type \\ nil) do
-    permissions
-    |> normalize_permissions()
-    |> Enum.filter(&Permission.matches?(&1, resource, action, action_type))
+    permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
+    compute = fn match -> Enum.filter(permissions, match) end
+
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
   end
 
   @doc """
@@ -640,6 +656,10 @@ defmodule AshGrant.Evaluator do
   @spec get_matching_instance_ids(permissions(), String.t(), String.t(), atom() | nil) ::
           [String.t()]
   def get_matching_instance_ids(permissions, resource, action, action_type \\ nil) do
+    # No IndeterminateMatch guard: this considers only instance permissions
+    # (instance_id != "*"), and a type wildcard on an instance permission is dead, not
+    # indeterminate — `AshGrant.Permission.diagnostics/1` reports it. RBAC wildcards
+    # (the indeterminate case) never enter here, so a guard would be a no-op.
     permissions = normalize_permissions(permissions)
 
     # Find all instance permissions that match resource and action

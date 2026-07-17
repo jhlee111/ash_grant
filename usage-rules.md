@@ -97,6 +97,35 @@ MyApp.Role
 |> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
 ```
 
+### DON'T: Check a type wildcard without supplying the action type
+
+A type wildcard can only be evaluated against an Ash action **type**. If you call a
+matcher that has no action type, the wildcard silently fails to match — and the answer
+you get back may be **wrong**, not merely uninformed. This is the trap behind
+"my grant is in the database but the feature is gone for the people it targets."
+
+```elixir
+# DON'T — no action_type, so "@read" cannot be evaluated. Returns false even though
+# this actor should be allowed. The false is fabricated, indistinguishable from a deny.
+Evaluator.has_access?(["blog:*:@read:always"], "blog", "read")        # => false (!)
+
+# DO — pass the action type; now the type wildcard is evaluated.
+Evaluator.has_access?(["blog:*:@read:always"], "blog", "read", :read) # => true
+
+# DO — better, hand a resource MODULE to Introspect, which resolves the type for you.
+AshGrant.Introspect.can?(MyApp.Blog.Post, :read, actor)               # => {:allow, ...}
+```
+
+The framework-generated checks (`AshGrant.Check`, `FilterCheck`) always pass the type,
+so this only bites **direct** calls to `AshGrant.Evaluator` from your own code. When it
+happens, `AshGrant.IndeterminateMatch` reports it (`Logger.warning` by default; set
+`config :ash_grant, indeterminate_type_wildcard: :strict` to raise instead). It never
+changes the returned value — it only tells you the value cannot be trusted.
+
+> A defensive `"@read"` + literal `"read"` pair (or `"read*"` + `"read"`) does still
+> work, because the literal matches regardless of type. But prefer fixing the call to
+> pass the type: the pair silently breaks the moment someone removes the literal.
+
 ### Field-level permissions (5-part format)
 
 ```elixir

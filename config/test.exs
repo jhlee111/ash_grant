@@ -20,4 +20,11 @@ config :ash_grant,
   ecto_repos: [AshGrant.TestRepo],
   ash_domains: [AshGrant.Test.Domain]
 
+# Several property tests deliberately exercise the nil-action_type + type-wildcard
+# combination to assert that type wildcards never match without a type. That is exactly
+# the condition `AshGrant.IndeterminateMatch` signals, so the library default (`:warn`)
+# would emit hundreds of correct-but-unwanted warnings across the suite. Default it off
+# here; `indeterminate_match_test.exs` sets the mode explicitly per case.
+config :ash_grant, indeterminate_type_wildcard: :off
+
 config :logger, level: :warning

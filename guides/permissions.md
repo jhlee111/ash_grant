@@ -97,6 +97,52 @@ permission **never matches anything** — the grant is dead:
 
 `AshGrant.Permission.diagnostics/1` flags these.
 
+#### Type wildcards need the action type at check time
+
+The same requirement applies at every check, not just for instance permissions: a type
+wildcard can only be evaluated when the caller supplies the Ash action **type**. Without
+it, the wildcard silently fails to match, and the result can be **wrong** rather than
+merely uninformed.
+
+You almost never hit this, because the framework-generated policy checks
+(`AshGrant.Check`, `AshGrant.FilterCheck`) always pass the action type. It matters only
+when your **own** code calls `AshGrant.Evaluator` directly — a nav gate, a custom
+authorization helper, a script:
+
+```elixir
+# No action_type: "@read" cannot be evaluated, so it is skipped.
+Evaluator.has_access?(["post:*:@read:always"], "post", "read")        # => false (!)
+
+# With the type, the wildcard is evaluated:
+Evaluator.has_access?(["post:*:@read:always"], "post", "read", :read) # => true
+
+# Best: Introspect.can?/4 takes the resource module and resolves the type for you:
+AshGrant.Introspect.can?(MyApp.Blog.Post, :read, actor)               # => {:allow, ...}
+```
+
+That first `false` is indistinguishable from a real denial, which is what makes the bug
+expensive: a grant sits in the database, looks correct, and the feature it gates quietly
+disappears for exactly the actors it targets.
+
+AshGrant detects this and signals it **without changing the outcome**, via
+`AshGrant.IndeterminateMatch`:
+
+| Mode | Behavior |
+|------|----------|
+| `:off` | do nothing |
+| `:warn` | emit a `Logger.warning` (deduplicated per process) — **default** |
+| `:strict` | raise `AshGrant.IndeterminateMatch.IndeterminateMatchError` |
+
+```elixir
+config :ash_grant, indeterminate_type_wildcard: :strict
+```
+
+It reports only calls whose answer could actually be wrong: a skipped **allow** wildcard
+that returned `false`, or a skipped **deny** wildcard that returned `true`. A defensive
+wildcard-plus-literal grant pair still returns the right answer and stays silent — but
+prefer fixing the call to pass the type, since the pair breaks silently if the literal is
+ever removed.
+
 ### Generic Actions
 
 Generic actions (Ash actions with `type: :action`) are best authorized by their
