@@ -54,7 +54,7 @@ defmodule AshGrant.Permission do
       "blog:*:*:always"               # All actions on all blogs
       "*:*:read:always"               # Read all resources
       "*:*:*:always"                  # Full access to everything
-      "blog:*:read*:always"           # All read-type actions
+      "blog:*:@read:always"           # All :read-TYPE actions (by type, never by name)
       "!blog:*:delete:always"         # DENY delete on all blogs
 
   ### Instance Permissions (specific instance_id)
@@ -333,8 +333,8 @@ defmodule AshGrant.Permission do
 
   Does not consider scope - that's handled by the ScopeResolver.
 
-  This arity passes no `action_type`, so **type wildcards (`"read*"`) never match
-  here** — see `matches?/4` to use them.
+  This arity passes no `action_type`, so **type wildcards (`"@read"`, or the deprecated
+  `"read*"`) never match here** — see `matches?/4` to use them.
 
   ## Examples
 
@@ -345,6 +345,12 @@ defmodule AshGrant.Permission do
   A type wildcard needs an action type, and this arity has none — so it matches
   nothing, regardless of the action name. This is `false` because no type was
   supplied, *not* because `"read_published"` failed a name comparison:
+
+      iex> perm = AshGrant.Permission.parse!("blog:*:@read:always")
+      iex> AshGrant.Permission.matches?(perm, "blog", "read_published")
+      false
+
+  The deprecated `"read*"` spelling behaves the same way here:
 
       iex> perm = AshGrant.Permission.parse!("blog:*:read*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "read_published")
@@ -363,20 +369,27 @@ defmodule AshGrant.Permission do
   @doc """
   Checks if a permission matches a resource, action, and optional Ash action type.
 
-  Type wildcards like `"read*"` match on the Ash action *type* alone. A `:read`-type
-  action named `list_published` matches `"read*"` because of its type — never because
+  Type wildcards like `"@read"` match on the Ash action *type* alone. A `:read`-type
+  action named `list_published` matches `"@read"` because of its type — never because
   of its name. When `action_type` is `nil`, type wildcards match nothing; pass a type
-  to use them.
+  to use them. See `matches_action?/3` for the full rules, including the deprecated
+  `"read*"` spelling.
 
   ## Examples
+
+      iex> perm = AshGrant.Permission.parse!("blog:*:@read:always")
+      iex> AshGrant.Permission.matches?(perm, "blog", "list_published", :read)
+      true
+
+      iex> perm = AshGrant.Permission.parse!("blog:*:@read:always")
+      iex> AshGrant.Permission.matches?(perm, "blog", "list_published", :update)
+      false
+
+  The deprecated `"read*"` spelling is equivalent:
 
       iex> perm = AshGrant.Permission.parse!("blog:*:read*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "list_published", :read)
       true
-
-      iex> perm = AshGrant.Permission.parse!("blog:*:read*:always")
-      iex> AshGrant.Permission.matches?(perm, "blog", "list_published", :update)
-      false
 
   """
   @spec matches?(t(), String.t(), String.t(), atom() | nil) :: boolean()

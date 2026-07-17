@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-07-17
+
+### Added
+
+- **Explicit action-type wildcard: `@read`** (#126). Type wildcards can now be spelled `@read`, `@create`, `@update`, `@destroy`, `@action` — e.g. `"blog:*:@read:always"`. Semantics are identical to the existing `read*` form (match on the Ash action **type**, never on the action name), but the notation can no longer be misread as a prefix glob. Both spellings work; `@` cannot collide with an action name, since Elixir action atoms never start with it.
+
+- **`AshGrant.Permission.diagnostics/1`** (#126) reports deprecated or dead grant syntax for a permission string or struct, returning `%{code:, permission:, message:, suggestion:}` maps. Three codes:
+  - `:deprecated_type_wildcard` — the `read*` spelling; suggests the `@read` equivalent
+  - `:dead_instance_type_wildcard` — a type wildcard on an instance permission. Instance matching has no action type available, so the grant **never matches anything** (`"blog:post_abc:read*:"` is dead). Previously silent and undocumented.
+  - `:unknown_action_type` — a type wildcard naming something that is not an Ash action type. `delete*` is the common case: Ash calls that type `:destroy`, so `"blog:*:delete*:always"` silently never matches. Suggests `@destroy`.
+
+  Permission strings are runtime data that AshGrant cannot reach, so this is exposed as a function to run over your own store:
+
+      MyApp.Role
+      |> MyApp.Repo.all()
+      |> Enum.flat_map(& &1.permissions)
+      |> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
+
+  Authorization behavior is unchanged — a flagged permission still evaluates exactly as it did before.
+
+- **`mix ash_grant.verify` reports permission syntax warnings** (#126) by resolving each policy test actor's grants and running `diagnostics/1` over them. This only covers grants the declared test actors hold, so a clean run is **not** proof that your permission store is clean; YAML tests carry their permissions inline and are not scanned. Warnings never affect the exit code.
+
+### Deprecated
+
+- **The `read*` spelling of type wildcards** (#126), in favor of `@read`. Removal planned for v1.0.0. `read*` still works and its behavior is unchanged. Unlike the `[:*]` → `:all` and scope `write:` deprecations — which were DSL options the compiler could see — permission strings are runtime data from the `PermissionResolver` (your roles table, your seeds), so **there is no compile-time warning** and migrating means updating stored data rather than editing source. Run `mix ash_grant.verify`, or `AshGrant.Permission.diagnostics/1` over your own store, to find grants that need it.
+
+### Fixed
+
+- **`matches_action?/2`'s docstring documented the opposite of what the code does** (#126). It claimed "prefix matching with `prefix*`" while `matches_action?/3`, twenty lines below, correctly documented type matching — and the `/2` doctest already refuted its own prose, so the suite stayed green while the documentation misled. Corrected, along with: `matches?/4` (whose "will **also** match" implied name-prefix matching happened too), `matches?/3` (its `false` is caused by the absent `action_type`, not by a failed name comparison), the moduledoc format table, and `usage-rules.md`, whose examples used only `read`-prefixed action names and so taught the glob model by example.
+
+- **`matches_instance?/3` silently never matches type wildcards, previously undocumented** (#126). Instance matching passes no action type, so a type wildcard on an instance permission is dead. Now documented, doctested, and reported by `diagnostics/1`.
+
+- **Three places claimed type wildcards do not apply to generic actions** (#126) — `guides/permissions.md`, `guides/checks-and-policies.md`, and `AshGrant.Check`'s `@moduledoc`. They do apply: `"service:*:@action:always"` grants **every** generic action on the resource, including ones added later, so the grant that permits `:ping` also permits `:process_refund`. All three now document the real behavior and warn against relying on it; for generic actions, prefer exact action names. Whether to block this is tracked in #127.
+
 ## [0.17.0] - 2026-07-06
 
 ### Fixed

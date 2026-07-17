@@ -183,7 +183,7 @@ defmodule AshGrant do
       "blog:*:update:own"         # Update own blogs only
       "blog:*:*:always"              # All actions on all blogs
       "*:*:read:always"              # Read all resources
-      "blog:*:read*:always"          # All read-type actions
+      "blog:*:@read:always"          # All :read-TYPE actions (by type, never by name)
       "!blog:*:delete:always"        # DENY delete on all blogs
 
   ### Instance Permissions (specific instance_id)
