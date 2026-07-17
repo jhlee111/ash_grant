@@ -21,6 +21,7 @@ Permissions resolve to native Ash filters and policy checks, with deny-wins sema
 - **`explain/4`** — trace why authorization succeeded or failed
 - **`Introspect`** — query actor permissions, available actions at runtime
 - **Policy testing** — DSL and YAML-based config tests, no database required
+- **`Permission.diagnostics/1`** — audit your own permission store for deprecated or dead grant syntax; also reported by `mix ash_grant.verify`
 
 AshGrant handles permission evaluation, not role management. Resolve roles to
 permission strings in your resolver.
@@ -32,7 +33,7 @@ Add `ash_grant` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ash_grant, "~> 0.17"}
+    {:ash_grant, "~> 0.18"}
   ]
 end
 ```
