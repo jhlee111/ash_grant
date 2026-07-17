@@ -466,4 +466,184 @@ defmodule AshGrant.PermissionTest do
       assert "#{perm}" == "blog:*:read:always"
     end
   end
+
+  describe "matches_action?/3 - @type explicit type wildcards" do
+    test "@read matches :read-type actions regardless of name" do
+      assert Permission.matches_action?("@read", "list_published", :read)
+      assert Permission.matches_action?("@read", "by_slug", :read)
+      assert Permission.matches_action?("@read", "read", :read)
+    end
+
+    test "@read does not match other action types" do
+      refute Permission.matches_action?("@read", "list_published", :update)
+      refute Permission.matches_action?("@read", "read_all", :destroy)
+    end
+
+    test "@read never matches without an action_type" do
+      refute Permission.matches_action?("@read", "read", nil)
+      refute Permission.matches_action?("@read", "read_all", nil)
+    end
+
+    test "@read is exactly equivalent to the deprecated read* spelling" do
+      cases = [{"list_published", :read}, {"read", :read}, {"x", :update}, {"y", nil}]
+
+      for {action, type} <- cases do
+        assert Permission.matches_action?("@read", action, type) ==
+                 Permission.matches_action?("read*", action, type),
+               "@read and read* disagreed on #{action}/#{inspect(type)}"
+      end
+    end
+
+    test "every Ash action type has a working @ form" do
+      assert Permission.matches_action?("@create", "register", :create)
+      assert Permission.matches_action?("@update", "publish", :update)
+      assert Permission.matches_action?("@destroy", "purge", :destroy)
+      assert Permission.matches_action?("@action", "recalculate", :action)
+    end
+
+    test "parses and matches through a full permission string" do
+      perm = Permission.parse!("blog:*:@read:always")
+
+      assert perm.action == "@read"
+      assert Permission.matches?(perm, "blog", "list_published", :read)
+      refute Permission.matches?(perm, "blog", "list_published", :update)
+    end
+
+    test "@ form round-trips through to_string/1" do
+      for s <- ["blog:*:@read:always", "!blog:*:@destroy:always", "blog:*:@update:own:sensitive"] do
+        assert s |> Permission.parse!() |> Permission.to_string() == s
+      end
+    end
+
+    test "@ does not collide with the deny prefix" do
+      perm = Permission.parse!("!blog:*:@read:always")
+
+      assert perm.deny
+      assert perm.action == "@read"
+    end
+  end
+
+  describe "diagnostics/1" do
+    test "clean permissions report nothing" do
+      clean = [
+        "blog:*:read:always",
+        "blog:*:@read:always",
+        "blog:*:*:always",
+        "blog:post_abc:read:",
+        "blog:post_abc:*:",
+        "!blog:*:destroy:always"
+      ]
+
+      for s <- clean do
+        assert Permission.diagnostics(s) == [], "expected #{s} to be clean"
+      end
+    end
+
+    test "deprecated read* is flagged, and its replacement works" do
+      assert [d] = Permission.diagnostics("blog:*:read*:always")
+
+      assert d.code == :deprecated_type_wildcard
+      assert d.permission == "blog:*:read*:always"
+      assert d.suggestion == "blog:*:@read:always"
+      assert Permission.diagnostics(d.suggestion) == []
+    end
+
+    test "suggestion preserves deny prefix and field_group" do
+      assert [d] = Permission.diagnostics("!blog:*:read*:always:sensitive")
+      assert d.suggestion == "!blog:*:@read:always:sensitive"
+    end
+
+    test "type wildcard on an instance permission is flagged as dead" do
+      assert [d] = Permission.diagnostics("blog:post_abc:@read:")
+
+      assert d.code == :dead_instance_type_wildcard
+      assert d.suggestion == nil
+    end
+
+    test "dead instance grant is caught in both spellings" do
+      codes = fn s -> s |> Permission.diagnostics() |> Enum.map(& &1.code) end
+
+      assert :dead_instance_type_wildcard in codes.("blog:post_abc:read*:")
+      assert :dead_instance_type_wildcard in codes.("blog:post_abc:@read:")
+    end
+
+    test "unknown action type is flagged, with @destroy suggested for delete" do
+      assert [d] = Permission.diagnostics("blog:*:@delete:always")
+
+      assert d.code == :unknown_action_type
+      assert d.suggestion == "blog:*:@destroy:always"
+      assert Permission.diagnostics(d.suggestion) == []
+    end
+
+    test "no message recommends a replacement the diagnostics themselves reject" do
+      # `delete*` is deprecated, but `@delete` is not a valid type either. The message
+      # must not tell you to prefer `@delete` while a sibling diagnostic calls it unknown.
+      diagnostics = Permission.diagnostics("blog:*:delete*:always")
+      deprecated = Enum.find(diagnostics, &(&1.code == :deprecated_type_wildcard))
+
+      refute deprecated.message =~ "Prefer"
+      refute deprecated.message =~ "@delete"
+
+      # ...whereas a mechanically fixable one still names its replacement.
+      assert [valid] = Permission.diagnostics("blog:*:read*:always")
+      assert valid.message =~ "Prefer `@read`"
+    end
+
+    test "does not suggest a spelling swap that leaves the grant broken" do
+      # delete* is deprecated AND names a type Ash does not have. Suggesting `@delete`
+      # would point at a grant that still never matches, so the deprecation diagnostic
+      # withholds its suggestion and the unknown-type diagnostic carries the real fix.
+      diagnostics = Permission.diagnostics("blog:*:delete*:always")
+      deprecated = Enum.find(diagnostics, &(&1.code == :deprecated_type_wildcard))
+      unknown = Enum.find(diagnostics, &(&1.code == :unknown_action_type))
+
+      assert deprecated.suggestion == nil
+      assert unknown.suggestion == "blog:*:@destroy:always"
+    end
+
+    test "does not suggest @read for a grant that is dead either way" do
+      diagnostics = Permission.diagnostics("blog:post_abc:read*:")
+      deprecated = Enum.find(diagnostics, &(&1.code == :deprecated_type_wildcard))
+
+      assert deprecated.suggestion == nil
+    end
+
+    test "no suggestion is ever itself flagged" do
+      samples = [
+        "blog:*:read*:always",
+        "blog:*:delete*:always",
+        "blog:post_abc:read*:",
+        "blog:*:@delete:always",
+        "!blog:*:update*:own:sensitive"
+      ]
+
+      for s <- samples, d <- Permission.diagnostics(s), d.suggestion != nil do
+        assert Permission.diagnostics(d.suggestion) == [],
+               "suggestion #{d.suggestion} (from #{s}) is itself flagged"
+      end
+    end
+
+    test "accepts a Permission struct as well as a string" do
+      perm = Permission.parse!("blog:*:read*:always")
+      assert [%{code: :deprecated_type_wildcard}] = Permission.diagnostics(perm)
+    end
+
+    test "unparseable strings report nothing" do
+      assert Permission.diagnostics("garbage") == []
+      assert Permission.diagnostics("") == []
+    end
+
+    test "bare * is not a type wildcard" do
+      assert Permission.diagnostics("blog:*:*:always") == []
+      assert Permission.diagnostics("blog:post_abc:*:") == []
+    end
+
+    test "every diagnostic carries a non-empty message" do
+      samples = ["blog:*:read*:always", "blog:post_abc:@read:", "blog:*:@delete:always"]
+
+      for s <- samples, d <- Permission.diagnostics(s) do
+        assert is_binary(d.message) and d.message != ""
+      end
+    end
+  end
 end

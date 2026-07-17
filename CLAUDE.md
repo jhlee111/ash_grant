@@ -51,7 +51,7 @@ mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
 
 - **`AshGrant`** (`lib/ash_grant.ex`) - Main extension module, exports `check/1` and `filter_check/1`
 - **`AshGrant.Dsl`** (`lib/ash_grant/dsl.ex`) - Spark DSL definition for the `ash_grant` block
-- **`AshGrant.Permission`** (`lib/ash_grant/permission.ex`) - Parses and matches permission strings (`resource:instance_id:action:scope`)
+- **`AshGrant.Permission`** (`lib/ash_grant/permission.ex`) - Parses and matches permission strings (`resource:instance_id:action:scope`). Also exposes `diagnostics/1`, which reports deprecated/dead grant syntax for offline auditing (never affects authorization)
 - **`AshGrant.Evaluator`** (`lib/ash_grant/evaluator.ex`) - Implements deny-wins evaluation logic
 
 ### Policy Checks
@@ -102,6 +102,14 @@ mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
 - Deny rules always override allow rules
 - `instance_key` option: changes which field instance IDs match against (default `:id`)
 - `scope_through` entity: propagates parent instance permissions to child resources via FK
+- `action` = exact name, `*` (any action), or a **type wildcard** matching by Ash action
+  type: `@read` / `@create` / `@update` / `@destroy` / `@action`. A type wildcard never
+  reads the action name. The older `read*` spelling means the same thing but is
+  deprecated (removal at v1.0.0) — it looks like a prefix glob and never was one.
+- Permission strings are **runtime data** from the `PermissionResolver` (roles table,
+  seeds), not DSL — so there is no compile-time site to validate them. Deprecated/dead
+  syntax is reported offline instead, via `AshGrant.Permission.diagnostics/1` and
+  `mix ash_grant.verify`.
 
 ## Key Patterns
 

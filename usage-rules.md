@@ -23,7 +23,7 @@ AshGrant only needs a resolver that returns permission strings for a given actor
 | `!`           | No       | Deny prefix — deny rules always override allows  |
 | `resource`    | Yes      | Resource name or `*` for all                     |
 | `instance_id` | Yes      | `*` for RBAC, specific ID for instance access    |
-| `action`      | Yes      | Action name, `*` for all, or `prefix*` wildcard  |
+| `action`      | Yes      | Action name, `*` for all, or `@read` type wildcard |
 | `scope`       | Yes      | Scope name (e.g., `all`, `own`) or empty string  |
 | `field_group` | No       | 5th part for column-level access control         |
 
@@ -35,7 +35,7 @@ AshGrant only needs a resolver that returns permission strings for a given actor
 "blog:*:update:own"         # Update own blogs only
 "blog:*:*:always"              # All actions on all blogs
 "*:*:read:always"              # Read all resources
-"blog:*:read*:always"          # All read-type actions (read, read_all, etc.)
+"blog:*:@read:always"          # All :read-TYPE actions (list, search, by_slug) — by type, never by name
 "!blog:*:delete:always"        # DENY delete on all blogs
 ```
 
@@ -50,6 +50,52 @@ AshGrant only needs a resolver that returns permission strings for a given actor
 
 Instance permissions with an empty scope (trailing colon) mean unconditional access.
 Instance permissions with a scope name impose an attribute-based condition.
+
+### DON'T: Use `read*` — it is a type wildcard, not a prefix glob
+
+`@read` matches any action whose **Ash action type** is `:read`, regardless of its
+name. The older `read*` spelling means exactly the same thing, but reads like a
+prefix glob and never was one — it does **not** match `read_all` by name, and it
+does match `:read`-type actions with unrelated names like `list_published`.
+
+```elixir
+# DON'T — deprecated spelling; looks like a name glob, isn't one. Removed in v1.0.0.
+"blog:*:read*:always"
+
+# DO — explicit: matches every :read-TYPE action (list, search, by_slug)
+"blog:*:@read:always"
+
+# DO — exact action NAME match, regardless of that action's type
+"blog:*:read:always"
+```
+
+Valid types are Ash's own: `@action`, `@read`, `@create`, `@update`, `@destroy`.
+Anything else silently never matches — deletion is `@destroy`, **not** `@delete`.
+
+### DON'T: Put a type wildcard on an instance permission
+
+Instance matching has no action type available, so a type wildcard on an instance
+permission never matches anything. The grant is dead and fails silently.
+
+```elixir
+# DON'T — matches nothing, ever
+"blog:post_abc123:@read:"
+
+# DO — exact action name, or the catch-all wildcard
+"blog:post_abc123:read:"
+"blog:post_abc123:*:"
+```
+
+Because permission strings live in your database rather than your source, there is
+no compile-time warning for either rule above. Find offending grants with
+`mix ash_grant.verify`, or audit your own store:
+
+```elixir
+MyApp.Role
+|> MyApp.Repo.all()
+|> Enum.flat_map(& &1.permissions)
+|> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
+```
 
 ### Field-level permissions (5-part format)
 
