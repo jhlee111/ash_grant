@@ -39,9 +39,8 @@ Generic actions (Ash actions with `type: :action`) use `Ash.ActionInput` instead
 of `Ash.Query` or `Ash.Changeset`. `check/1` handles this correctly, including
 tenant extraction from `action_input` for multi-tenant authorization.
 
-Generic actions must be authorized by **specific action name** in the permission
-string. Type wildcards do not apply because each generic action is individually
-unique:
+Generic actions are best authorized by **specific action name** in the permission
+string, because each generic action is individually unique:
 
 ```elixir
 # Grants access to the specific "ping" action only
@@ -49,7 +48,16 @@ unique:
 
 # Wildcard (*) grants access to all actions including generic ones
 "service_request:*:*:always"
+
+# The @action type wildcard grants EVERY generic action — see warning below
+"service_request:*:@action:always"
 ```
+
+> **Warning:** `@action` is a type wildcard like `@read` or `@update`, so
+> `service_request:*:@action:always` grants **every** generic action on the resource,
+> including ones added later. Since generic actions are unrelated to one another, the
+> grant that permits `:ping` also permits `:process_refund`. Prefer exact action names.
+> See [Permissions](permissions.md) for the full type-wildcard rules.
 
 Since generic actions have no target record, only non-record scopes (like
 `scope :always, true`) will pass scope evaluation.

@@ -13,7 +13,7 @@ AshGrant uses an Apache Shiro-inspired permission string format with deny-wins s
 | `!` | Optional deny prefix | `!blog:*:delete:always` |
 | resource | Resource type or `*` | `blog`, `post`, `*` |
 | instance_id | Resource instance or `*` | `*`, `post_abc123xyz789ab` |
-| action | Action name or wildcard | `read`, `*`, `read*` |
+| action | Action name or wildcard | `read`, `*`, `@read` |
 | scope | Access scope | `all`, `own`, `published`, or empty |
 | field_group | Optional column-level group | `public`, `sensitive`, `confidential` |
 
@@ -22,7 +22,7 @@ When present, only fields in the named group (and its inherited parents) are acc
 
 ## Wildcard Matching Rules
 
-| Component | `*` (all) | `type*` (action type) | Exact match |
+| Component | `*` (all) | `@type` (action type) | Exact match |
 |-----------|-----------|----------------------|-------------|
 | resource | Yes | No | Yes |
 | instance_id | Yes | No | Yes |
@@ -32,8 +32,8 @@ When present, only fields in the named group (and its inherited parents) are acc
 **Examples:**
 
 ```elixir
-"*:*:read:always"       # All resources, read action (exact name match)
-"blog:*:read*:always"   # All :read-type actions on blog (type match)
+"*:*:read:always"       # All resources, action NAMED read (exact name match)
+"blog:*:@read:always"   # All :read-TYPE actions on blog (type match)
 "blog:*:read:always"    # Only the action named "read" on blog (exact match)
 ```
 
@@ -42,38 +42,80 @@ When present, only fields in the named group (and its inherited parents) are acc
 AshGrant has two distinct action matching modes:
 
 - **`read`** (exact) — matches the action **named** `read`, regardless of its action type
-- **`read*`** (type wildcard) — matches any action whose **action type** is `:read`
+- **`@read`** (type wildcard) — matches any action whose **action type** is `:read`,
+  regardless of its name
 
-These are completely separate. `read*` does **not** match by string prefix — it only
-matches by action type.
+These are completely separate. A type wildcard **never reads the action name**: `@read`
+matches a `:read`-type action called `list_published`, and does not match an
+`:update`-type action called `read_and_bump`.
 
 | Permission | Matches | Why |
 |------------|---------|-----|
-| `post:*:read*:always` | `:list`, `:search`, `:get_by_id` | All actions with `type: :read` |
-| `post:*:update*:always` | `:publish`, `:approve`, `:archive` | All actions with `type: :update` |
+| `post:*:@read:always` | `:list`, `:search`, `:get_by_id` | All actions with `type: :read` |
+| `post:*:@update:always` | `:publish`, `:approve`, `:archive` | All actions with `type: :update` |
 | `post:*:read:always` | `:read` only | Exact action name match |
 
-This means a permission like `post:*:read*:always` grants access to **all read-type actions**
+This means a permission like `post:*:@read:always` grants access to **all read-type actions**
 on the resource, including custom ones like `:search` or `:export` if they are defined
-with `type: :read`.
+with `type: :read` — and including read actions **added later**, with no seed change.
+
+Valid types are Ash's action types: `@action`, `@read`, `@create`, `@update`, `@destroy`.
+Anything else never matches — note that deletion is `@destroy`, not `@delete`.
 
 > **Warning:** Be careful in workflows where different read actions should have different
 > access levels. For example, if `:list` shows summaries but `:read` shows full details,
-> using `read*` would grant access to both. Use exact action names instead:
+> using `@read` would grant access to both. Use exact action names instead:
 > `post:*:list:always` and `post:*:read:own`.
+
+#### The deprecated `read*` spelling
+
+Type wildcards were originally spelled `read*`, and that form still works. It is
+**deprecated** and slated for removal in v1.0.0, because the trailing `*` reads like a
+prefix glob and never was one — `read*` does not match `read_all` by name, and matches
+`:read`-type actions with entirely unrelated names.
+
+Migrate `read*` to `@read`. To find grants still using the old spelling, run
+`mix ash_grant.verify`, or check your permission store directly:
+
+```elixir
+MyApp.Role
+|> MyApp.Repo.all()
+|> Enum.flat_map(& &1.permissions)
+|> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
+```
+
+#### Type wildcards never work on instance permissions
+
+Instance matching has no action type available, so a type wildcard on an instance
+permission **never matches anything** — the grant is dead:
+
+```elixir
+"post:post_abc123:@read:"   # Dead — matches nothing, ever
+"post:post_abc123:read:"    # Use an exact action name
+"post:post_abc123:*:"       # ...or the catch-all wildcard
+```
+
+`AshGrant.Permission.diagnostics/1` flags these.
 
 ### Generic Actions
 
-Generic actions (Ash actions with `type: :action`) must be authorized by their
-**specific action name**. Type wildcards do not apply — each generic action is
-individually unique (one might send email, another processes a payment), so
-blanket type-level access is not supported.
+Generic actions (Ash actions with `type: :action`) are best authorized by their
+**specific action name**. Each generic action is individually unique — one might send
+email, another processes a payment — so blanket type-level access is rarely what you
+want.
 
 | Permission | Matches | Why |
 |------------|---------|-----|
 | `service:*:ping:always` | `:ping` only | Exact action name match |
-| `service:*:*:always` | All actions including generic | Universal wildcard |
 | `service:*:check_status:always` | `:check_status` only | Exact action name match |
+| `service:*:*:always` | All actions including generic | Universal wildcard |
+| `service:*:@action:always` | **Every** generic action | Type wildcard — see warning |
+
+> **Warning:** `@action` is a type wildcard like any other, so `service:*:@action:always`
+> grants **every** generic action on the resource — including ones added later. Because
+> generic actions are unrelated to each other, this is almost never what you want: the
+> grant that let someone `:ping` also lets them `:process_refund`. Prefer exact action
+> names for generic actions.
 
 ```elixir
 # Grant access to specific generic actions
@@ -91,7 +133,7 @@ blanket type-level access is not supported.
 "blog:*:update:own"         # Update own blogs only
 "blog:*:*:always"              # All actions on all blogs
 "*:*:read:always"              # Read all resources
-"blog:*:read*:always"          # All read-type actions
+"blog:*:@read:always"          # All :read-TYPE actions
 "!blog:*:delete:always"        # DENY delete on all blogs
 ```
 

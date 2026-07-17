@@ -47,15 +47,19 @@ defmodule AshGrant.Check do
   instead of `Ash.Query` or `Ash.Changeset`. This check correctly extracts
   tenant from `action_input` for multi-tenant authorization.
 
-  Generic actions must be authorized by their specific action name in the
-  permission string — type wildcards (`action*`) do not apply because generic
-  actions are individually unique:
+  Generic actions are best authorized by their specific action name in the
+  permission string, because generic actions are individually unique:
 
       # Permission grants access to the specific "ping" action
       "service_request:*:ping:always"
 
       # Wildcard (*) grants access to all actions including generic ones
       "service_request:*:*:always"
+
+      # The @action type wildcard grants EVERY generic action on the resource,
+      # including ones added later — the grant that permits :ping also permits
+      # :process_refund. Prefer exact action names.
+      "service_request:*:@action:always"
 
   Since generic actions have no target record, only `scope :always, true` (or
   other non-record scopes) will pass scope evaluation. Record-based scopes

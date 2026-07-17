@@ -27,7 +27,7 @@ defmodule AshGrant.Permission do
   | `!` | Deny prefix (optional) | `!` or omitted |
   | resource | Resource type | identifier, `*` |
   | instance_id | Resource instance or `*` | prefixed_id, UUID, `*` |
-  | action | Action name | identifier, `*`, `prefix*` |
+  | action | Action name | identifier, `*`, `read*` (type wildcard) |
   | scope | Access scope | `all`, `own`, custom, or empty |
   | field_group | Column-level group (optional) | `public`, `sensitive`, custom |
 
@@ -122,6 +122,21 @@ defmodule AshGrant.Permission do
           source: String.t() | nil,
           metadata: map() | nil
         }
+
+  @typedoc """
+  A syntax problem found by `diagnostics/1`.
+
+  `suggestion` is a corrected permission string when one can be inferred, otherwise `nil`.
+  """
+  @type diagnostic :: %{
+          code: :deprecated_type_wildcard | :dead_instance_type_wildcard | :unknown_action_type,
+          permission: String.t(),
+          message: String.t(),
+          suggestion: String.t() | nil
+        }
+
+  # Ash's action types, per `Ash.Resource.Actions.action_type/0`.
+  @valid_action_types ~w(action read create update destroy)
 
   @derive Jason.Encoder
   defstruct [
@@ -318,15 +333,24 @@ defmodule AshGrant.Permission do
 
   Does not consider scope - that's handled by the ScopeResolver.
 
+  This arity passes no `action_type`, so **type wildcards (`"read*"`) never match
+  here** — see `matches?/4` to use them.
+
   ## Examples
 
       iex> perm = AshGrant.Permission.parse!("blog:*:read:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "read")
       true
 
+  A type wildcard needs an action type, and this arity has none — so it matches
+  nothing, regardless of the action name. This is `false` because no type was
+  supplied, *not* because `"read_published"` failed a name comparison:
+
       iex> perm = AshGrant.Permission.parse!("blog:*:read*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "read_published")
       false
+
+  The bare `"*"` wildcard is a separate rule and is unaffected by `action_type`:
 
       iex> perm = AshGrant.Permission.parse!("blog:*:*:always")
       iex> AshGrant.Permission.matches?(perm, "blog", "delete")
@@ -339,9 +363,10 @@ defmodule AshGrant.Permission do
   @doc """
   Checks if a permission matches a resource, action, and optional Ash action type.
 
-  When `action_type` is provided, prefix patterns like `"read*"` will also match
-  actions whose Ash type equals the prefix (e.g., a `:read`-type action named
-  `list_published` matches `"read*"`).
+  Type wildcards like `"read*"` match on the Ash action *type* alone. A `:read`-type
+  action named `list_published` matches `"read*"` because of its type — never because
+  of its name. When `action_type` is `nil`, type wildcards match nothing; pass a type
+  to use them.
 
   ## Examples
 
@@ -368,6 +393,10 @@ defmodule AshGrant.Permission do
   @doc """
   Checks if a permission matches a specific resource instance.
 
+  Instance matching never has an Ash action type available, so **type wildcards
+  (`"read*"`) can never match an instance permission** — such a grant is dead: it
+  matches nothing, ever. Use `"*"` or an exact action name instead.
+
   ## Examples
 
       iex> perm = AshGrant.Permission.parse!("blog:post_abc123xyz789ab:read:")
@@ -377,6 +406,13 @@ defmodule AshGrant.Permission do
       iex> perm = AshGrant.Permission.parse!("blog:post_abc123xyz789ab:*:")
       iex> AshGrant.Permission.matches_instance?(perm, "post_abc123xyz789ab", "write")
       true
+
+  A type wildcard on an instance permission is always `false` — this grant can never
+  authorize anything:
+
+      iex> perm = AshGrant.Permission.parse!("blog:post_abc123xyz789ab:read*:")
+      iex> AshGrant.Permission.matches_instance?(perm, "post_abc123xyz789ab", "list")
+      false
 
   """
   @spec matches_instance?(t(), String.t(), String.t()) :: boolean()
@@ -411,6 +447,85 @@ defmodule AshGrant.Permission do
   def resource(%__MODULE__{resource: resource}), do: resource
 
   @doc """
+  Reports syntax problems in a permission, for offline auditing.
+
+  Permission strings are runtime data — they live in your roles table, your seeds, or
+  wherever your `AshGrant.PermissionResolver` reads from. AshGrant cannot reach that
+  store, so it exposes this check instead: run it over your own permission data to find
+  grants that need migrating.
+
+      MyApp.Role
+      |> MyApp.Repo.all()
+      |> Enum.flat_map(& &1.permissions)
+      |> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
+
+  `mix ash_grant.verify` runs this automatically over the permissions its policy tests
+  resolve. This never changes authorization behavior: a permission with diagnostics
+  still evaluates exactly as it always did.
+
+  Unparseable strings return `[]` — malformed input is `parse/1`'s business, not this
+  function's.
+
+  ## Diagnostic codes
+
+    * `:deprecated_type_wildcard` — the `"read*"` spelling. Prefer `"@read"`; the
+      trailing-`*` form is slated for removal in v1.0.0.
+    * `:dead_instance_type_wildcard` — a type wildcard on an instance permission.
+      Instance matching has no action type available, so the grant never matches
+      anything. See `matches_instance?/3`.
+    * `:unknown_action_type` — a type wildcard naming something that is not an Ash
+      action type (`:action`, `:read`, `:create`, `:update`, `:destroy`), so it never
+      matches. `"delete*"` is the common case — Ash calls that type `:destroy`.
+
+  ## Examples
+
+  A well-formed grant reports nothing:
+
+      iex> AshGrant.Permission.diagnostics("blog:*:read:always")
+      []
+
+      iex> AshGrant.Permission.diagnostics("blog:*:@read:always")
+      []
+
+  The deprecated spelling suggests its replacement:
+
+      iex> [d] = AshGrant.Permission.diagnostics("blog:*:read*:always")
+      iex> {d.code, d.suggestion}
+      {:deprecated_type_wildcard, "blog:*:@read:always"}
+
+  A type wildcard on an instance permission is dead, in either spelling:
+
+      iex> [d] = AshGrant.Permission.diagnostics("blog:post_abc123:@read:")
+      iex> d.code
+      :dead_instance_type_wildcard
+
+  `delete` is not an Ash action type, so this grant never matches:
+
+      iex> codes = "blog:*:delete*:always" |> AshGrant.Permission.diagnostics() |> Enum.map(& &1.code)
+      iex> Enum.sort(codes)
+      [:deprecated_type_wildcard, :unknown_action_type]
+
+      iex> [_, unknown] = "blog:*:delete*:always" |> AshGrant.Permission.diagnostics() |> Enum.sort_by(& &1.code)
+      iex> unknown.suggestion
+      "blog:*:@destroy:always"
+
+  """
+  @spec diagnostics(t() | String.t()) :: [diagnostic()]
+  def diagnostics(permission_string) when is_binary(permission_string) do
+    case parse(permission_string) do
+      {:ok, perm} -> diagnostics(perm)
+      {:error, _reason} -> []
+    end
+  end
+
+  def diagnostics(%__MODULE__{} = perm) do
+    case type_wildcard(perm.action) do
+      nil -> []
+      {form, type_name} -> type_wildcard_diagnostics(perm, form, type_name)
+    end
+  end
+
+  @doc """
   Checks if a resource pattern matches a resource name.
 
   Supports wildcard matching with `"*"`.
@@ -433,7 +548,11 @@ defmodule AshGrant.Permission do
   @doc """
   Checks if an action pattern matches an action name.
 
-  Supports wildcard matching with `"*"` and prefix matching with `"prefix*"`.
+  Supports the catch-all wildcard `"*"` and exact action names.
+
+  Type wildcards (`"read*"`) never match through this arity. They compare against an
+  Ash action *type*, and no type is available here — use `matches_action?/3` and pass
+  an `action_type` for those.
 
   ## Examples
 
@@ -441,9 +560,16 @@ defmodule AshGrant.Permission do
       true
       iex> AshGrant.Permission.matches_action?("read", "read")
       true
+      iex> AshGrant.Permission.matches_action?("read", "write")
+      false
+
+  `"read*"` is a **type wildcard, not a prefix glob** — it never reads the action name.
+  So it does not match `"read_all"` despite the shared prefix, and without an
+  `action_type` it matches nothing at all, not even `"read"` itself:
+
       iex> AshGrant.Permission.matches_action?("read*", "read_all")
       false
-      iex> AshGrant.Permission.matches_action?("read", "write")
+      iex> AshGrant.Permission.matches_action?("read*", "read")
       false
 
   """
@@ -453,40 +579,159 @@ defmodule AshGrant.Permission do
   @doc """
   Checks if an action pattern matches an action name, with optional Ash action type.
 
-  When `action_type` is provided and the pattern is a type wildcard like `"read*"`,
-  the match succeeds if the action type matches the prefix. This allows `"read*"` to
-  match `:read`-type actions like `list_published` or `by_slug`. Without `action_type`,
-  type wildcards never match — use exact action names instead.
+  ## Type wildcards
+
+  A type wildcard matches on the Ash action *type* and never looks at the action
+  name. Two spellings are equivalent:
+
+    * `"@read"` — **preferred.** Cannot be misread as a glob.
+    * `"read*"` — **deprecated**, removal planned for v1.0.0. The trailing `*` looks
+      like a prefix glob but never was one. Still fully supported; `mix ash_grant.verify`
+      reports grants that use it.
+
+  Because only the type is compared, a `:read`-type action named `list_published`
+  matches `"@read"`, while an `:update`-type action named `read_and_bump` does not.
+  Without an `action_type`, both forms match nothing.
+
+  The catch-all `"*"` is a separate rule: it matches any action and ignores
+  `action_type` entirely.
 
   ## Examples
 
       iex> AshGrant.Permission.matches_action?("*", "anything", :read)
       true
+      iex> AshGrant.Permission.matches_action?("@read", "list_published", :read)
+      true
+      iex> AshGrant.Permission.matches_action?("@read", "list_published", :update)
+      false
+      iex> AshGrant.Permission.matches_action?("read", "read", :read)
+      true
+
+  The deprecated `"read*"` spelling behaves identically:
+
       iex> AshGrant.Permission.matches_action?("read*", "list_published", :read)
       true
-      iex> AshGrant.Permission.matches_action?("read*", "list_published", :update)
+      iex> AshGrant.Permission.matches_action?("update*", "publish", :update)
+      true
+
+  Neither form matches without an `action_type`:
+
+      iex> AshGrant.Permission.matches_action?("@read", "read_all", nil)
       false
       iex> AshGrant.Permission.matches_action?("read*", "read_all", nil)
       false
-      iex> AshGrant.Permission.matches_action?("update*", "publish", :update)
-      true
-      iex> AshGrant.Permission.matches_action?("read", "read", :read)
-      true
 
   """
   @spec matches_action?(String.t(), String.t(), atom() | nil) :: boolean()
   def matches_action?("*", _action, _action_type), do: true
 
+  # Type wildcard, explicit form: "@read"
+  def matches_action?("@" <> type_name, _action, action_type) do
+    matches_type?(type_name, action_type)
+  end
+
   def matches_action?(pattern, action, action_type) do
     if String.ends_with?(pattern, "*") do
-      prefix = String.trim_trailing(pattern, "*")
-      action_type != nil and Atom.to_string(action_type) == prefix
+      # Type wildcard, deprecated form: "read*" — compares the type, never the name
+      pattern
+      |> String.trim_trailing("*")
+      |> matches_type?(action_type)
     else
       pattern == action
     end
   end
 
   # Private functions
+
+  # A type wildcard with no action type to compare against matches nothing.
+  defp matches_type?(_type_name, nil), do: false
+  defp matches_type?(type_name, action_type), do: Atom.to_string(action_type) == type_name
+
+  # Classifies an action pattern as a type wildcard, returning its spelling and the
+  # type it names. `"*"` is the catch-all, not a type wildcard.
+  defp type_wildcard("*"), do: nil
+  defp type_wildcard("@" <> type_name), do: {:explicit, type_name}
+
+  defp type_wildcard(action) do
+    if String.ends_with?(action, "*") do
+      {:deprecated, String.trim_trailing(action, "*")}
+    end
+  end
+
+  defp type_wildcard_diagnostics(perm, form, type_name) do
+    string = __MODULE__.to_string(perm)
+
+    deprecated_diagnostic(perm, form, type_name, string) ++
+      dead_instance_diagnostic(perm, string) ++
+      unknown_type_diagnostic(perm, type_name, string)
+  end
+
+  defp deprecated_diagnostic(_perm, :explicit, _type_name, _string), do: []
+
+  defp deprecated_diagnostic(perm, :deprecated, type_name, string) do
+    # Only suggest the spelling swap when it actually yields a working grant. If the
+    # permission has a deeper problem (dead instance grant, or a type Ash doesn't have),
+    # that diagnostic carries the real fix — suggesting `@#{type_name}` here would point
+    # at a grant that still never matches.
+    suggestion =
+      if type_name in @valid_action_types and not instance_permission?(perm) do
+        __MODULE__.to_string(%{perm | action: "@" <> type_name})
+      end
+
+    [
+      %{
+        code: :deprecated_type_wildcard,
+        permission: string,
+        message:
+          "`#{perm.action}` is a type wildcard, not a prefix glob — it compares the " <>
+            "action type and never reads the action name. The `#{perm.action}` spelling " <>
+            "is slated for removal in v1.0.0." <>
+            if(suggestion, do: " Prefer `@#{type_name}`.", else: ""),
+        suggestion: suggestion
+      }
+    ]
+  end
+
+  defp dead_instance_diagnostic(perm, string) do
+    if instance_permission?(perm) do
+      [
+        %{
+          code: :dead_instance_type_wildcard,
+          permission: string,
+          message:
+            "Type wildcard `#{perm.action}` on an instance permission never matches: " <>
+              "instance matching has no action type to compare against. Use `*` or an " <>
+              "exact action name.",
+          suggestion: nil
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp unknown_type_diagnostic(perm, type_name, string) do
+    if type_name in @valid_action_types do
+      []
+    else
+      corrected = corrected_type(type_name)
+
+      [
+        %{
+          code: :unknown_action_type,
+          permission: string,
+          message:
+            "`#{type_name}` is not an Ash action type " <>
+              "(#{Enum.join(@valid_action_types, ", ")}), so `#{perm.action}` never " <>
+              "matches." <> if(corrected, do: " Did you mean `@#{corrected}`?", else: ""),
+          suggestion: corrected && __MODULE__.to_string(%{perm | action: "@" <> corrected})
+        }
+      ]
+    end
+  end
+
+  defp corrected_type("delete"), do: "destroy"
+  defp corrected_type(_type_name), do: nil
 
   defp parse_deny_prefix("!" <> rest), do: {true, rest}
   defp parse_deny_prefix(str), do: {false, str}
