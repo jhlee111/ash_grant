@@ -539,6 +539,32 @@ defmodule AshGrant.Permission do
   end
 
   @doc """
+  Returns true when this permission's action is a type wildcard.
+
+  Type wildcards (`"@read"`, or the deprecated `"read*"`) match on the Ash action
+  **type**, so they can only be evaluated when an `action_type` is supplied. The
+  catch-all `"*"` is not a type wildcard — it matches any action without needing one.
+
+  Callers that may not have an `action_type` use this to tell "this permission did
+  not match" apart from "this permission could not be evaluated". See
+  `AshGrant.IndeterminateMatch`.
+
+  ## Examples
+
+      iex> AshGrant.Permission.type_wildcard?(AshGrant.Permission.parse!("blog:*:@read:always"))
+      true
+      iex> AshGrant.Permission.type_wildcard?(AshGrant.Permission.parse!("blog:*:read*:always"))
+      true
+      iex> AshGrant.Permission.type_wildcard?(AshGrant.Permission.parse!("blog:*:read:always"))
+      false
+      iex> AshGrant.Permission.type_wildcard?(AshGrant.Permission.parse!("blog:*:*:always"))
+      false
+
+  """
+  @spec type_wildcard?(t()) :: boolean()
+  def type_wildcard?(%__MODULE__{action: action}), do: type_wildcard(action) != nil
+
+  @doc """
   Checks if a resource pattern matches a resource name.
 
   Supports wildcard matching with `"*"`.
@@ -563,9 +589,9 @@ defmodule AshGrant.Permission do
 
   Supports the catch-all wildcard `"*"` and exact action names.
 
-  Type wildcards (`"read*"`) never match through this arity. They compare against an
-  Ash action *type*, and no type is available here — use `matches_action?/3` and pass
-  an `action_type` for those.
+  Type wildcards (`"@read"`, or the deprecated `"read*"`) never match through this
+  arity. They compare against an Ash action *type*, and no type is available here — use
+  `matches_action?/3` and pass an `action_type` for those.
 
   ## Examples
 
@@ -576,10 +602,13 @@ defmodule AshGrant.Permission do
       iex> AshGrant.Permission.matches_action?("read", "write")
       false
 
-  `"read*"` is a **type wildcard, not a prefix glob** — it never reads the action name.
-  So it does not match `"read_all"` despite the shared prefix, and without an
-  `action_type` it matches nothing at all, not even `"read"` itself:
+  `"@read"` is a **type wildcard, not a name pattern** — it never reads the action name.
+  Without an `action_type` it matches nothing at all, not even an action named `"read"`.
+  The deprecated `"read*"` spelling behaves identically, and in particular does not
+  match `"read_all"` despite the shared prefix:
 
+      iex> AshGrant.Permission.matches_action?("@read", "read")
+      false
       iex> AshGrant.Permission.matches_action?("read*", "read_all")
       false
       iex> AshGrant.Permission.matches_action?("read*", "read")

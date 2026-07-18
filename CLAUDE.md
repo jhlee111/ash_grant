@@ -59,6 +59,7 @@ mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
 - **`AshGrant.Check`** (`lib/ash_grant/checks/check.ex`) - SimpleCheck for write actions (returns true/false)
 - **`AshGrant.FilterCheck`** (`lib/ash_grant/checks/filter_check.ex`) - FilterCheck for read actions (returns filter expression)
 - **`AshGrant.PermissionValidation`** (`lib/ash_grant/permission_validation.ex`) - Validates resolved permissions and signals invalid deny+field_group combinations per the `field_group_permissions` mode (`:off`/`:warn`/`:strict`); never changes the authorization outcome
+- **`AshGrant.IndeterminateMatch`** (`lib/ash_grant/indeterminate_match.ex`) - Signals when an `Evaluator` entry point returns a value that couldn't actually be determined: a type wildcard evaluated with no `action_type` is silently skipped, so the answer may be wrong (#126, layer 2). Wraps every nil-defaulting entry point (`has_access?`, `get_scope`, `get_all_scopes`, `get_write_scopes`, `get_field_group`, `get_all_field_groups`, `find_matching`, `field_group_grants`). Mode `:off`/`:warn`/`:strict` via `config :ash_grant, indeterminate_type_wildcard:`; never changes the outcome. **Sound by construction**: `guard/6` recomputes the result with the skipped wildcards forced to match and signals only if it differs — so a scope-less/group-less wildcard or a concrete-deny-settled query stays silent (no false positives, which would break `:strict`). `get_matching_instance_ids` is unguarded on purpose (it sees only instance perms, where type wildcards are dead per `diagnostics/1`, not indeterminate)
 - **`AshGrant.FieldFilterCheck`** (`lib/ash_grant/checks/field_filter_check.ex`) - FilterCheck for **per-record** field-group visibility; generated into `field_policies` by `AddFieldPolicies`. Builds a per-row predicate from `Evaluator.field_group_grants/5` (a field is visible on some records, `%Ash.ForbiddenField{}` on others)
 - **`AshGrant.FieldCheck`** (`lib/ash_grant/checks/field_check.ex`) - legacy action-wide SimpleCheck for field groups (superseded by `FieldFilterCheck` in generation; still present)
 
@@ -106,6 +107,11 @@ mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
   type: `@read` / `@create` / `@update` / `@destroy` / `@action`. A type wildcard never
   reads the action name. The older `read*` spelling means the same thing but is
   deprecated (removal at v1.0.0) — it looks like a prefix glob and never was one.
+  A type wildcard can only be evaluated when an `action_type` is supplied; calling
+  `Evaluator` directly without one silently skips it and may return a wrong answer
+  (`AshGrant.IndeterminateMatch` signals this — see #126, layer 2). Framework checks
+  always pass the type; prefer `Introspect.can?/4` (takes the resource module) in your
+  own code.
 - Permission strings are **runtime data** from the `PermissionResolver` (roles table,
   seeds), not DSL — so there is no compile-time site to validate them. Deprecated/dead
   syntax is reported offline instead, via `AshGrant.Permission.diagnostics/1` and
