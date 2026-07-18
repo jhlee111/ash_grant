@@ -166,8 +166,7 @@ defmodule AshGrant.Calculation.CanPerform do
     # Combine all filters with OR (same logic as FilterCheck)
     all_filters =
       ([rbac_filter, instance_filter] ++ parent_filters)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.reject(&(&1 == false))
+      |> Enum.reject(&(is_nil(&1) or &1 == false))
 
     case all_filters do
       [] -> expr(false)
@@ -214,20 +213,24 @@ defmodule AshGrant.Calculation.CanPerform do
         )
 
       if parent_ids != [] do
-        relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
-        fk_field = relationship.source_attribute
-        parent_dest_field = relationship.destination_attribute
-        parent_instance_key = AshGrant.Info.instance_key(parent_resource)
-
-        if parent_instance_key == parent_dest_field do
-          [expr(^ref(fk_field) in ^parent_ids)]
-        else
-          [expr(exists(^[scope_through.relationship], ^ref(parent_instance_key) in ^parent_ids))]
-        end
+        [parent_instance_expr(resource, scope_through, parent_resource, parent_ids)]
       else
         []
       end
     end)
+  end
+
+  defp parent_instance_expr(resource, scope_through, parent_resource, parent_ids) do
+    relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
+    fk_field = relationship.source_attribute
+    parent_dest_field = relationship.destination_attribute
+    parent_instance_key = AshGrant.Info.instance_key(parent_resource)
+
+    if parent_instance_key == parent_dest_field do
+      expr(^ref(fk_field) in ^parent_ids)
+    else
+      expr(exists(^[scope_through.relationship], ^ref(parent_instance_key) in ^parent_ids))
+    end
   end
 
   defp resolve_parent_resource(resource, scope_through) do

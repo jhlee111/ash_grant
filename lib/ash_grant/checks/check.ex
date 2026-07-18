@@ -351,37 +351,55 @@ defmodule AshGrant.Check do
       record = get_target_record(authorizer)
 
       Enum.any?(scope_throughs, fn scope_through ->
-        # Check action filter
-        action_allowed =
-          scope_through.actions == nil or
-            action_type_atom(action_name, action_type) in scope_through.actions
-
-        if action_allowed do
-          parent_resource = resolve_parent_resource(resource_module, scope_through)
-          parent_resource_name = AshGrant.Info.resource_name(parent_resource)
-
-          parent_ids =
-            AshGrant.Evaluator.get_matching_instance_ids(
-              permissions,
-              parent_resource_name,
-              action_name,
-              action_type
-            )
-
-          if parent_ids != [] and record do
-            relationship =
-              Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
-
-            fk_field = relationship.source_attribute
-            fk_value = to_string(Map.get(record, fk_field))
-            fk_value in parent_ids
-          else
-            false
-          end
-        else
-          false
-        end
+        scope_through_grants_write?(
+          scope_through,
+          resource_module,
+          permissions,
+          action_name,
+          action_type,
+          record
+        )
       end)
+    end
+  end
+
+  defp scope_through_grants_write?(
+         scope_through,
+         resource_module,
+         permissions,
+         action_name,
+         action_type,
+         record
+       ) do
+    # Check action filter
+    action_allowed =
+      scope_through.actions == nil or
+        action_type_atom(action_name, action_type) in scope_through.actions
+
+    if action_allowed do
+      parent_resource = resolve_parent_resource(resource_module, scope_through)
+      parent_resource_name = AshGrant.Info.resource_name(parent_resource)
+
+      parent_ids =
+        AshGrant.Evaluator.get_matching_instance_ids(
+          permissions,
+          parent_resource_name,
+          action_name,
+          action_type
+        )
+
+      if parent_ids != [] and record do
+        relationship =
+          Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
+
+        fk_field = relationship.source_attribute
+        fk_value = to_string(Map.get(record, fk_field))
+        fk_value in parent_ids
+      else
+        false
+      end
+    else
+      false
     end
   end
 

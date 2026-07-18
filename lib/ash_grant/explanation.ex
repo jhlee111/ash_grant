@@ -306,7 +306,7 @@ defmodule AshGrant.Explanation do
   defp resolve_arguments_section(explanation, color) do
     entries =
       Enum.map_join(explanation.resolve_arguments, "\n", fn entry ->
-        path = entry.from_path |> Enum.map(&inspect/1) |> Enum.join(" → ")
+        path = Enum.map_join(entry.from_path, " → ", &inspect/1)
         scopes = entry.scopes_needing |> Enum.map_join(", ", &inspect/1)
 
         scope_hint =
