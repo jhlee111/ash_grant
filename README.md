@@ -33,7 +33,7 @@ Add `ash_grant` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ash_grant, "~> 0.18"}
+    {:ash_grant, "~> 0.19"}
   ]
 end
 ```

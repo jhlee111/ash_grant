@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-07-17
+
+### Added
+
+- **Indeterminate type-wildcard evaluation is now signaled** (#126). A type wildcard matches on the Ash action **type**, so an `Evaluator` entry point called without an `action_type` cannot evaluate it. Previously it silently skipped the wildcard and fabricated an answer — a `false` that means "could not tell", indistinguishable from a real deny, so the same actor and grant got opposite answers from the two APIs (`Introspect.can?(Document, :read, actor)` → allow; `Evaluator.has_access?(perms, "document", "read")` → `false`), which in practice forced defensive `@read` + literal `read` grant pairs. In the deny direction the skip is fail-open: a skipped `!…:@read:…` deny leaves `true` standing. The new `AshGrant.IndeterminateMatch` recomputes the result with the skipped RBAC type wildcards forced to match and signals only if that changes the answer — sound by construction, so defensive wildcard+literal pairs, wildcards that contribute nothing, and queries already settled by a concrete deny stay silent. Severity is configurable, mirroring `field_group_permissions`:
+
+      config :ash_grant, indeterminate_type_wildcard: :warn   # :off | :warn (default) | :strict
+
+  `:warn` logs, `:strict` raises, `:off` disables — and **authorization outcomes never change** in any mode. All eight nil-defaulting entry points are guarded (`has_access?`, `get_scope`, `get_all_scopes`, `get_write_scopes`, `get_field_group`, `get_all_field_groups`, `find_matching`, `field_group_grants`). Framework-generated policies always pass the action type and are unaffected; the signal concerns direct `Evaluator` calls — in application code, prefer `AshGrant.Introspect.can?/4`, which takes the resource module and resolves the type itself. `get_matching_instance_ids/4` is deliberately unguarded; the pre-existing instance-path inconsistency that decision surfaced is tracked in #131.
+
+### Changed
+
+- Type-wildcard documentation and examples now lead with the `@read` spelling (`AshGrant.Permission`, the `AshGrant.Evaluator` moduledoc, `usage-rules.md`, `guides/permissions.md`), with `read*` shown only as the deprecated equivalent.
+
 ## [0.18.0] - 2026-07-17
 
 ### Added
