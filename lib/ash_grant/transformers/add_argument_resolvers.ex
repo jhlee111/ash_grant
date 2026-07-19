@@ -46,20 +46,24 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
         {:ok, dsl_state}
 
       declarations ->
-        resource = Transformer.get_persisted(dsl_state, :module)
-        arg_map = build_arg_map(dsl_state)
-
-        Enum.reduce_while(declarations, {:ok, dsl_state}, fn decl, {:ok, state} ->
-          with :ok <- validate_referenced_by_scope(decl, arg_map, resource),
-               {:ok, leaf_type} <- validate_and_resolve_path(state, decl, resource),
-               {:ok, new_state} <-
-                 install_on_actions(state, decl, leaf_type, arg_map, resource) do
-            {:cont, {:ok, new_state}}
-          else
-            {:error, reason} -> {:halt, {:error, reason}}
-          end
-        end)
+        install_declarations(dsl_state, declarations)
     end
+  end
+
+  defp install_declarations(dsl_state, declarations) do
+    resource = Transformer.get_persisted(dsl_state, :module)
+    arg_map = build_arg_map(dsl_state)
+
+    Enum.reduce_while(declarations, {:ok, dsl_state}, fn decl, {:ok, state} ->
+      with :ok <- validate_referenced_by_scope(decl, arg_map, resource),
+           {:ok, leaf_type} <- validate_and_resolve_path(state, decl, resource),
+           {:ok, new_state} <-
+             install_on_actions(state, decl, leaf_type, arg_map, resource) do
+        {:cont, {:ok, new_state}}
+      else
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
   end
 
   # Compute %{arg_name => [scope_names]} by walking all scope filters in the
@@ -89,16 +93,16 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
       _ ->
         parents = scope.inherits || []
 
-        parent_filters =
-          Enum.map(parents, fn parent_name ->
-            find_scope(dsl_state, parent_name)
-            |> case do
-              nil -> true
-              parent -> resolve_scope_in_dsl(dsl_state, parent)
-            end
-          end)
+        parent_filters = Enum.map(parents, &resolve_parent_filter(dsl_state, &1))
 
         combine(parent_filters, base)
+    end
+  end
+
+  defp resolve_parent_filter(dsl_state, parent_name) do
+    case find_scope(dsl_state, parent_name) do
+      nil -> true
+      parent -> resolve_scope_in_dsl(dsl_state, parent)
     end
   end
 

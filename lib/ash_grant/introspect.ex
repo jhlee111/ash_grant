@@ -271,19 +271,23 @@ defmodule AshGrant.Introspect do
   defp load_actor_for(resource, actor_id) do
     case Info.resolver(resource) do
       resolver when is_atom(resolver) and not is_nil(resolver) ->
-        Code.ensure_loaded(resolver)
-
-        if function_exported?(resolver, :load_actor, 1) do
-          case resolver.load_actor(actor_id) do
-            {:ok, actor} -> {:ok, actor}
-            :error -> {:error, :actor_not_found}
-          end
-        else
-          {:error, :actor_loader_not_implemented}
-        end
+        load_actor_via(resolver, actor_id)
 
       _ ->
         {:error, :actor_loader_not_implemented}
+    end
+  end
+
+  defp load_actor_via(resolver, actor_id) do
+    Code.ensure_loaded(resolver)
+
+    if function_exported?(resolver, :load_actor, 1) do
+      case resolver.load_actor(actor_id) do
+        {:ok, actor} -> {:ok, actor}
+        :error -> {:error, :actor_not_found}
+      end
+    else
+      {:error, :actor_loader_not_implemented}
     end
   end
 
@@ -578,17 +582,7 @@ defmodule AshGrant.Introspect do
   defp has_parent_instance_access?(resource, permissions, action_name, action_type) do
     Info.scope_throughs(resource)
     |> Enum.any?(fn scope_through ->
-      parent_resource =
-        case scope_through.resource do
-          nil ->
-            case Ash.Resource.Info.relationship(resource, scope_through.relationship) do
-              nil -> nil
-              rel -> rel.destination
-            end
-
-          explicit ->
-            explicit
-        end
+      parent_resource = scope_through_parent_resource(resource, scope_through)
 
       if parent_resource do
         parent_resource_name = Info.resource_name(parent_resource)
@@ -606,6 +600,19 @@ defmodule AshGrant.Introspect do
         false
       end
     end)
+  end
+
+  defp scope_through_parent_resource(resource, scope_through) do
+    case scope_through.resource do
+      nil ->
+        case Ash.Resource.Info.relationship(resource, scope_through.relationship) do
+          nil -> nil
+          rel -> rel.destination
+        end
+
+      explicit ->
+        explicit
+    end
   end
 
   @doc """

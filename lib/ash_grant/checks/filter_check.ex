@@ -282,28 +282,45 @@ defmodule AshGrant.FilterCheck do
     if has_global_access do
       true
     else
-      # Collect all OR-able filter components
-      rbac_filter =
-        if scopes != [] do
-          build_combined_filter(scopes, scope_resolver, context)
-        end
+      combine_filter_components(
+        scopes,
+        instance_ids,
+        instance_key,
+        parent_filters,
+        scope_resolver,
+        context
+      )
+    end
+  end
 
-      instance_filter =
-        if instance_ids != [] do
-          build_instance_filter(instance_ids, instance_key)
-        end
-
-      # Combine all filters with OR
-      all_filters =
-        ([rbac_filter, instance_filter] ++ parent_filters)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.reject(&(&1 == false))
-
-      case all_filters do
-        [] -> false
-        [single] -> single
-        [first | rest] -> Enum.reduce(rest, first, &Ash.Expr.expr(^&2 or ^&1))
+  defp combine_filter_components(
+         scopes,
+         instance_ids,
+         instance_key,
+         parent_filters,
+         scope_resolver,
+         context
+       ) do
+    # Collect all OR-able filter components
+    rbac_filter =
+      if scopes != [] do
+        build_combined_filter(scopes, scope_resolver, context)
       end
+
+    instance_filter =
+      if instance_ids != [] do
+        build_instance_filter(instance_ids, instance_key)
+      end
+
+    # Combine all filters with OR
+    all_filters =
+      ([rbac_filter, instance_filter] ++ parent_filters)
+      |> Enum.reject(&(is_nil(&1) or &1 == false))
+
+    case all_filters do
+      [] -> false
+      [single] -> single
+      [first | rest] -> Enum.reduce(rest, first, &Ash.Expr.expr(^&2 or ^&1))
     end
   end
 
@@ -335,26 +352,28 @@ defmodule AshGrant.FilterCheck do
         )
 
       if parent_ids != [] do
-        relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
-        fk_field = relationship.source_attribute
-        parent_dest_field = relationship.destination_attribute
-        parent_instance_key = AshGrant.Info.instance_key(parent_resource)
-
-        if parent_instance_key == parent_dest_field do
-          # Simple case: parent's instance_key matches the FK destination (usually :id)
-          [Ash.Expr.expr(^ref(fk_field) in ^parent_ids)]
-        else
-          # Complex case: parent's instance_key differs from PK, need a join
-          [
-            Ash.Expr.expr(
-              exists(^[scope_through.relationship], ^ref(parent_instance_key) in ^parent_ids)
-            )
-          ]
-        end
+        [parent_instance_expr(resource_module, scope_through, parent_resource, parent_ids)]
       else
         []
       end
     end)
+  end
+
+  defp parent_instance_expr(resource_module, scope_through, parent_resource, parent_ids) do
+    relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
+    fk_field = relationship.source_attribute
+    parent_dest_field = relationship.destination_attribute
+    parent_instance_key = AshGrant.Info.instance_key(parent_resource)
+
+    if parent_instance_key == parent_dest_field do
+      # Simple case: parent's instance_key matches the FK destination (usually :id)
+      Ash.Expr.expr(^ref(fk_field) in ^parent_ids)
+    else
+      # Complex case: parent's instance_key differs from PK, need a join
+      Ash.Expr.expr(
+        exists(^[scope_through.relationship], ^ref(parent_instance_key) in ^parent_ids)
+      )
+    end
   end
 
   defp resolve_parent_resource(resource_module, scope_through) do
