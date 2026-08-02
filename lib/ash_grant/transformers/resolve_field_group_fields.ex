@@ -38,7 +38,6 @@ defmodule AshGrant.Transformers.ResolveFieldGroupFields do
   def before?(_), do: false
 
   @impl true
-  def after?(AshGrant.Transformers.ValidateScopes), do: true
   def after?(_), do: false
 
   @impl true

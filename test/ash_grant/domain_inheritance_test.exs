@@ -200,27 +200,93 @@ defmodule AshGrant.DomainInheritanceTest do
   # ── validation ───────────────────────────────────────────
 
   describe "validation" do
-    test "compile error when no resolver in resource or domain" do
-      assert_raise Spark.Error.DslError, ~r/No resolver configured/, fn ->
-        defmodule NoResolverResource do
-          use Ash.Resource,
-            domain: AshGrant.Test.Domain,
-            data_layer: Ash.DataLayer.Ets,
-            extensions: [AshGrant]
+    test "compile warning when no resolver in resource or domain" do
+      # The compile-time check is a Spark verifier. Spark wraps verifier
+      # failures in `Spark.Warning.warn` (see the `catch` in
+      # `Spark.Dsl.__verify_spark_dsl__/1`), so the "no resolver"
+      # DslError surfaces as a compile warning rather than a compile error.
+      warnings =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          defmodule NoResolverResource do
+            use Ash.Resource,
+              domain: AshGrant.Test.Domain,
+              data_layer: Ash.DataLayer.Ets,
+              extensions: [AshGrant]
 
-          ash_grant do
-            scope(:always, true)
+            ash_grant do
+              scope(:always, true)
+            end
+
+            attributes do
+              uuid_primary_key(:id)
+            end
+
+            actions do
+              defaults([:read])
+            end
+          end
+        end)
+
+      assert warnings =~ "No resolver configured"
+    end
+
+    test "runtime guard raises with a clear error when no resolver is configured" do
+      domain_name =
+        Module.concat(__MODULE__, "NoResolverDomain#{System.unique_integer([:positive])}")
+
+      module_name =
+        Module.concat(__MODULE__, "NoResolverPost#{System.unique_integer([:positive])}")
+
+      warnings =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          Code.compile_string("""
+          defmodule #{inspect(domain_name)} do
+            use Ash.Domain, validate_config_inclusion?: false
+
+            resources do
+              resource(#{inspect(module_name)})
+            end
           end
 
-          attributes do
-            uuid_primary_key(:id)
-          end
+          defmodule #{inspect(module_name)} do
+            use Ash.Resource,
+              domain: #{inspect(domain_name)},
+              data_layer: Ash.DataLayer.Ets,
+              authorizers: [Ash.Policy.Authorizer],
+              extensions: [AshGrant]
 
-          actions do
-            defaults([:read])
+            ash_grant do
+              default_policies(true)
+              scope(:always, true)
+            end
+
+            attributes do
+              uuid_primary_key(:id)
+              attribute(:title, :string, public?: true, allow_nil?: false)
+            end
+
+            actions do
+              defaults([:read, :destroy, create: :*, update: :*])
+            end
           end
+          """)
+        end)
+
+      assert warnings =~ "No resolver configured"
+
+      # The verifier still surfaces the misconfiguration, but because the
+      # module is compiled inside the test it no longer breaks CI's global
+      # warnings-as-errors compile step. Attempting to authorize an action on
+      # it must raise our runtime guard message. Ash wraps the ArgumentError in
+      # Ash.Error.Unknown, so we assert on the wrapped error's message.
+      error =
+        assert_raise Ash.Error.Unknown, fn ->
+          module_name
+          |> Ash.Changeset.for_create(:create, %{title: "t"}, actor: %{})
+          |> Ash.create!()
         end
-      end
+
+      assert Exception.message(error) =~ "no resolver configured"
     end
   end
 
