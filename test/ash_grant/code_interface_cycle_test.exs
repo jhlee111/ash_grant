@@ -21,6 +21,8 @@ defmodule AshGrant.CodeInterfaceCycleTest do
     end
 
     test "domain code_interface is generated" do
+      Code.ensure_loaded!(CodeInterfaceCycleDomain)
+
       assert function_exported?(
                CodeInterfaceCycleDomain,
                :create_code_interface_cycle_post,

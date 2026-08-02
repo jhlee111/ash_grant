@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-08-02
+
+Ports the compile-cycle fix from the [team-alembic fork](https://github.com/team-alembic/ash_grant/pull/4), authored by Barnabas Jovanovics and Conor Sinclair. The `:always` → `:all` scope renaming that fork also carries is **not** included — this project's `:always` convention and the `@read` type-wildcard spelling are unchanged.
+
+### Breaking Changes
+
+- **A missing resolver no longer fails the build.** `AshGrant.Transformers.ValidateResolverPresent` and `AshGrant.Transformers.ValidateScopes` became `AshGrant.Verifiers.ValidateResolverPresent` and `AshGrant.Verifiers.ValidateScopes`. Verifiers run post-compile, which is what lets them reach into the domain without closing a compile cycle — but Spark surfaces verifier errors as compile **warnings**, not errors. So a resource with no resolver (on itself or its domain) now *compiles* — emitting a `No resolver configured` warning — and instead raises the first time authorization runs against it. `AshGrant.Check` raises `ArgumentError`, which Ash wraps, so what a caller rescues is `Ash.Error.Unknown` carrying the message `no resolver configured for …`.
+
+  If you relied on the compile error as your gate, make the warning one: build with `--warnings-as-errors`, or fail CI on the verifier's output. A misconfiguration that used to stop the build now reaches runtime.
+
+  The namespace move is itself breaking: anything naming `AshGrant.Transformers.ValidateResolverPresent` or `AshGrant.Transformers.ValidateScopes` directly must be updated.
+
+- **`AshGrant.Transformers.MergeDomainConfig` is removed.** Domain-level `ash_grant` config is no longer folded into the resource's DSL state at compile time. It is resolved at runtime instead: `AshGrant.Info.resolver/1` falls back to the domain when the resource declares none, and `AshGrant.Info.scopes/1` merges resource and domain scopes with resource precedence.
+
+  Configuration outcomes are unchanged. What changes is where the merged value lives: code that read domain-inherited config straight out of Spark DSL state — `Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :resolver)`, `get_entities(resource, [:ash_grant])` — now sees only what the resource itself declares. Read through `AshGrant.Info` instead.
+
+### Fixed
+
+- **Compile deadlock when a domain combined `AshGrant.Domain` with a `code_interface` block.** A resource using `AshGrant`, on a domain that both used `AshGrant.Domain` and declared `code_interface do define … end`, deadlocked: the resource's `MergeDomainConfig` transformer forced the domain to compile so it could read the domain's `ash_grant` DSL, while the domain's `code_interface` transformer was waiting on the resource. `define` calls `Ash.CodeInterface.require_action/2` at compile time, so the wait is mutual and the compiler reports `deadlocked waiting on module …` for every resource in the cycle.
+
+  The cycle did not need the resource carrying the `define` to be AshGrant-extended itself — a domain-level `define` on any resource that compile-depends on an extended sibling was enough to close it, which is why the failure often surfaced far from the resource that was actually configured.
+
+  Moving the merge to runtime and the validations to verifiers removes both compile-time edges. `test/ash_grant/code_interface_cycle_test.exs` pins the combination.
+
 ## [0.19.0] - 2026-07-17
 
 ### Added
