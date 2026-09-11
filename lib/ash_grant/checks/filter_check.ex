@@ -401,22 +401,26 @@ defmodule AshGrant.FilterCheck do
   defp build_combined_filter(scopes, scope_resolver, context) do
     resource = context.resource
 
-    filters =
-      scopes
-      |> Enum.map(&resolve_scope(resource, scope_resolver, &1, context))
-      |> Enum.reject(&(&1 == true))
+    filters = Enum.map(scopes, &resolve_scope(resource, scope_resolver, &1, context))
 
-    case filters do
-      [] ->
-        # All scopes resolved to true
-        true
+    if true in filters do
+      # `true OR anything` is `true`. A scope whose filter resolves to `true`
+      # absorbs the union whatever it is NAMED — only always/all/global
+      # short-circuit earlier, by name (#149).
+      true
+    else
+      case filters do
+        [] ->
+          # No scopes to combine
+          true
 
-      [single] ->
-        single
+        [single] ->
+          single
 
-      multiple ->
-        # Combine with OR
-        combine_with_or(multiple)
+        multiple ->
+          # Combine with OR
+          combine_with_or(multiple)
+      end
     end
   end
 

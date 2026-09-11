@@ -251,15 +251,18 @@ defmodule AshGrant.Calculation.CanPerform do
   defp build_rbac_filter([], _scope_resolver, _resource), do: nil
 
   defp build_rbac_filter(scopes, scope_resolver, resource) do
-    filters =
-      scopes
-      |> Enum.map(&resolve_scope(resource, scope_resolver, &1))
-      |> Enum.reject(&(&1 == true))
+    filters = Enum.map(scopes, &resolve_scope(resource, scope_resolver, &1))
 
-    case filters do
-      [] -> true
-      [single] -> single
-      multiple -> Enum.reduce(multiple, fn filter, acc -> expr(^acc or ^filter) end)
+    # A scope whose filter resolves to `true` absorbs the OR union whatever it
+    # is NAMED — only always/all/global short-circuit by name (#149).
+    if true in filters do
+      true
+    else
+      case filters do
+        [] -> true
+        [single] -> single
+        multiple -> Enum.reduce(multiple, fn filter, acc -> expr(^acc or ^filter) end)
+      end
     end
   end
 

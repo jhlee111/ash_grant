@@ -128,10 +128,15 @@ defmodule AshGrant.FieldFilterCheck do
   defp global_access?(scopes), do: "always" in scopes or "all" in scopes or "global" in scopes
 
   defp build_rbac_filter(scopes, scope_resolver, resource) do
-    scopes
-    |> Enum.map(&resolve_scope(resource, scope_resolver, &1))
-    |> Enum.reject(&(&1 == true))
-    |> or_combine(true)
+    filters = Enum.map(scopes, &resolve_scope(resource, scope_resolver, &1))
+
+    # A scope whose filter resolves to `true` absorbs the OR union whatever it
+    # is NAMED — only always/all/global short-circuit by name (#149).
+    if true in filters do
+      true
+    else
+      or_combine(filters, true)
+    end
   end
 
   # OR-combine a list of Ash expressions, returning `empty` when the list is empty.
