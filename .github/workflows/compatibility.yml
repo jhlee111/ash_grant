@@ -25,7 +25,7 @@ env:
 jobs:
   # Test with latest compatible versions (deps unlock)
   latest:
-    name: Latest Deps (Elixir ${{ matrix.elixir }})
+    name: Latest Deps (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
     if: github.event_name == 'schedule' || (github.event.inputs.ash_version == '' && github.event.inputs.spark_version == '')
     runs-on: ubuntu-latest
 
@@ -40,6 +40,10 @@ jobs:
       matrix:
         include:
           - elixir: "1.18.4"
+            otp: "27"
+          - elixir: "1.18.4"
+            otp: "28"
+          - elixir: "1.20.4"
             otp: "27"
           - elixir: "1.20.4"
             otp: "28"
