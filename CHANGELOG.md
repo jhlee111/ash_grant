@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.1] - 2026-09-12
+
+### Fixed
+
+- **A scope whose expression resolves to `true` was dropped from the read-side `OR` union unless the scope happened to be named `always`, `all` or `global`** ([#149](https://github.com/jhlee111/ash_grant/issues/149)). `AshGrant.FilterCheck`, `AshGrant.FieldFilterCheck` and `AshGrant.Calculation.CanPerform` each rejected `true` from the resolved filter list before combining what was left, so `true OR narrowing` collapsed to `narrowing` — the opposite of what `OR` means.
+
+  An actor holding both `post:*:read:everything` (declared `scope :everything, true`) and `post:*:read:mine` therefore read only their own rows: a filter narrower than either grant alone. The three sites now let a resolved `true` absorb the union.
+
+  The bug failed closed, so it surfaced as missing rows, a field group hidden on rows that should show it, or a `can_*?` calculation answering `false` — never as a leak. Write actions were already correct: `AshGrant.Check` OR-composes with `Enum.any?/2`, where a scope resolving to `true` passes ([#123](https://github.com/jhlee111/ash_grant/issues/123)). Fixing `CanPerform` therefore also closes an asymmetry where the UI said `false` for records the write path authorizes.
+
+  The `always`/`all`/`global` name check is unchanged and still short-circuits before any scope is resolved. It is now only a fast path: **what makes a `true` scope work is its value, not its name.** Scopes named by the [naming convention](guides/scope-naming-convention.md) keep behaving exactly as before.
+
+  The three sites that combine with `AND`, where dropping `true` is correct, are untouched: scope inheritance in `AshGrant.Info` and `AddArgumentResolvers.combine/2`.
+
 ## [0.20.0] - 2026-08-02
 
 Ports the compile-cycle fix from the [team-alembic fork](https://github.com/team-alembic/ash_grant/pull/4), authored by Barnabas Jovanovics and Conor Sinclair. The `:always` → `:all` scope renaming that fork also carries is **not** included — this project's `:always` convention and the `@read` type-wildcard spelling are unchanged.

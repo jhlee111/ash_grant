@@ -53,7 +53,9 @@ defmodule AshGrant.FilterCheck do
      returns `true` (no filter needed)
   4. **Resolve scopes to filters**: Uses inline scope DSL or `ScopeResolver`
      to get filter expressions
-  5. **Combine filters**: Combines all filters with OR logic
+  5. **Combine filters**: Combines all filters with OR logic. A filter that
+     resolved to `true` absorbs the union — `true OR anything` is `true` —
+     whatever the scope is named; step 3 is only a by-name fast path (#149)
 
   ## Multi-Scope Support
 

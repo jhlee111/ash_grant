@@ -152,10 +152,13 @@ At load time, `expression/2` runs **once** with the actor in context:
    the parent's `instance_key` differs from the relationship's
    destination attribute).
 5. Combine everything with `OR`. Shortcuts:
-   - Any scope resolves to `true` (`:always` — the recommended name; the
-     runtime also accepts `:all` and `:global` as synonyms for backward
-     compatibility) → the calculation is literally `expr(true)` and
-     collapses to a `SELECT true`.
+   - Any scope's expression resolves to `true` → the calculation is
+     literally `expr(true)` and collapses to a `SELECT true`. This is a
+     property of the **value**, not of the scope's name: a scope declared
+     `scope :everything, true` absorbs the union exactly like `:always`
+     does (#149, fixed in v0.20.1). The names `:always` (recommended),
+     `:all` and `:global` short-circuit one step earlier, by name alone,
+     without resolving the scope at all.
    - No scopes, no instance IDs, no parent filters → `expr(false)`.
    - Actor is `nil` → `expr(false)` (no permissions evaluated).
 
