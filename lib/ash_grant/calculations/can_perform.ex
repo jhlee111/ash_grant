@@ -258,13 +258,16 @@ defmodule AshGrant.Calculation.CanPerform do
     if true in filters do
       true
     else
-      case filters do
-        [] -> true
-        [single] -> single
-        multiple -> Enum.reduce(multiple, fn filter, acc -> expr(^acc or ^filter) end)
-      end
+      or_combine(filters)
     end
   end
+
+  # OR-combine resolved scope filters; no scopes left to combine means no
+  # restriction. Mirrors FieldFilterCheck.or_combine/2 with `empty` fixed to
+  # `true`.
+  defp or_combine([]), do: true
+  defp or_combine([single]), do: single
+  defp or_combine([first | rest]), do: Enum.reduce(rest, first, &expr(^&2 or ^&1))
 
   # Scope resolution (mirrors FilterCheck's resolve_scope)
   # Context is not needed here because resolve_scope_filter returns raw
