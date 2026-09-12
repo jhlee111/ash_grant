@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The minimum supported Ash is now `~> 3.33` (was `~> 3.19`).** Every Ash release below 3.33 carries published security advisories — `mix hex.audit` reports 19 against 3.24.1, the version this project had locked, including one HIGH. There is no version below 3.33 to fall back to, so the floor moves rather than being held for compatibility. `mix.lock` was regenerated at the same time; `mix hex.audit` now reports no advisories at all (`ash_postgres` 2.9.0 → 2.13.1, `ash_sql` 0.6.0 → 0.7.3, `postgrex` 0.22.0 → 0.22.4, plus transitive `mint`, `req`, `hpax`, `decimal`, `ymlr`).
+
+  Consumers pinned below Ash 3.33 must upgrade Ash to take this release. AshGrant's own code needed no change for it: the suite passes unmodified against Ash 3.33.3 / AshPostgres 2.13.1 / Spark 2.7.2.
+
+### Fixed
+
+- **The weekly `Compatibility` workflow, failing on `main` since at least 2026-07-20.** Both of its jobs were broken, for unrelated reasons:
+
+  - *Latest Deps* failed at compile. Newer Ash requires `config :ash, :default_string_length_count` to be set and raises a `Spark.Error.DslError` when it is not; this project never set it. Now set to `:codepoints` in `config/config.exs`, which counts the way SQL data layers do, so `max_length` means the same thing in validation and in the database.
+  - *Ash Floor* failed before it started. The job resolved the floor version against the committed `mix.lock`, where `ash_postgres` required a much newer Ash than the floor allowed — an unsatisfiable set, so `mix deps.get` exited on a Hex resolution error. The job now unlocks first, as the *Latest Deps* job already did.
+
 ## [0.20.1] - 2026-09-12
 
 ### Fixed
