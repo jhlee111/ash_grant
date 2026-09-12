@@ -66,7 +66,10 @@ jobs:
   # Test with minimum supported Ash version (floor)
   floor:
     name: Ash Floor (3.33)
-    if: github.event_name == 'schedule'
+    # Also runs on a blank workflow_dispatch. Schedule-only meant this job
+    # could not be exercised on demand, which is how it stayed broken from
+    # 2026-07 to 2026-09 — a fix could not be verified before merging it.
+    if: github.event_name == 'schedule' || (github.event.inputs.ash_version == '' && github.event.inputs.spark_version == '')
     runs-on: ubuntu-latest
 
     services:
