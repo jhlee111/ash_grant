@@ -52,9 +52,20 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
     test "field policies use FieldFilterCheck with correct field_group" do
       field_policies = Ash.Policy.Info.field_policies(AshGrant.Test.SensitiveRecord)
 
-      # Find the policy for public fields
-      public_policy = Enum.find(field_policies, &(:name in &1.fields))
-      assert public_policy != nil
+      # Select by exact field set, not by `:name in fields`: the `:*` catch-all
+      # expands to every non-pkey field, so it contains `:name` too, and which
+      # of the two a positional `Enum.find/2` returns depends on the order Ash
+      # hands them back — which differs between OTP 27 and OTP 28. Order does
+      # not affect authorization (Ash requires every field policy that applies
+      # to a field to pass), so the test, not the ordering, was the defect.
+      public_fields = Enum.sort([:name, :department, :position])
+
+      public_policy =
+        Enum.find(field_policies, &(Enum.sort(&1.fields) == public_fields))
+
+      assert public_policy != nil,
+             "no field policy covers exactly the :public group, got " <>
+               inspect(Enum.map(field_policies, & &1.fields))
 
       [check] = public_policy.policies
       assert check.check_module == AshGrant.FieldFilterCheck
