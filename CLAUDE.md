@@ -14,6 +14,14 @@ AshGrant is a permission-based authorization extension for Ash Framework. It pro
 - Commit messages and PR descriptions
 - CLAUDE.md instructions
 
+## Toolchain
+
+`.tool-versions` pins **Elixir 1.20.4 / OTP 28** (asdf). 1.20's type checker reports
+dead and unreachable clauses as compiler warnings, which is why the pin is ahead of
+CI: `mix compile --warnings-as-errors` must pass on 1.20, and CI (`ci.yml`, Elixir
+1.18.4 / OTP 27) will not catch a clause that only 1.20 can see. Develop on the pin;
+treat 1.18.4 as the supported floor, not as the reference build.
+
 ## Common Commands
 
 ```bash

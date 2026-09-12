@@ -194,6 +194,4 @@ defmodule Mix.Tasks.AshGrant.Explain do
   defp format_error(:actor_loader_not_implemented),
     do:
       "actor_loader_not_implemented — the resource's permission resolver does not implement load_actor/1"
-
-  defp format_error(other), do: "error: #{inspect(other)}"
 end
