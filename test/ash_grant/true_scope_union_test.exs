@@ -111,6 +111,13 @@ defmodule AshGrant.TrueScopeUnionTest do
   setup do
     Ash.create!(Doc, %{title: "mine", owner_id: @me}, authorize?: false)
     Ash.create!(Doc, %{title: "theirs", owner_id: @them}, authorize?: false)
+
+    Ash.create!(FieldDoc, %{title: "mine", secret: "s-mine", owner_id: @me}, authorize?: false)
+
+    Ash.create!(FieldDoc, %{title: "theirs", secret: "s-theirs", owner_id: @them},
+      authorize?: false
+    )
+
     :ok
   end
 
@@ -124,8 +131,21 @@ defmodule AshGrant.TrueScopeUnionTest do
     |> Enum.sort()
   end
 
+  # `:read` is the action_type FieldFilterCheck.do_filter/3 passes in production.
   defp visibility(permissions, group) do
-    FieldFilterCheck.field_visibility_filter(permissions, FieldDoc, "read", group, nil)
+    FieldFilterCheck.field_visibility_filter(permissions, FieldDoc, "read", group, :read)
+  end
+
+  # Rows come from the `always` NAME (it short-circuits before the code under
+  # test) plus the :public group, so only the :sensitive grants vary here.
+  defp secret_on_their_row(sensitive_permissions) do
+    permissions = ["true_scope_field_doc:*:read:always:public" | sensitive_permissions]
+
+    FieldDoc
+    |> Ash.Query.for_read(:read, %{}, actor: actor(permissions))
+    |> Ash.read!()
+    |> Enum.find(&(&1.owner_id == @them))
+    |> Map.fetch!(:secret)
   end
 
   # The CanPerform arms grant read through the `always` NAME so the row is
@@ -186,6 +206,18 @@ defmodule AshGrant.TrueScopeUnionTest do
                ],
                :sensitive
              ) == true
+    end
+
+    test "a narrowing scope alone forbids the group on another owner's row (control)" do
+      assert %Ash.ForbiddenField{} =
+               secret_on_their_row(["true_scope_field_doc:*:read:mine:sensitive"])
+    end
+
+    test "a scope declared true plus a narrowing scope renders the group on another owner's row" do
+      assert secret_on_their_row([
+               "true_scope_field_doc:*:read:everything:sensitive",
+               "true_scope_field_doc:*:read:mine:sensitive"
+             ]) == "s-theirs"
     end
   end
 
