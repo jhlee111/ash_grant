@@ -7,27 +7,31 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
   @all_fields @public_fields ++ @sensitive_fields ++ @confidential_fields
 
   # Select a policy by its exact field set, never by `field in policy.fields`.
-  # The `:*` catch-all expands to every non-pkey field, so it contains each
-  # group's fields too — a positional `Enum.find/2` returns whichever Ash
-  # happens to list first, and that order is reversed under OTP 28 relative to
-  # OTP 27. Order does not affect authorization (Ash evaluates every field
-  # policy that applies to a field), so selection, not ordering, is what a test
-  # has to be careful about.
+  #
+  # The catch-all comes back in one of two shapes: literal `[:*]`, or already
+  # expanded to every non-pkey field. Which one depends on where Ash's
+  # expansion lands relative to AshGrant's own field-policy transformer —
+  # observed as `[:*]` under OTP 27 and expanded under OTP 28, with the same
+  # Elixir and the same Ash. Both denote the same policy.
+  #
+  # Expanded, it contains every group's fields, so `field in policy.fields`
+  # matches the catch-all as readily as the group policy and a positional
+  # `Enum.find/2` silently returns the wrong one. That is what made these
+  # tests pass for years without checking anything.
+  defp field_policies, do: Ash.Policy.Info.field_policies(AshGrant.Test.SensitiveRecord)
+
   defp policy_for_fields(fields) do
     wanted = Enum.sort(fields)
-
-    AshGrant.Test.SensitiveRecord
-    |> Ash.Policy.Info.field_policies()
-    |> Enum.find(&(Enum.sort(&1.fields) == wanted))
+    Enum.find(field_policies(), &(Enum.sort(&1.fields) == wanted))
   end
 
-  defp catch_all_policy, do: policy_for_fields(@all_fields)
-
-  defp policy_field_sets do
-    AshGrant.Test.SensitiveRecord
-    |> Ash.Policy.Info.field_policies()
-    |> Enum.map(& &1.fields)
+  defp catch_all?(policy) do
+    policy.fields == [:*] or Enum.sort(policy.fields) == Enum.sort(@all_fields)
   end
+
+  defp catch_all_policy, do: Enum.find(field_policies(), &catch_all?/1)
+
+  defp policy_field_sets, do: Enum.map(field_policies(), & &1.fields)
 
   # A group's policy must exist, cover exactly that group, and carry the
   # FieldFilterCheck naming it — which is what these tests have always claimed
@@ -64,10 +68,15 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
       catch_all = catch_all_policy()
 
       assert catch_all != nil,
-             "no field policy covers every non-pkey field; got " <>
-               inspect(policy_field_sets())
+             "no catch-all field policy (neither [:*] nor every non-pkey " <>
+               "field); got " <> inspect(policy_field_sets())
 
-      assert Enum.sort(catch_all.fields) == Enum.sort(@all_fields)
+      # Whichever shape it arrived in, it must not be one of the groups.
+      refute Enum.sort(catch_all.fields) in [
+               Enum.sort(@public_fields),
+               Enum.sort(@sensitive_fields),
+               Enum.sort(@confidential_fields)
+             ]
     end
 
     test "public fields have public field_group check" do
@@ -84,7 +93,7 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
 
     test "every generated policy is a FieldFilterCheck except the catch-all" do
       by_check =
-        Ash.Policy.Info.field_policies(AshGrant.Test.SensitiveRecord)
+        field_policies()
         |> Enum.group_by(fn policy ->
           policy.policies |> Enum.map(& &1.check_module) |> Enum.uniq()
         end)
@@ -95,7 +104,7 @@ defmodule AshGrant.DefaultFieldPoliciesTest do
       # One Static policy, and it is the catch-all — not a group that quietly
       # lost its check.
       assert [catch_all] = by_check[[Ash.Policy.Check.Static]]
-      assert Enum.sort(catch_all.fields) == Enum.sort(@all_fields)
+      assert catch_all?(catch_all)
 
       groups =
         by_check[[AshGrant.FieldFilterCheck]]
