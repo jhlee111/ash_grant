@@ -62,7 +62,9 @@ defmodule AshGrant.Calculation.CanPerform do
   2. Gets RBAC scopes via `AshGrant.Evaluator.get_all_scopes/4`
   3. Gets instance IDs via `AshGrant.Evaluator.get_matching_instance_ids/4`
   4. Builds a combined boolean expression:
-     - "always"/"all"/"global" in scopes -> `true`
+     - "always"/"all"/"global" in scopes -> `true` (by-name fast path)
+     - any scope whose expression resolves to `true` -> `true`, absorbing the
+       OR union whatever that scope is named (#149)
      - No scopes AND no instances -> `false`
      - RBAC scopes -> scope filters combined with OR
      - Instance IDs -> `id in ^instance_ids`

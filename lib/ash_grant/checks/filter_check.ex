@@ -50,7 +50,8 @@ defmodule AshGrant.FilterCheck do
   2. **Get all scopes**: Uses `AshGrant.Evaluator.get_all_scopes/3` to find
      all matching scopes (respecting deny-wins semantics)
   3. **Check for global access**: If scopes include "always", "all", or "global",
-     returns `true` (no filter needed)
+     returns `true` without resolving anything. This is a by-name fast path,
+     not the rule — see step 5
   4. **Resolve scopes to filters**: Uses inline scope DSL or `ScopeResolver`
      to get filter expressions
   5. **Combine filters**: Combines all filters with OR logic. A filter that
@@ -93,7 +94,9 @@ defmodule AshGrant.FilterCheck do
 
   The check returns one of:
 
-  - `true` - No filtering (actor has "always", "all", or "global" scope)
+  - `true` - No filtering. Either a scope named "always"/"all"/"global" matched
+    (the fast path), or some matching scope's expression resolved to `true` and
+    absorbed the OR union — the value decides, not the name (#149)
   - `false` - Block all (no matching permissions or denied)
   - `Ash.Expr.t()` - Filter expression to apply to the query
 
