@@ -16,6 +16,8 @@ defmodule AshGrant.Explainer do
     Permissionable
   }
 
+  require Ash.Expr
+
   @doc """
   Explains an authorization decision for a resource and action.
 
@@ -201,15 +203,28 @@ defmodule AshGrant.Explainer do
 
   defp resolve_explain_scope_filter(:deny, _matching_allows, _resource, _context), do: nil
 
-  defp resolve_explain_scope_filter(:allow, [first | _], resource, context) do
-    if first.scope_name do
-      Info.resolve_scope_filter(resource, first.scope_name, context)
-    else
+  defp resolve_explain_scope_filter(:allow, [], _resource, _context), do: nil
+
+  # Mirrors `AshGrant.FilterCheck.build_combined_filter/3`: the read path ORs
+  # every matching scope, and a filter resolving to `true` absorbs the union
+  # whatever the scope is named (#149). Reporting only the first matching allow
+  # described a filter narrower than the one actually applied, and which of them
+  # got reported depended on the order the resolver returned grants in (#151).
+  defp resolve_explain_scope_filter(:allow, matching_allows, resource, context) do
+    filters = Enum.map(matching_allows, &resolve_allow_filter(&1, resource, context))
+
+    if true in filters do
       true
+    else
+      Enum.reduce(filters, fn filter, acc -> Ash.Expr.expr(^acc or ^filter) end)
     end
   end
 
-  defp resolve_explain_scope_filter(:allow, [], _resource, _context), do: nil
+  # A grant with no scope segment is unrestricted for the actions it matches.
+  defp resolve_allow_filter(%{scope_name: nil}, _resource, _context), do: true
+
+  defp resolve_allow_filter(%{scope_name: scope_name}, resource, context),
+    do: Info.resolve_scope_filter(resource, scope_name, context)
 
   defp extract_field_groups(matching_allows) do
     matching_allows

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`mix ash_grant.explain` reported only the first matching allow scope** ([#151](https://github.com/jhlee111/ash_grant/issues/151)). `Explainer.resolve_explain_scope_filter/4` matched `[first | _]` over the matching allows and resolved that one scope, while the read path ORs every matching scope. An actor holding two grants on the same resource and action was shown a filter narrower than the one actually applied — and *which* of the two got reported depended on the order the `PermissionResolver` returned them in.
+
+  This was sharpest right after the [#149](https://github.com/jhlee111/ash_grant/issues/149) fix: a scope declared `scope(:x, true)` alongside a narrowing scope now grants every row, but the explainer would still print the narrowing filter. The diagnostic contradicted the behaviour it exists to describe.
+
+  The explainer now mirrors `FilterCheck.build_combined_filter/3` exactly, `true`-absorption included.
+
+- **Two `@moduledoc`s still described the pre-#149 model.** `AshGrant.FilterCheck` documented `true` as meaning "actor has an `always`/`all`/`global` scope", and `AshGrant.Calculation.CanPerform` listed only the by-name path. Since v0.20.1 the value decides and the name is a fast path; both now say so. These ship in the package, so the published docs asserted the older rule.
+
 ## [0.21.0] - 2026-09-12
 
 ### Changed
