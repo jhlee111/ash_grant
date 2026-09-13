@@ -5,13 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.21.0] - 2026-09-12
 
 ### Changed
 
 - **The minimum supported Ash is now `~> 3.33` (was `~> 3.19`).** Every Ash release below 3.33 carries published security advisories — `mix hex.audit` reports 19 against 3.24.1, the version this project had locked, including one HIGH. There is no version below 3.33 to fall back to, so the floor moves rather than being held for compatibility. `mix.lock` was regenerated at the same time; `mix hex.audit` now reports no advisories at all (`ash_postgres` 2.9.0 → 2.13.1, `ash_sql` 0.6.0 → 0.7.3, `postgrex` 0.22.0 → 0.22.4, plus transitive `mint`, `req`, `hpax`, `decimal`, `ymlr`).
 
   Consumers pinned below Ash 3.33 must upgrade Ash to take this release. AshGrant's own code needed no change for it: the suite passes unmodified against Ash 3.33.3 / AshPostgres 2.13.1 / Spark 2.7.2.
+
+### Removed
+
+- **Four unreachable clauses, one of which is observable.** Elixir 1.20's type checker proved them dead; each was already unreachable and only started being reported. `AshGrant.Check.simplify_exists_for_eval/1` (`true`/`false`) and `AshGrant.FieldCheck.field_group_grants_access?/3` (`[]`) are guarded by their callers and cannot be reached at all.
+
+  The observable one is the catch-all clause of `Mix.Tasks.AshGrant.Explain.format_error/1`. `AshGrant.Introspect.explain_by_identifier/1`'s `@spec` closes the error domain to `:unknown_resource | :actor_not_found | :actor_loader_not_implemented`, each of which has its own clause — but if a value outside that `@spec` ever reaches the task, `mix ash_grant.explain` now raises a `FunctionClauseError` instead of printing `error: <inspected>`. The `@spec` is treated as the contract.
 
 ### Fixed
 
