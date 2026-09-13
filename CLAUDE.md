@@ -161,7 +161,7 @@ Tests require PostgreSQL. The test alias auto-runs `ecto.create` and `ecto.migra
 
 ## Dependencies
 
-- **Runtime**: `ash ~> 3.0`, `spark ~> 2.0`
+- **Runtime**: `ash ~> 3.33`, `spark ~> 2.0` (the Ash floor is a security floor — everything below 3.33 has published advisories; see the v0.21.0 CHANGELOG entry)
 - **Test only**: `ash_postgres`, `postgrex`, `simple_sat`
 
 ## Git Workflow
