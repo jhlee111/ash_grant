@@ -1,5 +1,8 @@
 defmodule AshGrant.DomainInheritanceTest do
-  use ExUnit.Case, async: true
+  # Not async: this module captures `:stderr`, which swaps the global
+  # `:standard_error` device. Any other test writing to stderr while a capture
+  # starts or ends (e.g. a runtime `IO.warn`) crashes with `:terminated`.
+  use ExUnit.Case, async: false
 
   alias AshGrant.Info
   alias AshGrant.Test.DomainInheritedPost
