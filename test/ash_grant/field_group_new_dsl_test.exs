@@ -10,7 +10,10 @@ defmodule AshGrant.FieldGroupNewDslTest do
 
   These tests are written BEFORE implementation changes (TDD).
   """
-  use ExUnit.Case, async: true
+  # Not async: this module captures `:stderr`, which swaps the global
+  # `:standard_error` device. Any other test writing to stderr while a capture
+  # starts or ends (e.g. a runtime `IO.warn`) crashes with `:terminated`.
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO, only: [with_io: 2]
 
