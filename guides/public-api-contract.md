@@ -224,7 +224,8 @@ this section is **Provisional**.
   `results`) and each result's `label`, `permission` and `issues` are part of the
   contract.
 
-`AshGrant.PermissionValidation.ResourceIndex` is internal.
+The resource index the checker builds its metadata from (`ResourceIndex`, under
+`AshGrant.PermissionValidation`) is internal.
 
 ## What's _not_ public
 

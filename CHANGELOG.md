@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] - 2026-09-19
+
+### Added
+
+- **A static checker for stored permission strings** ([#162](https://github.com/jhlee111/ash_grant/issues/162)). Permission strings are runtime data — a roles table edited from an admin UI, a seed file, a migration — so the compiler never sees them, and until now nothing checked that a stored string names things that exist. A wrong segment failed in four different ways, only one of them loud:
+
+  | Wrong segment | What happens at runtime |
+  |---|---|
+  | resource | The grant matches nothing. Silently inert. |
+  | action | The grant matches nothing. Silently inert. |
+  | scope | **The check raises**, on whatever request first reaches that resource. |
+  | field group | The grant still matches, but makes no field visible. Silently forbidden. |
+
+  A rename in code — an action, a scope, a field group — orphaned every stored string that used the old name, and nothing reported it before a check tripped over it.
+
+  `AshGrant.PermissionValidation` grows from one request-time rule into a checker you run wherever your strings live:
+
+  - **`check/2` and `check_all/2`** compare a permission against the application's resources (`resources:` or `otp_app:`) and return issues — `%{code, severity, segment, message, permission, resources}` — with `[]` meaning the string checks out. `errors?/1` tells errors from warnings. Codes: `:parse_error`, `:unknown_resource`, `:unknown_action`, `:undeclared_scope`, `:scope_missing_on`, `:unverifiable_scope`, `:unknown_field_group`, `:field_group_missing_on`, `:deny_with_field_group` (the [#117](https://github.com/jhlee111/ash_grant/issues/117) rule, as a code), plus the three from `AshGrant.Permission.diagnostics/1`. Messages suggest the nearest declared name for a typo.
+  - **`AshGrant.Validations.PermissionStrings`** is an Ash validation for the attribute that stores grants: `validate {AshGrant.Validations.PermissionStrings, attribute: :permissions}`. One field error per bad string, naming the string. It only checks the attribute when the action changes it, so a string that went stale after a rename never blocks an unrelated edit to the same record.
+  - **`mix ash_grant.check_permissions FILE`** is the CI and deploy-step form: a JSON array (or an object of labelled arrays), a newline list, or `-` for standard input; `--otp-app`; `--format json`. It exits `1` exactly when an `:error` is present, `0` for warnings only, and `2` for a usage error — including "no AshGrant resources found", so a wrong `--otp-app` says so instead of reporting every string as an unknown resource.
+
+  **The static check and the runtime agree, and a property test holds them to it.** The checker reads the same metadata the checks read and matches actions with `AshGrant.Permission.matches_action?/3`. The test runs the real `AshGrant.FilterCheck` and `AshGrant.Check` over generated strings and requires the undeclared-scope error on *exactly* the resources a scope error names — no missed raise, and no false positive. That requirement is what decided the rules:
+
+  - A scope or field group is owed only by **the resources the grant applies to** — those where its action segment matches an action. `*:*:approve:own_unit` needs `own_unit` on every resource with an `approve` action, not on every resource in the application. The ones lacking it are listed by name (`:scope_missing_on`).
+  - `always` and `all` need no declaration. **`global` is accepted by name on the read path only** — `AshGrant.Check` raises on it ([#139](https://github.com/jhlee111/ash_grant/issues/139)) — so an undeclared `global` is reported when the grant can reach a write or generic action.
+  - Names that a policy overrides to are valid: `AshGrant.check(action: "publish")` and `filter_check(resource: "blog")` are read out of each resource's policies and `CanPerform` calculations.
+  - An **instance** permission may name an action of a resource that `scope_through`s the one it names: the checks match the parent's instance permissions against the child's action.
+  - An undeclared scope on a **deny** or an **instance** permission is a warning, not an error. The framework never resolves those scopes, so they cannot raise.
+  - A configured `scope_resolver` turns an unknown scope into `:unverifiable_scope`, a warning: the resolver may know it, and that cannot be checked ahead of time.
+  - Under a `*` or shared resource name, a resource declaring no field groups at all is not expected to declare the one in the 5th segment.
+
+  None of this changes an authorization outcome. The new surface is listed in the [Public API Contract](guides/public-api-contract.md) as **Provisional**; see [Checking Stored Permission Strings](guides/permissions.md#checking-stored-permission-strings) for the guide.
+
+### Changed
+
+- **The minimum supported Ash is now `~> 3.33 and >= 3.33.4` (was `~> 3.33`)**, for [CVE-2026-86338](https://osv.dev/vulnerability/EEF-CVE-2026-86338) / [GHSA-7qr8-wrvq-566q](https://github.com/ash-project/ash/security/advisories/GHSA-7qr8-wrvq-566q) (MEDIUM, published 2026-09-16): Ash field policies did not replace forbidden calculations and aggregates with `nil` inside a filter, so an actor could learn a hidden value from whether rows came back.
+
+  **AshGrant was exposed.** A `field_group` may list public calculations and aggregates, so a generated field policy can be the only thing hiding a computed value. On Ash 3.33.3, an actor without the group could run `filter(secret_calc == "x")` and read the answer off the result. The bug and the fix are entirely in Ash's authorizer — no AshGrant source changed — but the release now proves the fix in AshGrant's own terms: `field_group_filter_oracle_test.exs` covers an attribute, a calculation and a `count` aggregate in one group, and fails 3 of its 9 cases on Ash 3.33.3. That includes the per-record case, where `AshGrant.FieldFilterCheck` makes visibility a per-row predicate and the `nil` replacement has to be per row as well.
+
+  v0.21.0 established that the Ash requirement is a security floor that must not admit a version with a published advisory. 3.33.0–3.33.3 all carry this one, so the floor moves. Unlike v0.21.0 this stays within one minor: a consumer already on Ash 3.33.x only needs `mix deps.update ash`. **Consumers staying on AshGrant 0.21.x should run that too** — those releases still declare `~> 3.33`, and only your own lock decides which patch you run. `mix.lock` moves to Ash 3.33.6, and `mix hex.audit` reports nothing again.
+
+### Fixed
+
+- **A race in the test suite that could fail CI on an unrelated change.** Two test modules captured `:stderr` while running `async: true`. Capturing stderr swaps the global `:standard_error` device, so another test writing to stderr as a capture started or ended crashed with `:terminated`. Both modules now run synchronously. Test-only; nothing in the package changes.
+
 ## [0.21.1] - 2026-09-12
 
 ### Fixed
