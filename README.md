@@ -22,6 +22,7 @@ Permissions resolve to native Ash filters and policy checks, with deny-wins sema
 - **`Introspect`** — query actor permissions, available actions at runtime
 - **Policy testing** — DSL and YAML-based config tests, no database required
 - **`Permission.diagnostics/1`** — audit your own permission store for deprecated or dead grant syntax; also reported by `mix ash_grant.verify`
+- **`PermissionValidation.check/2`** — check stored permission strings against your resources (unknown resource, action, scope or field group) before they go inert or raise at request time; ships as an Ash validation (`AshGrant.Validations.PermissionStrings`) and a CI task (`mix ash_grant.check_permissions`)
 
 AshGrant handles permission evaluation, not role management. Resolve roles to
 permission strings in your resolver.

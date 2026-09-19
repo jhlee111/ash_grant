@@ -22,6 +22,12 @@ ash_grant do
 end
 ```
 
+> **A permission string can only name a scope the resource declares.** `always` and
+> `all` are the exceptions — every check accepts them without a declaration. Any
+> other undeclared scope **raises inside the check** when a grant naming it is
+> evaluated. Permission strings are runtime data, so the compiler cannot catch this;
+> see [Checking Stored Permission Strings](permissions.md#checking-stored-permission-strings).
+
 ## Scope Inheritance
 
 Scopes can inherit from parent scopes:

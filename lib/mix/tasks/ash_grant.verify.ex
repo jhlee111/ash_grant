@@ -37,6 +37,10 @@ defmodule Mix.Tasks.AshGrant.Verify do
       |> Enum.flat_map(& &1.permissions)
       |> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
 
+  `diagnostics/1` reports spelling only. To also check that each stored string names a
+  resource, action, scope and field group that exist, use
+  `mix ash_grant.check_permissions` (or `AshGrant.PermissionValidation.check_all/2`).
+
   YAML tests carry their permissions inline rather than through policy test modules and
   are not scanned. Warnings never affect the exit code.
 

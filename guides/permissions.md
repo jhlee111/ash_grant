@@ -84,6 +84,9 @@ MyApp.Role
 |> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
 ```
 
+`diagnostics/1` reports spelling only. To check that a stored string also names
+things that exist, see [Checking Stored Permission Strings](#checking-stored-permission-strings).
+
 #### Type wildcards never work on instance permissions
 
 Instance matching has no action type available, so a type wildcard on an instance
@@ -412,3 +415,92 @@ This applies uniformly across every evaluation path (#123):
 
 To restrict access, use a `!` deny rule — never rely on one grant
 "overriding" another.
+
+## Checking Stored Permission Strings
+
+Permission strings are **data**: a roles table edited from an admin UI, a seed
+file, a migration. The compiler never sees them, so nothing stops a stored string
+from naming something that does not exist — and a wrong segment fails differently
+depending on which one it is:
+
+| Wrong segment | What happens at runtime |
+|---|---|
+| resource | The grant matches nothing. Silently inert. |
+| action | The grant matches nothing. Silently inert. |
+| scope | **The check raises.** Whatever request first reaches that resource crashes. |
+| field group | The grant still matches, but makes no field visible. Silently forbidden. |
+
+A rename in code — an action, a scope, a field group — orphans every stored
+string that used the old name, and nothing reports it until a check trips over it.
+
+`AshGrant.PermissionValidation.check/2` compares a string against your resources
+ahead of time and returns a list of issues (`[]` when the string checks out):
+
+```elixir
+AshGrant.PermissionValidation.check("post:*:read:owm", otp_app: :my_app)
+# => [
+#      %{
+#        code: :undeclared_scope,
+#        severity: :error,
+#        segment: :scope,
+#        message: "Scope `owm` is not declared on MyApp.Blog.Post. The check raises " <>
+#                   "when it resolves this scope. Did you mean `own`?",
+#        permission: "post:*:read:owm",
+#        resources: [MyApp.Blog.Post]
+#      }
+#    ]
+```
+
+`check_all/2` does the same for a whole table or file, returning one
+`{permission, issues}` pair per input. See `AshGrant.PermissionValidation` for the
+full list of codes. The checker never changes an authorization outcome.
+
+### Where to run it
+
+**At the form** — add the validation to the resource that stores grants, so an
+admin UI rejects a typo as a field error naming the offending string:
+
+```elixir
+validations do
+  validate {AshGrant.Validations.PermissionStrings, attribute: :permissions}
+end
+```
+
+It only checks the attribute when the action changes it, so strings already
+stored never block an unrelated edit.
+
+**In CI or a deploy step** — dump the strings your application will meet and
+refuse the release if the code no longer matches them:
+
+```bash
+mix ash_grant.check_permissions priv/repo/seeds/permissions.json --otp-app my_app
+
+psql -At -c "select unnest(permissions) from roles" | mix ash_grant.check_permissions -
+```
+
+The task exits non-zero exactly when an `:error` is present; warnings are printed
+and do not fail it.
+
+### What counts as valid
+
+- **A scope is only owed where the grant applies.** `*:*:approve:own_unit` needs
+  `own_unit` on every resource that has an `approve` action — not on every resource
+  in the application. Resources that lack it are listed by name
+  (`:scope_missing_on`).
+- **`always` and `all` need no declaration.** `global` is accepted by name on the
+  read path only, so an undeclared `global` is reported when the grant can reach a
+  write or generic action.
+- **A `scope_resolver` makes an unknown scope a warning** (`:unverifiable_scope`):
+  the resolver may know it, and that cannot be checked ahead of time.
+- **Action and resource overrides count.** A name passed as
+  `AshGrant.check(action: "publish")` or `filter_check(resource: "blog")` in a
+  resource's policies is as valid in a stored string as a real action or the
+  resource's own name.
+- **`scope_through` children count for instance permissions.** The checks match a
+  parent's instance permissions against the *child's* action, so
+  `post:post_abc123:moderate:` is valid when a resource that `scope_through`s `post`
+  has a `moderate` action, even if `post` itself does not.
+- **Deny and instance permissions** report an undeclared scope as a warning: the
+  framework never resolves those scopes, so they cannot raise.
+- **Syntax problems** from `AshGrant.Permission.diagnostics/1` (the deprecated
+  `read*` spelling, a type Ash does not have) are included in the same list.

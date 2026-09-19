@@ -97,6 +97,29 @@ MyApp.Role
 |> Enum.flat_map(&AshGrant.Permission.diagnostics/1)
 ```
 
+### DO: Check stored permission strings against your resources
+
+`diagnostics/1` only sees spelling. A string can be well-formed and still name a
+resource, action, scope or field group that does not exist — after a typo in an
+admin UI, or a rename in code. Most of those fail silently (the grant is inert);
+an undeclared **scope raises inside the check** at request time.
+
+```elixir
+# On the resource that stores grants — rejects a bad string as a field error
+validations do
+  validate {AshGrant.Validations.PermissionStrings, attribute: :permissions}
+end
+
+# Anywhere — one string, or a whole table
+AshGrant.PermissionValidation.check("post:*:read:own", otp_app: :my_app)
+AshGrant.PermissionValidation.check_all(permissions, otp_app: :my_app)
+```
+
+```bash
+# In CI / deploy — exits non-zero on any :error
+mix ash_grant.check_permissions priv/permissions.json --otp-app my_app
+```
+
 ### DON'T: Check a type wildcard without supplying the action type
 
 A type wildcard can only be evaluated against an Ash action **type**. If you call a
