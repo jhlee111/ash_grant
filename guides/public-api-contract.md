@@ -197,6 +197,35 @@ Exit codes are part of the contract:
 JSON output is the `Jason.encode!/1` representation of the
 `Explanation.t()` — see the JSON encoding section.
 
+## Static permission-string checking (Provisional)
+
+Added for [#162](https://github.com/jhlee111/ash_grant/issues/162). Everything in
+this section is **Provisional**.
+
+- `AshGrant.PermissionValidation.check/2`, `check_all/2` and `errors?/1`. The
+  `issue` map's keys (`:code`, `:severity`, `:segment`, `:message`, `:permission`,
+  `:resources`) and the issue codes listed in the module's documentation are part
+  of the contract; `:message` text is for humans and may change in any release.
+  The request-time `validate/3` in the same module stays internal.
+- `AshGrant.Validations.PermissionStrings` and its options (`:attribute`,
+  `:otp_app`, `:resources`, `:reject`). Each error is an
+  `Ash.Error.Changes.InvalidAttribute` whose `:value` is the offending string and
+  whose `vars[:codes]` lists the issue codes.
+- `mix ash_grant.check_permissions FILE [--otp-app APP] [--format text|json]`.
+  Exit codes are part of the contract:
+
+  | Code | Meaning |
+  |---|---|
+  | `0` | No issue of severity `:error` (warnings are printed and do not fail) |
+  | `1` | At least one `:error` |
+  | `2` | Usage error (missing or unreadable file, bad option, no resources to check against) |
+
+  With `--format json`, the top-level keys (`checked`, `errors`, `warnings`,
+  `results`) and each result's `label`, `permission` and `issues` are part of the
+  contract.
+
+`AshGrant.PermissionValidation.ResourceIndex` is internal.
+
 ## What's _not_ public
 
 These modules exist in `lib/` but are **internal** — do not call them
@@ -208,7 +237,7 @@ from outside the `:ash_grant` app:
 - `AshGrant.Transformers.*`, `AshGrant.ArgumentAnalyzer`, `AshGrant.Changes.*` — compile/runtime machinery
 - `AshGrant.Info` — Spark-generated introspection; prefer `AshGrant.Introspect`
 - Everything under `AshGrant.Dsl`, `AshGrant.Domain.Dsl` — DSL internals
-- Everything under `Mix.Tasks.*` other than `ash_grant.explain`
+- Everything under `Mix.Tasks.*` other than `ash_grant.explain` and `ash_grant.check_permissions`
 
 If you need something here to be public, open an issue describing the
 consumer and we'll promote it.
