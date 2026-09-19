@@ -168,7 +168,7 @@ Tests require PostgreSQL. The test alias auto-runs `ecto.create` and `ecto.migra
 
 ## Dependencies
 
-- **Runtime**: `ash ~> 3.33`, `spark ~> 2.0` (the Ash floor is a security floor — everything below 3.33 has published advisories; see the v0.21.0 CHANGELOG entry)
+- **Runtime**: `ash ~> 3.33 and >= 3.33.4`, `spark ~> 2.0` (the Ash floor is a security floor — everything below 3.33.4 has published advisories; see the v0.21.0 CHANGELOG entry for the precedent. 3.33.4 is the first release with the fix for CVE-2026-86338, which the field policies AshGrant generates were exposed to). `mix hex.audit` is the only command that reports advisories in the committed lock — `mix deps.get` stays silent
 - **Test only**: `ash_postgres`, `postgrex`, `simple_sat`
 
 ## Git Workflow

@@ -80,7 +80,7 @@ jobs:
 
   # Test with minimum supported Ash version (floor)
   floor:
-    name: Ash Floor (3.33)
+    name: Ash Floor (3.33.4)
     # Also runs on a blank workflow_dispatch. Schedule-only meant this job
     # could not be exercised on demand, which is how it stayed broken from
     # 2026-07 to 2026-09 — a fix could not be verified before merging it.
@@ -116,17 +116,17 @@ jobs:
       - name: Fetch deps with Ash floor version
         run: mix deps.unlock --all && mix deps.get
         env:
-          ASH_VERSION: "3.33.0"
+          ASH_VERSION: "3.33.4"
 
       - name: Compile
         run: mix compile --warnings-as-errors
         env:
-          ASH_VERSION: "3.33.0"
+          ASH_VERSION: "3.33.4"
 
       - name: Test
         run: mix test
         env:
-          ASH_VERSION: "3.33.0"
+          ASH_VERSION: "3.33.4"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
 
   # Manual: test against specific Ash version or main branch

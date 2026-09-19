@@ -51,6 +51,10 @@ defmodule AshGrant.Test.Domain do
     # Per-record field visibility test resource (field groups + :own scope, #117 ②)
     resource(AshGrant.Test.OwnedRecord)
 
+    # Calculation + aggregate inside a field group (filter oracle, CVE-2026-86338)
+    resource(AshGrant.Test.ComputedFieldRecord)
+    resource(AshGrant.Test.ComputedFieldNote)
+
     # Field masking test resource
     resource(AshGrant.Test.MaskedRecord)
 
