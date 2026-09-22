@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`global` is now a universal scope on the write path too** ([#139](https://github.com/jhlee111/ash_grant/issues/139)). It was honored on reads but crashed `AshGrant.Check` on writes. The universal-scope predicate is centralized in `AshGrant.Scope.universal?/1`, and the static checker now accepts `global` everywhere. Declaring a scope with a reserved universal name (`always`/`all`/`global`) and a non-`true` filter now emits a compile warning, since the checks short-circuit on the name and would silently ignore the filter.
+
 ## [0.22.0] - 2026-09-19
 
 ### Added
