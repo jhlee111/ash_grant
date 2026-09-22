@@ -179,7 +179,7 @@ defmodule AshGrant.Calculation.CanPerform do
   end
 
   defp build_rbac_expression(scopes, scope_resolver, resource) do
-    if "always" in scopes or "all" in scopes or "global" in scopes do
+    if Enum.any?(scopes, &AshGrant.Scope.universal?/1) do
       true
     else
       build_rbac_filter(scopes, scope_resolver, resource)

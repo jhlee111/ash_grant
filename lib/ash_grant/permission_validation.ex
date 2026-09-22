@@ -93,10 +93,8 @@ defmodule AshGrant.PermissionValidation do
       resource that `scope_through`s this one: the checks match the parent's
       instance permissions against the child's action.
     * **Scope** — `AshGrant.Info.scopes/1` (domain-inherited scopes included),
-      plus `always` and `all`, which every check accepts without a declaration.
-      `global` is accepted by name on the read path only; `AshGrant.Check` raises
-      on it, so an undeclared `global` is reported whenever the grant can reach a
-      write or generic action.
+      plus `always`, `all`, and `global`, which every check accepts without a
+      declaration (#139).
     * **Field group** — `AshGrant.Info.field_groups/1`.
   """
 
@@ -134,11 +132,9 @@ defmodule AshGrant.PermissionValidation do
 
   # Scopes every check accepts without a declaration — the clauses that sit above
   # the "not found in inline scope DSL" raise in Check, FilterCheck and CanPerform.
-  @builtin_scopes ~w(always all)
-
-  # Accepted by name on the read path (FilterCheck, FieldFilterCheck, CanPerform)
-  # but not by AshGrant.Check, which raises on it (#139).
-  @read_only_builtin_scopes ~w(global)
+  # `global` is included here because the write path short-circuits it just like
+  # `always`/`all` (#139).
+  @builtin_scopes ~w(always all global)
 
   @diagnostic_severities %{
     deprecated_type_wildcard: :warning,
@@ -381,18 +377,9 @@ defmodule AshGrant.PermissionValidation do
     cond do
       MapSet.member?(entry.scopes, perm.scope) -> :ok
       perm.scope in @builtin_scopes -> :ok
-      perm.scope in @read_only_builtin_scopes and not write_reachable?(entry, perm.action) -> :ok
       entry.scope_resolver? -> :unverifiable
       true -> :missing
     end
-  end
-
-  # True when the grant can be evaluated by AshGrant.Check: it matches a non-read
-  # action, or a name that a Check in the resource's policies overrides to.
-  defp write_reachable?(entry, pattern) do
-    Enum.any?(entry.actions, fn {name, type} ->
-      type != :read and Permission.matches_action?(pattern, name, type)
-    end) or Enum.any?(entry.write_action_overrides, &Permission.matches_action?(pattern, &1, nil))
   end
 
   # The framework resolves a scope only for an allow RBAC grant. A deny applies
