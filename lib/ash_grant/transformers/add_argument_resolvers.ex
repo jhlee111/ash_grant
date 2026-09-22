@@ -26,10 +26,6 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
   @write_action_types [:create, :update, :destroy]
 
   @impl true
-  def after?(AshGrant.Transformers.MergeDomainConfig), do: true
-  def after?(_), do: false
-
-  @impl true
   def before?(Ash.Policy.Authorizer), do: true
   def before?(AshGrant.Transformers.AddDefaultPolicies), do: true
   def before?(_), do: false
@@ -55,7 +51,7 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
     arg_map = build_arg_map(dsl_state)
 
     Enum.reduce_while(declarations, {:ok, dsl_state}, fn decl, {:ok, state} ->
-      with :ok <- validate_referenced_by_scope(decl, arg_map, resource),
+      with :ok <- validate_referenced_by_scope(decl, arg_map, dsl_state),
            {:ok, leaf_type} <- validate_and_resolve_path(state, decl, resource),
            {:ok, new_state} <-
              install_on_actions(state, decl, leaf_type, arg_map, resource) do
@@ -66,8 +62,16 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
     end)
   end
 
-  # Compute %{arg_name => [scope_names]} by walking all scope filters in the
-  # DSL state (not the compiled resource — it's not compiled yet).
+  # Compute %{arg_name => [scope_names]} by walking the resource's own scope
+  # filters in the DSL state (not the compiled resource — it's not compiled
+  # yet). Domain-inherited scopes are deliberately NOT read here: reaching into
+  # the domain from a transformer re-opens the compile cycle that v0.20 moved
+  # to runtime (a domain with a `code_interface` entry deadlocks). A
+  # `resolve_argument` referenced only by a domain scope is instead accepted
+  # here (validate_referenced_by_scope defers when a domain is present) and
+  # checked domain-aware post-compile by
+  # `AshGrant.Verifiers.ValidateArgumentResolvers`, with `ResolveArgument`
+  # recomputing `scopes_needing` domain-aware at runtime (#147).
   defp build_arg_map(dsl_state) do
     dsl_state
     |> Transformer.get_entities([:ash_grant])
@@ -83,8 +87,11 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
   end
 
   # Resolve a scope's filter with inheritance from the in-progress DSL state.
+  # Uses the read filter (`scope.filter`) so a `write: false` scope still
+  # contributes its `^arg(...)` references (#148); the deprecated `write:` value
+  # is irrelevant to which arguments the scope's expression references.
   defp resolve_scope_in_dsl(dsl_state, %AshGrant.Dsl.Scope{} = scope) do
-    base = if scope.write == nil, do: scope.filter, else: scope.write
+    base = scope.filter
 
     case base do
       false ->
@@ -128,21 +135,32 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
     Enum.reduce(rest, first, fn f, acc -> Ash.Expr.expr(^acc and ^f) end)
   end
 
-  defp validate_referenced_by_scope(%{name: name} = decl, arg_map, resource) do
+  defp validate_referenced_by_scope(decl, arg_map, dsl_state) do
+    %{name: name} = decl
+    resource = Transformer.get_persisted(dsl_state, :module)
+
     if Map.has_key?(arg_map, name) and arg_map[name] != [] do
       :ok
     else
-      {:error,
-       Spark.Error.DslError.exception(
-         module: resource,
-         path: [:ash_grant, :resolve_argument, name],
-         message: """
-         resolve_argument :#{name} is declared but no scope references ^arg(:#{name}).
+      if Transformer.get_persisted(dsl_state, :domain) do
+        # A domain-inherited scope may reference the argument, but reading the
+        # domain from a transformer re-opens the v0.20 compile cycle. Accept
+        # here; `AshGrant.Verifiers.ValidateArgumentResolvers` checks the
+        # domain-aware answer post-compile.
+        :ok
+      else
+        {:error,
+         Spark.Error.DslError.exception(
+           module: resource,
+           path: [:ash_grant, :resolve_argument, name],
+           message: """
+           resolve_argument :#{name} is declared but no scope references ^arg(:#{name}).
 
-         Either add an expression like `expr(^arg(:#{name}) == some_attribute)` to at
-         least one scope, or remove this declaration. Declaration: #{inspect(decl)}
-         """
-       )}
+           Either add an expression like `expr(^arg(:#{name}) == some_attribute)` to at
+           least one scope, or remove this declaration. Declaration: #{inspect(decl)}
+           """
+         )}
+      end
     end
   end
 

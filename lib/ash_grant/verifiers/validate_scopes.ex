@@ -82,26 +82,36 @@ defmodule AshGrant.Verifiers.ValidateScopes do
   @spec validate_instance_key(dsl_state :: map(), resource :: module()) ::
           :ok | {:error, Spark.Error.DslError.t()}
   defp validate_instance_key(dsl_state, resource) do
-    instance_key = Verifier.get_option(dsl_state, [:ash_grant], :instance_key)
+    attributes = Verifier.get_entities(dsl_state, [:attributes])
+    attr_names = Enum.map(attributes, & &1.name)
 
-    if instance_key && instance_key != :id do
-      attributes = Verifier.get_entities(dsl_state, [:attributes])
-      attr_names = Enum.map(attributes, & &1.name)
+    # The effective key is the explicit option, else the primary key (which is
+    # what `AshGrant.Info.instance_key/1` resolves to at runtime). Validating the
+    # default too catches a resource whose primary key is not named `:id` —
+    # previously `:id` was skipped and silently produced a filter on a
+    # nonexistent field (#148).
+    instance_key =
+      Verifier.get_option(dsl_state, [:ash_grant], :instance_key) ||
+        primary_key_name(attributes)
 
-      if instance_key in attr_names do
-        :ok
-      else
-        {:error,
-         Spark.Error.DslError.exception(
-           module: resource,
-           path: [:ash_grant, :instance_key],
-           message:
-             "instance_key :#{instance_key} does not exist as an attribute on #{inspect(resource)}. " <>
-               "Available attributes: #{inspect(attr_names)}"
-         )}
-      end
-    else
+    if instance_key in attr_names do
       :ok
+    else
+      {:error,
+       Spark.Error.DslError.exception(
+         module: resource,
+         path: [:ash_grant, :instance_key],
+         message:
+           "instance_key :#{instance_key} does not exist as an attribute on #{inspect(resource)}. " <>
+             "Available attributes: #{inspect(attr_names)}"
+       )}
+    end
+  end
+
+  defp primary_key_name(attributes) do
+    case Enum.filter(attributes, & &1.primary_key?) do
+      [attr] -> attr.name
+      _ -> :id
     end
   end
 end

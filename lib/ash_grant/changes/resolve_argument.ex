@@ -57,7 +57,9 @@ defmodule AshGrant.Changes.ResolveArgument do
   def change(changeset, opts, ctx) do
     name = Keyword.fetch!(opts, :name)
     path = Keyword.fetch!(opts, :path)
-    scopes_needing = Keyword.fetch!(opts, :scopes_needing)
+
+    scopes_needing =
+      effective_scopes_needing(changeset.resource, name, Keyword.fetch!(opts, :scopes_needing))
 
     actor = actor_from_context(ctx, changeset)
 
@@ -68,6 +70,19 @@ defmodule AshGrant.Changes.ResolveArgument do
       end
     else
       changeset
+    end
+  end
+
+  # The transformer computes `scopes_needing` from the resource's own scopes
+  # only (it cannot read domain-inherited scopes without a compile cycle). When
+  # the resource sits on a domain, recompute the set domain-aware at runtime so
+  # a `resolve_argument` referenced by a domain scope still triggers the load
+  # (#147).
+  defp effective_scopes_needing(resource, name, compile_time_scopes) do
+    if Ash.Resource.Info.domain(resource) do
+      Map.get(AshGrant.ArgumentAnalyzer.arg_to_scopes(resource), name, [])
+    else
+      compile_time_scopes
     end
   end
 
@@ -97,6 +112,12 @@ defmodule AshGrant.Changes.ResolveArgument do
 
       perms when is_list(perms) ->
         Enum.any?(perms, &permission_uses_listed_scope?(&1, resource, scopes_needing))
+
+      _other ->
+        # The resolver returned an unexpected shape (nil, a map, ...). Resolve
+        # conservatively rather than crashing on the shape — see the runtime
+        # contract in the moduledoc.
+        true
     end
   end
 
@@ -176,6 +197,18 @@ defmodule AshGrant.Changes.ResolveArgument do
 
   # --- path resolution ------------------------------------------------------
 
+  # Single-segment from_path on create: the leaf is an attribute on the
+  # resource itself and is already present in the changeset's attributes — no
+  # relationship to walk. The multi-segment clause below treats the first
+  # segment as a relationship, which is nil for a leaf attribute and would
+  # silently `:skip`.
+  defp resolve_value(%{action_type: :create} = cs, [leaf]) do
+    case Changeset.get_attribute(cs, leaf) do
+      nil -> :skip
+      value -> {:ok, value}
+    end
+  end
+
   defp resolve_value(%{action_type: :create} = cs, [first_rel | rest]) do
     with %{source_attribute: source_attr, destination: destination} <-
            Ash.Resource.Info.relationship(cs.resource, first_rel),
@@ -246,14 +279,13 @@ defmodule AshGrant.Changes.ResolveArgument do
   defp do_split(resource, [key | rest], rel_path) do
     case Ash.Resource.Info.relationship(resource, key) do
       nil ->
-        # Key is not a relationship — treat as leaf if nothing follows, else error.
-        # (The transformer validates this shape at compile time; at runtime we
-        # treat it as a leaf to avoid crashing.)
-        if rest == [] do
-          {Enum.reverse(rel_path), key}
-        else
-          {Enum.reverse(rel_path), key}
-        end
+        raise ArgumentError, """
+        resolve_argument from_path segment :#{key} is not a relationship on #{inspect(resource)}.
+
+        Intermediate path segments must be belongs_to relationships; only the final
+        segment may be an attribute. This shape is rejected at compile time, so
+        reaching it here indicates the path changed after compilation.
+        """
 
       %{destination: destination} ->
         do_split(destination, rest, [key | rel_path])
@@ -271,7 +303,7 @@ defmodule AshGrant.Changes.ResolveArgument do
     _ -> nil
   end
 
-  defp safe_load(_data, nil, _extra_opts), do: {:ok, nil}
+  defp safe_load(data, nil, _extra_opts), do: {:ok, data}
 
   defp safe_load(data, load_spec, extra_opts) do
     {:ok, Ash.load!(data, load_spec, Keyword.merge([authorize?: false], extra_opts))}

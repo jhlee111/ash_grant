@@ -27,14 +27,16 @@ defmodule AshGrant.ArgumentAnalyzer do
 
   @doc """
   Returns `%{arg_name => [scope_names]}` for all args referenced by any scope
-  on the given resource. Uses write-scope resolution so inheritance is applied.
+  on the given resource. Uses read-scope resolution so inheritance is applied
+  and a `write: false` scope still contributes the `^arg(...)` references in
+  its read filter (#148).
   """
   @spec arg_to_scopes(Ash.Resource.t()) :: %{arg_name() => [scope_name()]}
   def arg_to_scopes(resource) do
     resource
     |> Info.scopes()
     |> Enum.reduce(%{}, fn scope, acc ->
-      filter = safe_resolve(resource, scope.name)
+      filter = Info.resolve_scope_filter(resource, scope.name, %{})
       args = referenced_args(filter)
 
       Enum.reduce(args, acc, fn arg, inner ->
@@ -63,12 +65,6 @@ defmodule AshGrant.ArgumentAnalyzer do
   end
 
   # --- internals -----------------------------------------------------------
-
-  defp safe_resolve(resource, name) do
-    Info.resolve_write_scope_filter(resource, name, %{})
-  rescue
-    _ -> nil
-  end
 
   defp walk_args(true), do: []
   defp walk_args(false), do: []

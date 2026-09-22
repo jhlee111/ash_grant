@@ -137,6 +137,39 @@ defmodule AshGrant.ResolveArgumentValidationTest do
     assert_raise Spark.Error.DslError, ~r/no scope references/, fn -> defn.() end
   end
 
+  test "accepts resolve_argument referenced by a write: false (read-only) scope (#148)" do
+    defn = fn ->
+      defmodule WriteFalseArg do
+        @moduledoc false
+        use Ash.Resource,
+          domain: nil,
+          validate_domain_inclusion?: false,
+          data_layer: Ash.DataLayer.Ets,
+          extensions: [AshGrant]
+
+        ash_grant do
+          resolver(fn _, _ -> [] end)
+          scope(:at_own_unit, expr(^arg(:center_id) == ^actor(:org_id)), write: false)
+          resolve_argument(:center_id, from_path: [:id])
+        end
+
+        attributes do
+          uuid_primary_key(:id)
+          attribute(:org_id, :uuid, allow_nil?: true)
+        end
+
+        actions do
+          defaults([:read, :destroy, create: :*, update: :*])
+        end
+      end
+    end
+
+    # The analyzer reads the scope's `filter` (read path), so `^arg(:center_id)`
+    # is found despite `write: false`. Compiles without the "no scope references"
+    # DslError.
+    assert match?({:module, _, _, _}, defn.())
+  end
+
   test "rejects :for_actions that names a non-existent action" do
     defn = fn ->
       defmodule BadForActions do

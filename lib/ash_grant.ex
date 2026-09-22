@@ -321,7 +321,8 @@ defmodule AshGrant do
     ],
     verifiers: [
       AshGrant.Verifiers.ValidateResolverPresent,
-      AshGrant.Verifiers.ValidateScopes
+      AshGrant.Verifiers.ValidateScopes,
+      AshGrant.Verifiers.ValidateArgumentResolvers
     ]
 
   @doc """
