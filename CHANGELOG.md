@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`instance_key` defaults to the actual primary key** ([#148](https://github.com/jhlee111/ash_grant/issues/148)). It previously hardcoded `:id`, silently breaking instance permissions for resources whose primary key is named otherwise; the default now resolves from the primary key and is validated for every key, including `:id`. A resource with a composite primary key skips the validation (no single field to match instance IDs against).
+- **`resolve_argument` analysis no longer reads the deprecated `write:` path** ([#148](https://github.com/jhlee111/ash_grant/issues/148)). Argument analysis uses read-scope resolution, so a `write: false` scope still registers its `^arg(...)` references instead of surfacing a false "no scope references" error.
+- **Domain-inherited scopes are recognized by `resolve_argument`** ([#147](https://github.com/jhlee111/ash_grant/issues/147)). A `resolve_argument` referenced only by a domain scope no longer trips a false "no scope references" compile error, and the fix does not reintroduce the domain↔resource compile cycle (the check moved to a post-compile verifier and the runtime recomputes `scopes_needing` domain-aware).
+- **`AshGrant.Changes.ResolveArgument` runtime fixes** ([#144](https://github.com/jhlee111/ash_grant/issues/144)). A single-segment `from_path` now resolves on create and update; a resolver returning an unexpected shape resolves conservatively instead of raising `CaseClauseError`; a malformed path raises a clear error instead of silently truncating.
+
 ## [0.22.0] - 2026-09-19
 
 ### Added

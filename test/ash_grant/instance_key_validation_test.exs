@@ -69,4 +69,38 @@ defmodule AshGrant.InstanceKeyValidationTest do
     assert output =~ "instance_key :id does not exist as an attribute",
            "expected a compile warning about the invalid instance_key; output was: #{output}"
   end
+
+  test "does not warn about :id for a composite primary key without instance_key" do
+    output =
+      capture_io(:stderr, fn ->
+        Code.compile_string("""
+        defmodule AshGrant.InstanceKeyValidationTest.CompositePk do
+          @moduledoc false
+          use Ash.Resource,
+            domain: nil,
+            validate_domain_inclusion?: false,
+            data_layer: Ash.DataLayer.Ets,
+            extensions: [AshGrant]
+
+          ash_grant do
+            resolver(fn _, _ -> [] end)
+            scope(:always, true)
+          end
+
+          attributes do
+            attribute(:tenant_id, :uuid, primary_key?: true, allow_nil?: false)
+            attribute(:user_id, :uuid, primary_key?: true, allow_nil?: false)
+          end
+
+          actions do
+            defaults([:read])
+          end
+        end
+        """)
+      end)
+
+    refute output =~ "instance_key :id does not exist as an attribute",
+           "composite primary keys have no single instance_key default; " <>
+             "expected no warning, got: #{output}"
+  end
 end
