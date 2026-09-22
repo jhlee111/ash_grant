@@ -71,15 +71,7 @@ defmodule AshGrant.Preparations.ApplyMasking do
   # A field is masked only if ALL actor field groups that include it also mask it.
   # If ANY group provides unmasked access, the field is not masked.
   defp resolve_masking(resource, actor_groups) do
-    resolved_groups =
-      actor_groups
-      |> Enum.map(fn group_name ->
-        group_atom =
-          if is_binary(group_name), do: String.to_existing_atom(group_name), else: group_name
-
-        {group_atom, AshGrant.Info.resolve_field_group(resource, group_atom)}
-      end)
-      |> Enum.reject(fn {_, resolved} -> resolved == nil end)
+    resolved_groups = Enum.flat_map(actor_groups, &resolve_group(resource, &1))
 
     # Collect all masked fields from all groups
     all_masked =
@@ -100,9 +92,37 @@ defmodule AshGrant.Preparations.ApplyMasking do
         Map.put(acc, field, mask_fn)
       end
     end)
-  rescue
-    ArgumentError -> %{}
   end
+
+  defp resolve_group(resource, group_name) do
+    case to_existing_group_atom(group_name) do
+      {:ok, group_atom} -> resolve_field_group(resource, group_atom)
+      :error -> []
+    end
+  end
+
+  defp resolve_field_group(resource, group_atom) do
+    case AshGrant.Info.resolve_field_group(resource, group_atom) do
+      nil -> []
+      resolved -> [{group_atom, resolved}]
+    end
+  end
+
+  # Convert a field group name to an existing atom without raising. Unknown
+  # group names (e.g. a permission string referencing a group that was never
+  # declared) become `:error` and are dropped by `resolve_masking/2` — masking
+  # for the remaining, valid groups still applies. A bare `String.to_existing_atom/1`
+  # here would raise `ArgumentError`; rescuing it at the function boundary is
+  # what previously swallowed the error and silently disabled all masking.
+  defp to_existing_group_atom(name) when is_atom(name), do: {:ok, name}
+
+  defp to_existing_group_atom(name) when is_binary(name) do
+    {:ok, String.to_existing_atom(name)}
+  rescue
+    ArgumentError -> :error
+  end
+
+  defp to_existing_group_atom(_), do: :error
 
   defp mask_record(record, masked_fields) do
     Enum.reduce(masked_fields, record, fn {field, mask_fn}, rec ->
