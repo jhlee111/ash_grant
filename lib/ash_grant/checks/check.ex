@@ -282,21 +282,8 @@ defmodule AshGrant.Check do
     scope_resolver = AshGrant.Info.scope_resolver(resource_module)
     configured_name = AshGrant.Info.resource_name(resource_module)
 
-    # Note: Ash passes :resource as the module, we want a string name
-    # Only use opts[:resource] if it's a string (user override)
-    resource_name =
-      case Keyword.get(opts, :resource) do
-        nil -> configured_name
-        name when is_binary(name) -> name
-        _module -> configured_name
-      end
-
-    # When action is overridden via opts, don't infer action_type
-    {action_name, action_type} =
-      case Keyword.get(opts, :action) do
-        nil -> {to_string(action.name), action_type_from(action)}
-        override -> {override, nil}
-      end
+    resource_name = resolve_resource_name(configured_name, opts)
+    {action_name, action_type} = resolve_action(action, opts)
 
     # Build context
     context = build_context(actor, resource_module, action, authorizer)
@@ -323,8 +310,13 @@ defmodule AshGrant.Check do
       {:scopes, [_ | _] = scopes} ->
         Enum.any?(scopes, &check_scope_access(&1, scope_resolver, context, authorizer, opts))
 
-      _denied_or_no_match ->
-        # No usable RBAC grant — try scope_through (parent instance permissions)
+      :denied ->
+        # A deny rule matches — deny-wins, never overridden by scope_through (#170).
+        false
+
+      {:scopes, []} ->
+        # No matching RBAC grant and no deny — try scope_through (parent instance
+        # permissions).
         check_scope_through_write(
           resource_module,
           permissions,
@@ -332,6 +324,24 @@ defmodule AshGrant.Check do
           action_type,
           authorizer
         )
+    end
+  end
+
+  # Ash passes :resource as the module; we want the string name, and only use a
+  # string `resource:` override from opts.
+  defp resolve_resource_name(configured_name, opts) do
+    case Keyword.get(opts, :resource) do
+      nil -> configured_name
+      name when is_binary(name) -> name
+      _module -> configured_name
+    end
+  end
+
+  # When the action is overridden via opts, don't infer the action type.
+  defp resolve_action(action, opts) do
+    case Keyword.get(opts, :action) do
+      nil -> {to_string(action.name), action_type_from(action)}
+      override -> {override, nil}
     end
   end
 
