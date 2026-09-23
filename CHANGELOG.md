@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`scope_through` now requires a `belongs_to` relationship** ([#145](https://github.com/jhlee111/ash_grant/issues/145)). A `scope_through` on a `has_many` previously compiled and then built a parent filter from the wrong FK direction at runtime; it now fails compilation with a clear error.
+- **Field masking no longer fails open on an unknown field group** ([#146](https://github.com/jhlee111/ash_grant/issues/146)). `ApplyMasking` rescued `ArgumentError` around the whole resolution and returned `%{}` — silently disabling all masking. The rescue is narrowed to the atom conversion, so an unknown group is dropped while the remaining groups still mask.
+
 ## [0.22.0] - 2026-09-19
 
 ### Added

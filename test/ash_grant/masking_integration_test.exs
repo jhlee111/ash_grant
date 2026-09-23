@@ -221,4 +221,37 @@ defmodule AshGrant.MaskingIntegrationTest do
       assert result2.address == "**************"
     end
   end
+
+  describe "unknown field group does not disable masking (issue #146)" do
+    setup do
+      record = create_record!()
+      %{record: record}
+    end
+
+    test "a valid masking group still masks when an unknown group is present", %{
+      record: record
+    } do
+      # The unknown :nonexistent_group cannot be atomized via
+      # String.to_existing_atom/1. Before the fix, ApplyMasking rescued that
+      # ArgumentError at the top of resolve_masking/2 and returned %{}, silently
+      # disabling ALL masking (fail-open). The valid :sensitive group's masking
+      # must still apply.
+      actor = %{
+        permissions: [
+          "maskedrecord:*:read:always:sensitive",
+          "maskedrecord:*:read:always:nonexistent_group"
+        ]
+      }
+
+      results = read_records(actor)
+      result = find_record(results, record.id)
+
+      assert result != nil, "record not found"
+
+      # phone/address belong to :sensitive and must remain masked despite the
+      # unknown group in the same permission set.
+      assert result.phone == "*************"
+      assert result.address == "***********"
+    end
+  end
 end
