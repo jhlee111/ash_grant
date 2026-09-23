@@ -3,6 +3,9 @@ defmodule AshGrant.Verifiers.ValidateScopes do
   Spark DSL verifier that validates scope-adjacent configuration:
 
   - Warns about deprecated `owner_field` and `scope_resolver` usage
+  - Warns when a scope is declared with a reserved universal name
+    (`always`/`all`/`global`) and a non-`true` filter, which the checks would
+    silently ignore
   - Raises a DslError if `instance_key` does not exist as an attribute
 
   Implemented as a verifier so that it can safely reach into the resource's
@@ -21,6 +24,8 @@ defmodule AshGrant.Verifiers.ValidateScopes do
 
   alias Spark.Dsl.Verifier
 
+  @reserved_scope_names ~w(always all global)a
+
   @impl Spark.Dsl.Verifier
   @spec verify(dsl_state :: map()) :: :ok | {:error, Spark.Error.DslError.t()}
   def verify(dsl_state) do
@@ -28,6 +33,7 @@ defmodule AshGrant.Verifiers.ValidateScopes do
 
     if resolver_configured?(dsl_state) do
       validate_deprecated_options(dsl_state, resource)
+      validate_reserved_scope_names(dsl_state, resource)
       validate_instance_key(dsl_state, resource)
     else
       :ok
@@ -71,6 +77,34 @@ defmodule AshGrant.Verifiers.ValidateScopes do
             scope :scope_name, expr(your_filter_expression)
 
         The scope_resolver option will be removed in a future version.
+        """,
+        []
+      )
+    end
+
+    :ok
+  end
+
+  @spec validate_reserved_scope_names(dsl_state :: map(), resource :: module()) :: :ok
+  defp validate_reserved_scope_names(dsl_state, resource) do
+    dsl_state
+    |> Verifier.get_entities([:ash_grant])
+    |> Enum.filter(&match?(%AshGrant.Dsl.Scope{}, &1))
+    |> Enum.each(&warn_if_reserved_name(&1, resource))
+
+    :ok
+  end
+
+  defp warn_if_reserved_name(%AshGrant.Dsl.Scope{name: name, filter: filter}, resource) do
+    if name in @reserved_scope_names and filter != true do
+      IO.warn(
+        """
+        AshGrant: scope :#{name} on #{inspect(resource)} uses a reserved name.
+
+        "#{name}" is a built-in universal scope: the checks short-circuit on the name
+        and never resolve its filter, so the declared filter is silently ignored and
+        the scope grants unrestricted access. Rename the scope (e.g. :#{name}_scoped)
+        or declare it with a `true` filter.
         """,
         []
       )

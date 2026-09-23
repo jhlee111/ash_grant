@@ -125,7 +125,7 @@ defmodule AshGrant.FieldFilterCheck do
     end
   end
 
-  defp global_access?(scopes), do: "always" in scopes or "all" in scopes or "global" in scopes
+  defp global_access?(scopes), do: Enum.any?(scopes, &AshGrant.Scope.universal?/1)
 
   defp build_rbac_filter(scopes, scope_resolver, resource) do
     filters = Enum.map(scopes, &resolve_scope(resource, scope_resolver, &1))
@@ -167,8 +167,7 @@ defmodule AshGrant.FieldFilterCheck do
     ArgumentError -> resolve_with_scope_resolver(scope_resolver, scope)
   end
 
-  defp resolve_with_scope_resolver(nil, "always"), do: true
-  defp resolve_with_scope_resolver(nil, "all"), do: true
+  defp resolve_with_scope_resolver(nil, scope) when scope in ~w(always all global), do: true
   # An unknown scope with no resolver grants nothing (fail-closed at the field level).
   defp resolve_with_scope_resolver(nil, _scope), do: false
 

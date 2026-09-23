@@ -282,7 +282,7 @@ defmodule AshGrant.FilterCheck do
          context
        ) do
     # Check for global access from RBAC
-    has_global_access = "always" in scopes or "all" in scopes or "global" in scopes
+    has_global_access = Enum.any?(scopes, &AshGrant.Scope.universal?/1)
 
     if has_global_access do
       true
@@ -449,8 +449,9 @@ defmodule AshGrant.FilterCheck do
       resolve_with_scope_resolver(scope_resolver, scope, context)
   end
 
-  defp resolve_with_scope_resolver(nil, "always", _context), do: true
-  defp resolve_with_scope_resolver(nil, "all", _context), do: true
+  defp resolve_with_scope_resolver(nil, scope, _context)
+       when scope in ~w(always all global),
+       do: true
 
   defp resolve_with_scope_resolver(nil, scope, _context) do
     raise """
