@@ -13,10 +13,6 @@ defmodule AshGrant.Transformers.ValidateScopeThroughs do
   alias Spark.Dsl.Transformer
 
   @impl true
-  def after?(AshGrant.Transformers.MergeDomainConfig), do: true
-  def after?(_), do: false
-
-  @impl true
   def before?(AshGrant.Transformers.AddDefaultPolicies), do: true
   def before?(_), do: false
 
@@ -39,13 +35,26 @@ defmodule AshGrant.Transformers.ValidateScopeThroughs do
     relationships = Transformer.get_entities(dsl_state, [:relationships])
     rel = Enum.find(relationships, &(&1.name == scope_through.relationship))
 
-    unless rel do
-      raise Spark.Error.DslError,
-        module: resource,
-        path: [:ash_grant, :scope_through],
-        message:
-          "Relationship :#{scope_through.relationship} not found on #{inspect(resource)}. " <>
-            "scope_through requires a belongs_to relationship to the parent resource."
+    cond do
+      rel == nil ->
+        raise Spark.Error.DslError,
+          module: resource,
+          path: [:ash_grant, :scope_through],
+          message:
+            "Relationship :#{scope_through.relationship} not found on #{inspect(resource)}. " <>
+              "scope_through requires a belongs_to relationship to the parent resource."
+
+      rel.type != :belongs_to ->
+        raise Spark.Error.DslError,
+          module: resource,
+          path: [:ash_grant, :scope_through],
+          message:
+            "scope_through relationship :#{scope_through.relationship} on #{inspect(resource)} " <>
+              "is a :#{rel.type} relationship, but scope_through requires a belongs_to " <>
+              "relationship to the parent resource."
+
+      true ->
+        :ok
     end
   end
 end
