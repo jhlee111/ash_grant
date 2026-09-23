@@ -71,6 +71,7 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     # private attributes). Ash only allows non-PK, public attributes, calculations,
     # and aggregates in field policies.
     valid_fields = valid_field_policy_targets(dsl_state)
+    resource = Transformer.get_persisted(dsl_state, :module)
 
     {dsl_state, _seen} =
       Enum.reduce(field_groups, {dsl_state, MapSet.new()}, fn fg, {acc, seen} ->
@@ -78,6 +79,8 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
         all_fields = Enum.filter(all_fields, &(&1 in valid_fields))
         unique_fields = Enum.reject(all_fields, &MapSet.member?(seen, &1))
         new_seen = MapSet.union(seen, MapSet.new(all_fields))
+
+        warn_if_masking_dead(fg, unique_fields, resource)
 
         if unique_fields != [] do
           field_policy = build_field_policy(fg.name, unique_fields)
@@ -97,6 +100,28 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     dsl_state = rebuild_field_policy_cache(dsl_state)
 
     {:ok, dsl_state}
+  end
+
+  # A field_group whose masked fields were claimed by an earlier group (deduped
+  # away) silently loses masking: ApplyMasking only masks fields the group owns,
+  # so the field comes back %Ash.ForbiddenField{} instead of a masked value.
+  # Warn so dead masking isn't mistaken for a missing grant (#130).
+  defp warn_if_masking_dead(fg, unique_fields, resource) do
+    dead = Enum.reject(fg.mask || [], &(&1 in unique_fields))
+
+    if dead != [] do
+      IO.warn(
+        """
+        AshGrant: field_group :#{fg.name} on #{inspect(resource)} masks #{inspect(dead)},
+        but those fields are owned by an earlier field_group (dedup), so masking is
+        silently disabled for them and they come back as %Ash.ForbiddenField{}.
+
+        Reorder the field_group so :#{fg.name} claims #{inspect(dead)} first, or use
+        non-overlapping fields.
+        """,
+        []
+      )
+    end
   end
 
   defp build_field_policy(group_name, fields) do
