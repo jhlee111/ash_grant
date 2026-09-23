@@ -109,6 +109,7 @@ defmodule AshGrant.Calculation.CanPerform do
       expr(false)
     else
       action = to_string(opts[:action])
+      action_type = action_type_for(resource, action)
       resource_name = opts[:resource_name] || AshGrant.Info.resource_name(resource)
       resolver = AshGrant.Info.resolver(resource)
       scope_resolver = AshGrant.Info.scope_resolver(resource)
@@ -129,7 +130,7 @@ defmodule AshGrant.Calculation.CanPerform do
         AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
 
       parent_filters =
-        build_parent_instance_filters(resource, permissions, action)
+        build_parent_instance_filters(resource, permissions, action, action_type)
 
       build_expression(
         scopes,
@@ -201,8 +202,16 @@ defmodule AshGrant.Calculation.CanPerform do
 
   # Parent instance filter building (mirrors FilterCheck's build_parent_instance_filters)
 
-  defp build_parent_instance_filters(resource, permissions, action_name) do
+  defp action_type_for(resource, action) do
+    case Ash.Resource.Info.action(resource, String.to_existing_atom(action)) do
+      nil -> nil
+      action_struct -> action_struct.type
+    end
+  end
+
+  defp build_parent_instance_filters(resource, permissions, action_name, action_type) do
     AshGrant.Info.scope_throughs(resource)
+    |> Enum.filter(&AshGrant.Info.scope_through_allows_action?(&1, action_name, action_type))
     |> Enum.flat_map(fn scope_through ->
       parent_resource = resolve_parent_resource(resource, scope_through)
       parent_resource_name = AshGrant.Info.resource_name(parent_resource)
