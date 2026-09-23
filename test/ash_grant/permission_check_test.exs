@@ -335,24 +335,31 @@ defmodule AshGrant.PermissionCheckTest do
   end
 
   describe "builtin scopes" do
-    test "always and all need no declaration" do
-      # Memo declares neither.
+    test "always, all, and global need no declaration" do
+      # Memo declares none of them.
       assert issues_for("memo:*:read:always") == []
       assert issues_for("memo:*:update:all") == []
+      assert issues_for("memo:*:read:global") == []
+      assert issues_for("memo:*:update:global") == []
     end
 
-    test "global is accepted only where the write path cannot reach it (#139)" do
+    test "global is universal on the read and write paths (#139)" do
       assert issues_for("memo:*:read:global") == []
       assert issues_for("memo:*:@read:global") == []
-
-      assert codes("memo:*:update:global") == [:undeclared_scope]
-      assert codes("memo:*:*:global") == [:undeclared_scope]
+      assert issues_for("memo:*:update:global") == []
+      assert issues_for("memo:*:*:global") == []
     end
 
-    test "a read-only name that a write check is overridden to is write-reachable" do
-      # Overridden's update policy asks for "moderate", so that is where Check
-      # would resolve `global`.
-      assert codes("overridden:*:moderate:global", [Overridden]) == [:undeclared_scope]
+    test "global grants on the write path without a declaration (#139)" do
+      actor = %{
+        id: Ash.UUID.generate(),
+        unit_id: Ash.UUID.generate(),
+        permissions: ["memo:*:update:global"]
+      }
+
+      update = Ash.Resource.Info.action(Memo, :update)
+
+      assert run_check(Memo, update, actor) == true
     end
   end
 
@@ -609,7 +616,7 @@ defmodule AshGrant.PermissionCheckTest do
       update = Ash.Resource.Info.action(Memo, :update)
       read = Ash.Resource.Info.action(Memo, :read)
 
-      assert raises_undeclared_scope?(Memo, update, "memo:*:update:global")
+      refute raises_undeclared_scope?(Memo, update, "memo:*:update:global")
       assert raises_undeclared_scope?(Memo, read, "memo:*:read:nowhere")
       refute raises_undeclared_scope?(Memo, read, "memo:*:read:global")
       refute raises_undeclared_scope?(Memo, update, "memo:*:update:own")

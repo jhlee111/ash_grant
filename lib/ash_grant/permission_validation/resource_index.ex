@@ -9,10 +9,6 @@ defmodule AshGrant.PermissionValidation.ResourceIndex do
 
   alias AshGrant.Info
 
-  # `AshGrant.Check` is the only check that raises on an undeclared scope the
-  # read path accepts by name — see `AshGrant.PermissionValidation`'s `global` rule.
-  @write_checks [AshGrant.Check]
-
   @checks [
     AshGrant.Check,
     AshGrant.FilterCheck,
@@ -27,7 +23,6 @@ defmodule AshGrant.PermissionValidation.ResourceIndex do
           actions: %{String.t() => atom()},
           through_actions: [{String.t(), atom()}],
           action_overrides: [String.t()],
-          write_action_overrides: [String.t()],
           scopes: MapSet.t(String.t()),
           scope_resolver?: boolean(),
           field_groups: MapSet.t(String.t())
@@ -104,7 +99,6 @@ defmodule AshGrant.PermissionValidation.ResourceIndex do
       names: Enum.uniq([Info.resource_name(resource) | overrides.resources]),
       actions: Map.new(Ash.Resource.Info.actions(resource), &{to_string(&1.name), &1.type}),
       action_overrides: overrides.actions,
-      write_action_overrides: overrides.write_actions,
       scopes: MapSet.new(Info.scopes(resource), &to_string(&1.name)),
       scope_resolver?: Info.scope_resolver(resource) != nil,
       field_groups: MapSet.new(Info.field_groups(resource), &to_string(&1.name))
@@ -116,7 +110,7 @@ defmodule AshGrant.PermissionValidation.ResourceIndex do
   # resource's `resource_name`. Those names are just as valid in a stored string,
   # so they are collected from wherever a check can be declared.
   defp overrides(resource) do
-    acc = %{resources: [], actions: [], write_actions: []}
+    acc = %{resources: [], actions: []}
 
     [
       Ash.Policy.Info.policies(resource),
@@ -127,7 +121,7 @@ defmodule AshGrant.PermissionValidation.ResourceIndex do
     |> Map.new(fn {key, names} -> {key, Enum.uniq(names)} end)
   rescue
     # A resource without the policy authorizer has no policies to read.
-    _ -> %{resources: [], actions: [], write_actions: []}
+    _ -> %{resources: [], actions: []}
   end
 
   # Walks the whole term rather than a known struct shape: policies nest (groups,
@@ -137,7 +131,6 @@ defmodule AshGrant.PermissionValidation.ResourceIndex do
       acc
       |> add(:resources, name(check_opts[:resource], :resource))
       |> add(:actions, name(check_opts[:action], :action))
-      |> add_write_action(module, name(check_opts[:action], :action))
     else
       acc
     end
@@ -160,9 +153,4 @@ defmodule AshGrant.PermissionValidation.ResourceIndex do
 
   defp add(acc, _key, nil), do: acc
   defp add(acc, key, name), do: Map.update!(acc, key, &[name | &1])
-
-  defp add_write_action(acc, module, name) when module in @write_checks,
-    do: add(acc, :write_actions, name)
-
-  defp add_write_action(acc, _module, _name), do: acc
 end

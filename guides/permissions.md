@@ -487,9 +487,8 @@ and do not fail it.
   `own_unit` on every resource that has an `approve` action — not on every resource
   in the application. Resources that lack it are listed by name
   (`:scope_missing_on`).
-- **`always` and `all` need no declaration.** `global` is accepted by name on the
-  read path only, so an undeclared `global` is reported when the grant can reach a
-  write or generic action.
+- **`always`, `all`, and `global` need no declaration.** They are universal scopes
+  on both the read and the write paths.
 - **A `scope_resolver` makes an unknown scope a warning** (`:unverifiable_scope`):
   the resolver may know it, and that cannot be checked ahead of time.
 - **Action and resource overrides count.** A name passed as

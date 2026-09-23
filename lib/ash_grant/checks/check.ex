@@ -457,11 +457,8 @@ defmodule AshGrant.Check do
     true
   end
 
-  defp check_scope_access("always", _scope_resolver, _context, _authorizer, _opts) do
-    true
-  end
-
-  defp check_scope_access("all", _scope_resolver, _context, _authorizer, _opts) do
+  defp check_scope_access(scope, _scope_resolver, _context, _authorizer, _opts)
+       when scope in ~w(always all global) do
     true
   end
 
