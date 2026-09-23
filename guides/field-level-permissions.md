@@ -205,6 +205,14 @@ end
 
 ### Masking rules
 
+- **The masking group must own the fields it masks.** Field ownership is
+  deduplicated across groups in DSL order: earlier groups win, later
+  groups get only the remaining fields. If an earlier group already owns a
+  masked field (for example a broad `:all` or `:all except:` group), the
+  later group's claim is dropped, masking is silently disabled for that
+  field, and it comes back `%Ash.ForbiddenField{}` instead of a masked
+  value. Declare the masking group *before* the overlapping group (or use
+  non-overlapping fields). A compile-time warning flags this (#130).
 - **Not inherited.** Masking attaches to the group that declared it. A
   child group inheriting from a masked parent does *not* inherit the
   masking. An actor at the higher-level group sees raw values.
