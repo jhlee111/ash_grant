@@ -176,6 +176,30 @@ defmodule AshGrant.ScopeThroughTest do
       assert updated.body == "Updated"
     end
 
+    test "explicit deny wins over scope_through parent instance permission (#170)" do
+      post = create_post!(title: "My Post", author_id: Ash.UUID.generate())
+
+      comment =
+        create_child_comment!(%{body: "Original", post_id: post.id, user_id: Ash.UUID.generate()})
+
+      # A deny on the child resource must not be reopened by a parent instance
+      # grant propagated through scope_through.
+      actor = %{
+        id: Ash.UUID.generate(),
+        permissions: [
+          "!child_comment:*:update:global",
+          "post:#{post.id}:update:"
+        ]
+      }
+
+      result =
+        comment
+        |> Ash.Changeset.for_update(:update, %{body: "Hacked"})
+        |> Ash.update(actor: actor)
+
+      assert {:error, %Ash.Error.Forbidden{}} = result
+    end
+
     test "parent instance permission denies update on non-matching post" do
       other_post_id = Ash.UUID.generate()
       post = create_post!(title: "Different Post", author_id: Ash.UUID.generate())
