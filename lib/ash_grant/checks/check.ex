@@ -384,8 +384,7 @@ defmodule AshGrant.Check do
        ) do
     # Check action filter
     action_allowed =
-      scope_through.actions == nil or
-        action_type_atom(action_name, action_type) in scope_through.actions
+      AshGrant.Info.scope_through_allows_action?(scope_through, action_name, action_type)
 
     if action_allowed do
       parent_resource = resolve_parent_resource(resource_module, scope_through)
@@ -424,15 +423,6 @@ defmodule AshGrant.Check do
         explicit
     end
   end
-
-  defp action_type_atom(_action_name, action_type)
-       when is_atom(action_type) and not is_nil(action_type),
-       do: action_type
-
-  defp action_type_atom(action_name, _) when is_binary(action_name),
-    do: String.to_existing_atom(action_name)
-
-  defp action_type_atom(action_name, _) when is_atom(action_name), do: action_name
 
   defp action_type_from(%{type: type}), do: type
   defp action_type_from(_), do: nil

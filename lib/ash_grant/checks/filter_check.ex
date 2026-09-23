@@ -341,9 +341,7 @@ defmodule AshGrant.FilterCheck do
 
   defp build_parent_instance_filters(resource_module, permissions, action_name, action_type) do
     AshGrant.Info.scope_throughs(resource_module)
-    |> Enum.filter(fn st ->
-      st.actions == nil or action_type_atom(action_name, action_type) in st.actions
-    end)
+    |> Enum.filter(&AshGrant.Info.scope_through_allows_action?(&1, action_name, action_type))
     |> Enum.flat_map(fn scope_through ->
       parent_resource = resolve_parent_resource(resource_module, scope_through)
       parent_resource_name = AshGrant.Info.resource_name(parent_resource)
@@ -391,9 +389,6 @@ defmodule AshGrant.FilterCheck do
         explicit
     end
   end
-
-  defp action_type_atom(_action_name, action_type) when is_atom(action_type), do: action_type
-  defp action_type_atom(action_name, _), do: String.to_existing_atom(action_name)
 
   defp resolve_permissions(resolver, actor, context) when is_function(resolver, 2) do
     resolver.(actor, context)

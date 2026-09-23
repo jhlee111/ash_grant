@@ -581,6 +581,7 @@ defmodule AshGrant.Introspect do
 
   defp has_parent_instance_access?(resource, permissions, action_name, action_type) do
     Info.scope_throughs(resource)
+    |> Enum.filter(&Info.scope_through_allows_action?(&1, action_name, action_type))
     |> Enum.any?(fn scope_through ->
       parent_resource = scope_through_parent_resource(resource, scope_through)
 
