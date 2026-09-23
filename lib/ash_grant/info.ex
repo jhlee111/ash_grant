@@ -88,11 +88,20 @@ defmodule AshGrant.Info do
   @doc """
   Gets the field to match instance permission IDs against.
 
-  Defaults to `:id` (primary key) when not configured.
+  Defaults to the resource's primary key when not configured (rather than the
+  hardcoded `:id`, which breaks silently when the primary key has another name).
   """
   @spec instance_key(Ash.Resource.t()) :: atom()
   def instance_key(resource) do
-    Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :instance_key) || :id
+    Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :instance_key) ||
+      primary_key_name(resource)
+  end
+
+  defp primary_key_name(resource) do
+    case Ash.Resource.Info.primary_key(resource) do
+      [name] when is_atom(name) -> name
+      _ -> :id
+    end
   end
 
   @doc """

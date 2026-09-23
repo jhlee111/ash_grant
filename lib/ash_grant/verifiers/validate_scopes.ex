@@ -116,26 +116,44 @@ defmodule AshGrant.Verifiers.ValidateScopes do
   @spec validate_instance_key(dsl_state :: map(), resource :: module()) ::
           :ok | {:error, Spark.Error.DslError.t()}
   defp validate_instance_key(dsl_state, resource) do
-    instance_key = Verifier.get_option(dsl_state, [:ash_grant], :instance_key)
+    attributes = Verifier.get_entities(dsl_state, [:attributes])
+    attr_names = Enum.map(attributes, & &1.name)
 
-    if instance_key && instance_key != :id do
-      attributes = Verifier.get_entities(dsl_state, [:attributes])
-      attr_names = Enum.map(attributes, & &1.name)
-
-      if instance_key in attr_names do
+    # The effective key is the explicit option, else the single primary key
+    # (which is what `AshGrant.Info.instance_key/1` resolves to at runtime).
+    # When there is no explicit option and the primary key is composite, there
+    # is no single field to match instance IDs against — skip validation rather
+    # than emitting a misleading `:id` warning (#169).
+    case instance_key_to_validate(dsl_state, attributes) do
+      nil ->
         :ok
-      else
-        {:error,
-         Spark.Error.DslError.exception(
-           module: resource,
-           path: [:ash_grant, :instance_key],
-           message:
-             "instance_key :#{instance_key} does not exist as an attribute on #{inspect(resource)}. " <>
-               "Available attributes: #{inspect(attr_names)}"
-         )}
-      end
-    else
-      :ok
+
+      instance_key ->
+        if instance_key in attr_names do
+          :ok
+        else
+          {:error,
+           Spark.Error.DslError.exception(
+             module: resource,
+             path: [:ash_grant, :instance_key],
+             message:
+               "instance_key :#{instance_key} does not exist as an attribute on #{inspect(resource)}. " <>
+                 "Available attributes: #{inspect(attr_names)}"
+           )}
+        end
+    end
+  end
+
+  defp instance_key_to_validate(dsl_state, attributes) do
+    case Verifier.get_option(dsl_state, [:ash_grant], :instance_key) do
+      nil ->
+        case Enum.filter(attributes, & &1.primary_key?) do
+          [attr] -> attr.name
+          _ -> nil
+        end
+
+      key ->
+        key
     end
   end
 end
