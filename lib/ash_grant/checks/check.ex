@@ -180,6 +180,7 @@ defmodule AshGrant.Check do
 
   require Ash.Expr
   require Ash.Query
+  require Logger
 
   @doc """
   Creates a check tuple for use in policies.
@@ -443,9 +444,17 @@ defmodule AshGrant.Check do
       action: action,
       tenant: get_tenant(authorizer),
       changeset: get_changeset(authorizer),
-      query: get_query(authorizer)
+      query: get_query(authorizer),
+      query_context: get_query_context(authorizer)
     }
   end
+
+  # The context `^context(:key)` templates resolve against: the query context on
+  # reads, the changeset context on writes. Previously this was never populated
+  # on the write path, so `^context(:key)` scopes were silently dropped (#136).
+  defp get_query_context(%{query: %{context: context}}) when is_map(context), do: context
+  defp get_query_context(%{changeset: %{context: context}}) when is_map(context), do: context
+  defp get_query_context(_), do: %{}
 
   defp resolve_permissions(nil, _actor, %{resource: resource}) do
     raise ArgumentError,
@@ -876,17 +885,33 @@ defmodule AshGrant.Check do
       Ash.Expr.fill_template(simplified,
         actor: actor,
         tenant: tenant,
-        context: %{},
+        context: context[:query_context] || %{},
         args: extract_arguments(context)
       )
 
     case Ash.Expr.eval(filled, record: record, resource: resource, actor: actor, tenant: tenant) do
-      {:ok, true} -> true
-      {:ok, false} -> false
-      {:ok, nil} -> false
-      {:ok, _other} -> true
-      :unknown -> fallback_evaluation(record, filter, context)
-      {:error, _} -> fallback_evaluation(record, filter, context)
+      {:ok, true} ->
+        true
+
+      {:ok, false} ->
+        false
+
+      {:ok, nil} ->
+        false
+
+      {:ok, other} ->
+        Logger.warning(
+          "AshGrant: filter evaluated to a non-boolean value #{inspect(other)}; " <>
+            "failing closed"
+        )
+
+        false
+
+      :unknown ->
+        fallback_evaluation(record, filter, context)
+
+      {:error, _} ->
+        fallback_evaluation(record, filter, context)
     end
   end
 
@@ -908,7 +933,8 @@ defmodule AshGrant.Check do
   #
   # The fallback checks if the expression contains tenant or actor references
   # and evaluates those specific checks.
-  defp fallback_evaluation(record, filter, context) do
+  @doc false
+  def fallback_evaluation(record, filter, context) do
     tenant = context[:tenant]
 
     # First try to extract "field in [list]" pattern (from scope_resolver)
@@ -922,11 +948,23 @@ defmodule AshGrant.Check do
         has_tenant_ref = filter_references_tenant?(filter)
         has_actor_ref = filter_references_actor?(filter)
 
-        # Only check what the filter actually references
-        tenant_ok = if has_tenant_ref, do: check_tenant_match(record, tenant), else: true
-        actor_ok = if has_actor_ref, do: check_actor_match(record, filter, context), else: true
+        # Only check what the filter actually references. A filter that
+        # references neither tenant nor actor cannot be evaluated by this
+        # fallback, so fail closed rather than authorizing blindly (#136).
+        cond do
+          has_tenant_ref and has_actor_ref ->
+            check_tenant_match(record, tenant, context[:resource]) and
+              check_actor_match(record, filter, context)
 
-        tenant_ok and actor_ok
+          has_tenant_ref ->
+            check_tenant_match(record, tenant, context[:resource])
+
+          has_actor_ref ->
+            check_actor_match(record, filter, context)
+
+          true ->
+            false
+        end
     end
   end
 
@@ -988,16 +1026,20 @@ defmodule AshGrant.Check do
     |> String.contains?(":_actor")
   end
 
-  defp check_tenant_match(_record, nil), do: false
+  @doc false
+  def check_tenant_match(_record, nil, _resource), do: false
 
-  defp check_tenant_match(record, tenant) do
-    record_tenant = Map.get(record, :tenant_id)
+  @doc false
+  def check_tenant_match(record, tenant, resource) do
+    # Resolve the actual multitenancy attribute instead of hardcoding :tenant_id,
+    # and fail closed when the record has no value for it (#136).
+    tenant_attr = Ash.Resource.Info.multitenancy_attribute(resource)
+    record_tenant = tenant_attr && Map.get(record, tenant_attr)
 
     if record_tenant != nil do
       to_string(record_tenant) == to_string(tenant)
     else
-      # No tenant_id on record, assume it's OK
-      true
+      false
     end
   end
 
