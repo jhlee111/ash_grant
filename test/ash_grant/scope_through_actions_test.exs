@@ -9,8 +9,7 @@ defmodule AshGrant.ScopeThroughActionsTest do
   defmodule ReadOnlyChild do
     @moduledoc false
     use Ash.Resource,
-      domain: nil,
-      validate_domain_inclusion?: false,
+      domain: AshGrant.ScopeThroughActionsTest.ReadOnlyChildDomain,
       data_layer: Ash.DataLayer.Ets,
       extensions: [AshGrant]
 
@@ -26,6 +25,8 @@ defmodule AshGrant.ScopeThroughActionsTest do
 
       scope(:always, true)
       scope_through(:post, actions: [:read])
+
+      can_perform_actions([:update])
     end
 
     attributes do
@@ -42,6 +43,15 @@ defmodule AshGrant.ScopeThroughActionsTest do
 
     actions do
       defaults([:read, :destroy, create: :*, update: :*])
+    end
+  end
+
+  defmodule ReadOnlyChildDomain do
+    @moduledoc false
+    use Ash.Domain, validate_config_inclusion?: false
+
+    resources do
+      resource(AshGrant.ScopeThroughActionsTest.ReadOnlyChild)
     end
   end
 
@@ -64,6 +74,12 @@ defmodule AshGrant.ScopeThroughActionsTest do
       assert AshGrant.Info.scope_through_allows_action?(st, "read", :read)
       assert AshGrant.Info.scope_through_allows_action?(st, "destroy", :destroy)
     end
+
+    test "fails closed when the action type is unknown" do
+      st = %AshGrant.Dsl.ScopeThrough{relationship: :post, resource: nil, actions: [:read]}
+
+      refute AshGrant.Info.scope_through_allows_action?(st, "read", nil)
+    end
   end
 
   describe "Introspect.can?/4 honors the actions filter" do
@@ -80,6 +96,27 @@ defmodule AshGrant.ScopeThroughActionsTest do
 
       assert {:deny, %{reason: :no_permission}} =
                AshGrant.Introspect.can?(ReadOnlyChild, :update, actor)
+    end
+  end
+
+  describe "CanPerform honors the actions filter" do
+    test "can_update? is false when update is excluded by actions: [:read]" do
+      post_id = Ash.UUID.generate()
+      actor = %{id: Ash.UUID.generate(), permissions: ["post:#{post_id}:update:"]}
+
+      child =
+        ReadOnlyChild
+        |> Ash.Changeset.for_create(:create, %{post_id: post_id}, authorize?: false)
+        |> Ash.create!()
+
+      [loaded] =
+        ReadOnlyChild
+        |> Ash.Query.for_read(:read)
+        |> Ash.Query.load([:can_update?])
+        |> Ash.read!(actor: actor)
+
+      assert loaded.id == child.id
+      refute loaded.can_update?
     end
   end
 end
