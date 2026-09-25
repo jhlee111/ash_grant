@@ -133,9 +133,8 @@ defmodule AshGrant.Info do
   Whether a `scope_through`'s `actions:` filter allows the given action.
 
   `actions: nil` (the default) allows every action; otherwise the action's type
-  atom must be listed. `action_type` wins when it is a non-nil atom; otherwise
-  the action name is atomized (which is only correct when the name equals its
-  type, as with `defaults` actions).
+  atom must be listed. When the action type is unknown (a non-nil atom is not
+  supplied), the filter fails closed and does not propagate.
   """
   @spec scope_through_allows_action?(
           AshGrant.Dsl.ScopeThrough.t(),
@@ -155,17 +154,17 @@ defmodule AshGrant.Info do
         action_name,
         action_type
       ) do
-    scope_through_action_type(action_name, action_type) in actions
+    case scope_through_action_type(action_name, action_type) do
+      nil -> false
+      type -> type in actions
+    end
   end
 
   defp scope_through_action_type(_action_name, action_type)
        when is_atom(action_type) and not is_nil(action_type),
        do: action_type
 
-  defp scope_through_action_type(action_name, _) when is_binary(action_name),
-    do: String.to_existing_atom(action_name)
-
-  defp scope_through_action_type(action_name, _) when is_atom(action_name), do: action_name
+  defp scope_through_action_type(_action_name, _action_type), do: nil
 
   @doc """
   Gets the owner field for "own" scope resolution.
