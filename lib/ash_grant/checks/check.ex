@@ -958,63 +958,57 @@ defmodule AshGrant.Check do
     end
   end
 
-  # Extract "field in [list]" pattern from filter expression (used by scope_resolver)
-  # Returns {field, list} tuple or nil
-  defp extract_in_list_check(filter) do
-    # Parse from string/inspect representation
-    filter_str = inspect(filter)
-
-    cond do
-      # Simple format: "field_name in [\"id1\", \"id2\"]"
-      match = Regex.run(~r/^(\w+)\s+in\s+\[(.+)\]$/, filter_str) ->
-        [_, field_name, list_content] = match
-        ids = Regex.scan(~r/"([^"]+)"/, list_content) |> Enum.map(fn [_, id] -> id end)
-        if ids != [], do: {String.to_existing_atom(field_name), ids}, else: nil
-
-      # Complex Ash.Query format with :in
-      String.contains?(filter_str, ":in") and String.contains?(filter_str, "[\"") ->
-        extract_in_list_from_inspect(filter_str)
-
-      true ->
-        nil
-    end
-  rescue
-    _ -> nil
+  # Extract "field in [list of strings]" from a filter expression (legacy
+  # scope_resolver shape). Structural matching replaces the brittle
+  # inspect()+regex version (#137). Returns {field, list} or nil.
+  defp extract_in_list_check(%Ash.Query.Call{
+         name: :in,
+         args: [%Ash.Query.Ref{attribute: field}, list]
+       })
+       when is_atom(field) and is_list(list) do
+    if Enum.all?(list, &is_binary/1), do: {field, list}, else: nil
   end
 
-  defp extract_in_list_from_inspect(filter_str) do
-    # Extract field name: look for :name, :field_name pattern
-    field_match = Regex.run(~r/attribute:\s*%[^}]*:name,\s*:(\w+)/, filter_str)
-
-    # Extract list: look for ["id1", "id2", ...] pattern
-    list_match = Regex.run(~r/\["([^"]+)"(?:,\s*"([^"]+)")*\]/, filter_str)
-
-    case {field_match, list_match} do
-      {[_, field_name], [full_match | _]} ->
-        # Parse all IDs from the list
-        ids = Regex.scan(~r/"([^"]+)"/, full_match) |> Enum.map(fn [_, id] -> id end)
-        if ids != [], do: {String.to_existing_atom(field_name), ids}, else: nil
-
-      _ ->
-        nil
-    end
-  rescue
-    _ -> nil
+  defp extract_in_list_check(%{__struct__: _, left: left, right: right}) do
+    extract_in_list_check(left) || extract_in_list_check(right)
   end
 
-  # Check if the filter expression references ^tenant()
-  defp filter_references_tenant?(filter) do
-    filter
-    |> inspect()
-    |> String.contains?(":_tenant")
-  end
+  defp extract_in_list_check(_), do: nil
 
-  # Check if the filter expression references ^actor()
+  # Check if the filter expression references ^tenant() — structural, replacing
+  # the old inspect()+String.contains?(":_tenant") (#137).
+  defp filter_references_tenant?(filter), do: :tenant in template_terms(filter)
+
+  # Check if the filter expression references ^actor(:field).
   defp filter_references_actor?(filter) do
-    filter
-    |> inspect()
-    |> String.contains?(":_actor")
+    Enum.any?(template_terms(filter), &match?({:actor, _}, &1))
   end
+
+  # Walk an expression collecting ^tenant() and ^actor(:field) template refs.
+  defp template_terms(filter), do: template_terms(filter, [])
+
+  defp template_terms(:_tenant, acc), do: [:tenant | acc]
+  defp template_terms({:_actor, field}, acc) when is_atom(field), do: [{:actor, field} | acc]
+
+  defp template_terms(%{__struct__: _, left: left, right: right}, acc),
+    do: template_terms(right, template_terms(left, acc))
+
+  defp template_terms(%{__struct__: _, expression: expression}, acc),
+    do: template_terms(expression, acc)
+
+  defp template_terms(%{__struct__: _, args: args}, acc) when is_list(args),
+    do: Enum.reduce(args, acc, &template_terms/2)
+
+  defp template_terms(%{__struct__: _, arguments: args}, acc) when is_list(args),
+    do: Enum.reduce(args, acc, &template_terms/2)
+
+  defp template_terms(list, acc) when is_list(list),
+    do: Enum.reduce(list, acc, &template_terms/2)
+
+  defp template_terms(tuple, acc) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> Enum.reduce(acc, &template_terms/2)
+
+  defp template_terms(_, acc), do: acc
 
   @doc false
   def check_tenant_match(_record, nil, _resource), do: false
@@ -1063,57 +1057,33 @@ defmodule AshGrant.Check do
     end
   end
 
-  # Extract "field in ^actor(:list_field)" pattern from filter expression
-  # Returns {record_field, actor_field} tuple or nil
-  defp extract_actor_in_list_check(filter) do
-    filter_str = inspect(filter)
+  # Extract "field in ^actor(:list_field)" — returns {record_field, actor_field} or nil.
+  defp extract_actor_in_list_check(%Ash.Query.Call{
+         name: :in,
+         args: [%Ash.Query.Ref{attribute: field}, {:_actor, actor_field}]
+       })
+       when is_atom(field) and is_atom(actor_field),
+       do: {field, actor_field}
 
-    # Pattern: look for `field_name in {:_actor, :list_field}`
-    # The filter string looks like: `organization_unit_id in {:_actor, :accessible_org_unit_ids}`
-    cond do
-      match = Regex.run(~r/(\w+)\s+in\s+\{:_actor,\s*:(\w+)\}/, filter_str) ->
-        [_, record_field, actor_field] = match
-        {String.to_existing_atom(record_field), String.to_existing_atom(actor_field)}
-
-      # Also match Ash.Expr struct representations
-      match = Regex.run(~r/:name,\s*:(\w+).*:in.*:_actor.*:(\w+)/, filter_str) ->
-        [_, record_field, actor_field] = match
-        {String.to_existing_atom(record_field), String.to_existing_atom(actor_field)}
-
-      true ->
-        nil
-    end
-  rescue
-    _ -> nil
+  defp extract_actor_in_list_check(%{__struct__: _, left: left, right: right}) do
+    extract_actor_in_list_check(left) || extract_actor_in_list_check(right)
   end
 
-  # Extract "field == ^actor(:actor_field)" pattern from filter expression
-  # Returns {record_field, actor_field} tuple or nil
-  # This handles any actor field (not just :id), e.g., `field == ^actor(:org_unit_id)`
-  defp extract_actor_equality_check(filter) do
-    filter_str = inspect(filter)
+  defp extract_actor_in_list_check(_), do: nil
 
-    # Pattern: look for `field_name == {:_actor, :actor_field}` or similar
-    # The filter string looks like: `organization_unit_id == {:_actor, :org_unit_id}`
+  # Extract "field == ^actor(:actor_field)" — returns {record_field, actor_field} or nil.
+  defp extract_actor_equality_check(%Ash.Query.Call{
+         name: :==,
+         args: [%Ash.Query.Ref{attribute: field}, {:_actor, actor_field}]
+       })
+       when is_atom(field) and is_atom(actor_field),
+       do: {field, actor_field}
 
-    cond do
-      # Match pattern: field_name == {:_actor, :actor_field}
-      match = Regex.run(~r/(\w+)\s*==\s*\{:_actor,\s*:(\w+)\}/, filter_str) ->
-        [_, record_field, actor_field] = match
-        {String.to_existing_atom(record_field), String.to_existing_atom(actor_field)}
-
-      # Match Ash.Expr struct representations with equality
-      # e.g., `%Ash.Query.Operator.Eq{... left: %{name: :organization_unit_id}, right: {:_actor, :org_unit_id}}`
-      match = Regex.run(~r/:name,\s*:(\w+).*:_actor,\s*:(\w+)/, filter_str) ->
-        [_, record_field, actor_field] = match
-        {String.to_existing_atom(record_field), String.to_existing_atom(actor_field)}
-
-      true ->
-        nil
-    end
-  rescue
-    _ -> nil
+  defp extract_actor_equality_check(%{__struct__: _, left: left, right: right}) do
+    extract_actor_equality_check(left) || extract_actor_equality_check(right)
   end
+
+  defp extract_actor_equality_check(_), do: nil
 
   # Helper functions to extract data from authorizer
 
