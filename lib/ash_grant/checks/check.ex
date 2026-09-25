@@ -961,16 +961,16 @@ defmodule AshGrant.Check do
   # Extract "field in [list of strings]" from a filter expression (legacy
   # scope_resolver shape). Structural matching replaces the brittle
   # inspect()+regex version (#137). Returns {field, list} or nil.
+  # Only matches a bare `field in [list]` comparison — never recurses into a
+  # composite BooleanExpression, because the legacy anchored regex this replaces
+  # also only matched a bare expression. Recursing here would extract the `in`
+  # and ignore the sibling conditions, failing open on composite filters (#175).
   defp extract_in_list_check(%Ash.Query.Call{
          name: :in,
          args: [%Ash.Query.Ref{attribute: field}, list]
        })
        when is_atom(field) and is_list(list) do
     if Enum.all?(list, &is_binary/1), do: {field, list}, else: nil
-  end
-
-  defp extract_in_list_check(%{__struct__: _, left: left, right: right}) do
-    extract_in_list_check(left) || extract_in_list_check(right)
   end
 
   defp extract_in_list_check(_), do: nil

@@ -109,6 +109,17 @@ defmodule AshGrant.WriteFailOpenTest do
 
       refute AshGrant.Check.fallback_evaluation(%{status: :published}, filter, context)
     end
+
+    test "a composite filter with a partial in-list fails closed (#175)" do
+      filter = Ash.Expr.expr(org_id in ["a", "b"] and status == :draft)
+      context = %{resource: nil, tenant: nil, actor: nil}
+
+      refute AshGrant.Check.fallback_evaluation(
+               %{org_id: "a", status: :published},
+               filter,
+               context
+             )
+    end
   end
 
   # === #3: ^context on write ===
