@@ -19,10 +19,15 @@ defmodule AshGrant.PolicyTest.Checker do
   runtime builds: any matching grant's scope, a matching instance ID, or a
   scope_through parent's instance ID.
 
+  The union is three-valued. A scope that cannot be evaluated in memory does
+  not stop another component from admitting the record, but when nothing
+  admits it the answer is `{:indeterminate, %{undecided: [reason]}}`, never a
+  deny: the caller must fail the assertion either way.
+
   `{:action_type, type}` holds when any action of that type passes.
   """
   @spec check(module(), map() | nil, action_spec(), map() | nil, map()) ::
-          {:allow, map()} | {:deny, map()}
+          {:allow, map()} | {:deny, map()} | {:indeterminate, map()}
   def check(resource, actor, action_spec, record, arguments \\ %{})
 
   def check(resource, actor, {:action_type, type}, record, arguments) do
@@ -34,6 +39,7 @@ defmodule AshGrant.PolicyTest.Checker do
         results = Enum.map(names, &check(resource, actor, &1, record, arguments))
 
         Enum.find(results, &match?({:allow, _}, &1)) ||
+          Enum.find(results, &match?({:indeterminate, _}, &1)) ||
           Enum.find(results, &match?({:deny, %{reason: :scope_mismatch}}, &1)) ||
           hd(results)
     end
@@ -45,18 +51,38 @@ defmodule AshGrant.PolicyTest.Checker do
 
   def check(resource, actor, action, record, arguments) when is_map(record) do
     case Introspect.can?(resource, action, actor) do
-      {:allow, details} ->
-        scopes = Map.get(details, :scopes, [])
+      {:allow, details} -> admit(resource, actor, action, record, details, arguments)
+      deny -> deny
+    end
+  end
 
-        if Enum.any?(scopes, &scope_admits?(resource, actor, record, &1, arguments)) or
-             instance_admits?(resource, actor, action, record) do
-          {:allow, details}
-        else
-          {:deny, %{reason: :scope_mismatch, scopes: scopes, record: record}}
-        end
+  @doc """
+  The reasons an `{:indeterminate, details}` result could not be decided, as
+  one sentence for an assertion failure message.
+  """
+  @spec undecided_reason(map()) :: String.t()
+  def undecided_reason(%{undecided: undecided}) do
+    Enum.join(undecided, "; ") <>
+      ". Policy tests evaluate scopes in memory; test this one against the database instead"
+  end
 
-      deny ->
-        deny
+  # Unknown OR true is true; unknown OR false is unknown.
+  defp admit(resource, actor, action, record, details, arguments) do
+    scopes = Map.get(details, :scopes, [])
+    verdicts = Enum.map(scopes, &{&1, scope_admits?(resource, actor, record, &1, arguments)})
+
+    if Enum.any?(verdicts, &(elem(&1, 1) == true)) or
+         instance_admits?(resource, actor, action, record) do
+      {:allow, details}
+    else
+      reject(verdicts, scopes, record)
+    end
+  end
+
+  defp reject(verdicts, scopes, record) do
+    case for {scope, {:indeterminate, reason}} <- verdicts, do: "scope `#{scope}` #{reason}" do
+      [] -> {:deny, %{reason: :scope_mismatch, scopes: scopes, record: record}}
+      undecided -> {:indeterminate, %{undecided: undecided, record: record}}
     end
   end
 

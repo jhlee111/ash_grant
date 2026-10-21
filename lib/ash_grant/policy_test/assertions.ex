@@ -183,6 +183,10 @@ defmodule AshGrant.PolicyTest.Assertions do
       {:deny, details} ->
         raise AssertionError,
           message: build_error_message(:assert_can, actor_name, action_spec, record, details)
+
+      {:indeterminate, details} ->
+        raise AssertionError,
+          message: undecided_message(actor_name, action_spec, record, details)
     end
   end
 
@@ -198,6 +202,10 @@ defmodule AshGrant.PolicyTest.Assertions do
       {:allow, details} ->
         raise AssertionError,
           message: build_error_message(:assert_cannot, actor_name, action_spec, record, details)
+
+      {:indeterminate, details} ->
+        raise AssertionError,
+          message: undecided_message(actor_name, action_spec, record, details)
     end
   end
 
@@ -358,9 +366,12 @@ defmodule AshGrant.PolicyTest.Assertions do
   end
 
   @doc false
-  # Note: `arguments` is a map of action-argument values (or `%{}`) used to
-  # resolve `^arg(...)` templates in the filter. The old 4-arity version is
-  # preserved for back-compat; new callers should pass arguments.
+  # Evaluates a scope filter against a bare record map, in memory. Returns `true`
+  # or `false` when that decides it, and `{:indeterminate, reason}` when it does
+  # not: a SQL fragment, an exists(), or anything `Ash.Expr.eval` cannot settle.
+  # An assertion that cannot be decided must fail whichever way it points —
+  # guessing `true` passes `assert_can` blindly, guessing `false` passes
+  # `assert_cannot` blindly (#143). `arguments` resolves `^arg(...)` templates.
   def evaluate_filter_against_record(filter, record, actor, resource \\ nil, arguments \\ %{})
 
   def evaluate_filter_against_record(true, _record, _actor, _resource, _arguments), do: true
@@ -368,6 +379,27 @@ defmodule AshGrant.PolicyTest.Assertions do
   def evaluate_filter_against_record(false, _record, _actor, _resource, _arguments), do: false
 
   def evaluate_filter_against_record(filter, record, actor, resource, arguments) do
+    case Ash.Filter.find(filter, &database_only?/1) do
+      nil ->
+        eval_in_memory(filter, record, actor, resource, arguments)
+
+      %Ash.Query.Exists{} ->
+        {:indeterminate,
+         "uses exists(), which needs related rows a policy test record does not have"}
+
+      _fragment ->
+        {:indeterminate, "uses fragment(), which only the database can evaluate"}
+    end
+  end
+
+  # A scope's filter is not hydrated yet, so a fragment is still a `Call`; the
+  # `Fragment` struct is what a parsed filter would hold.
+  defp database_only?(%Ash.Query.Exists{}), do: true
+  defp database_only?(%Ash.Query.Call{name: :fragment}), do: true
+  defp database_only?(%Ash.Query.Function.Fragment{}), do: true
+  defp database_only?(_), do: false
+
+  defp eval_in_memory(filter, record, actor, resource, arguments) do
     filled =
       Ash.Expr.fill_template(filter,
         actor: actor,
@@ -376,69 +408,30 @@ defmodule AshGrant.PolicyTest.Assertions do
       )
 
     case Ash.Expr.eval(filled, record: record, resource: resource, actor: actor) do
-      {:ok, true} -> true
-      {:ok, false} -> false
-      {:ok, nil} -> false
-      {:ok, _other} -> true
-      :unknown -> fallback_evaluation(filter, record, actor)
-      {:error, _} -> fallback_evaluation(filter, record, actor)
+      {:ok, result} when is_boolean(result) ->
+        result
+
+      # A comparison against a value the record lacks is NULL, as it would be
+      # for the row — and NULL does not match. That is decided, not unknown.
+      {:ok, nil} ->
+        false
+
+      {:ok, other} ->
+        {:indeterminate, "evaluated to #{inspect(other)}, not a boolean"}
+
+      :unknown ->
+        {:indeterminate, "could not be evaluated in memory"}
+
+      {:error, error} ->
+        {:indeterminate, "could not be evaluated in memory: #{error_message(error)}"}
     end
+  rescue
+    error -> {:indeterminate, "could not be evaluated in memory: #{Exception.message(error)}"}
   end
 
-  # Fallback evaluation for expressions that Ash.Expr.eval can't handle
-  defp fallback_evaluation(filter, record, actor) do
-    filter_str = inspect(filter)
-
-    cond do
-      # Handle actor field comparison: expr(field == ^actor(:id))
-      String.contains?(filter_str, ":_actor") ->
-        evaluate_actor_comparison(filter_str, record, actor)
-
-      # Handle status comparison: expr(status == :value)
-      String.contains?(filter_str, "status") ->
-        evaluate_status_comparison(filter_str, record)
-
-      true ->
-        # Default to true if we can't evaluate
-        true
-    end
-  end
-
-  defp evaluate_actor_comparison(filter_str, record, actor) do
-    # Extract patterns like `field == {:_actor, :id}` or `field == {:_actor, :field_name}`
-    cond do
-      match = Regex.run(~r/(\w+)\s*==\s*\{:_actor,\s*:(\w+)\}/, filter_str) ->
-        [_, record_field, actor_field] = match
-        record_value = Map.get(record, String.to_atom(record_field))
-        actor_value = Map.get(actor, String.to_atom(actor_field))
-        record_value == actor_value
-
-      match = Regex.run(~r/:name,\s*:(\w+).*:_actor,\s*:(\w+)/, filter_str) ->
-        [_, record_field, actor_field] = match
-        record_value = Map.get(record, String.to_atom(record_field))
-        actor_value = Map.get(actor, String.to_atom(actor_field))
-        record_value == actor_value
-
-      true ->
-        true
-    end
-  end
-
-  defp evaluate_status_comparison(filter_str, record) do
-    # Handle patterns like `status == :draft` or `status == :published`
-    if match = Regex.run(~r/status\s*==\s*:(\w+)/, filter_str) do
-      [_, expected_status] = match
-      record_status = Map.get(record, :status)
-
-      if is_atom(record_status) do
-        record_status == String.to_atom(expected_status)
-      else
-        to_string(record_status) == expected_status
-      end
-    else
-      true
-    end
-  end
+  defp error_message(error) when is_exception(error), do: Exception.message(error)
+  defp error_message(error) when is_binary(error), do: error
+  defp error_message(error), do: inspect(error)
 
   defp build_error_message(:assert_can, actor_name, action_spec, nil, details) do
     "Expected actor :#{actor_name} to be able to perform #{format_action(action_spec)}, " <>
@@ -458,6 +451,11 @@ defmodule AshGrant.PolicyTest.Assertions do
   defp build_error_message(:assert_cannot, actor_name, action_spec, record, details) do
     "Expected actor :#{actor_name} to NOT be able to perform #{format_action(action_spec)} " <>
       "on record #{inspect(record)}, but was allowed: #{inspect(details)}"
+  end
+
+  defp undecided_message(actor_name, action_spec, record, details) do
+    "Cannot decide whether actor :#{actor_name} can perform #{format_action(action_spec)} " <>
+      "on record #{inspect(record)}: #{Checker.undecided_reason(details)}"
   end
 
   defp format_action(action) when is_atom(action), do: ":#{action}"

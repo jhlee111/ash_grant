@@ -82,6 +82,17 @@ that has no ID. When the parent's `instance_key` is not the field the foreign ke
 at, the runtime joins to the parent row, which a policy test does not have — that
 `scope_through` does not admit the record. DSL and YAML tests share this check.
 
+Scopes are evaluated in memory, so some cannot be decided: a `fragment()` (only the
+database can run it), an `exists()` (it needs related rows), or anything else
+`Ash.Expr.eval` cannot settle. If another part of the union admits the record, the
+assertion still passes. Otherwise it **fails whichever way it points** — `assert_can`
+and `assert_cannot` alike — with `Cannot decide: scope ... uses fragment() ...`. A
+guess either way would let one of the two pass without checking anything. Cover such
+scopes with a test that runs against the database.
+
+A field the record does not carry is `nil`, as it would be in the row, and `nil` does
+not match. That is a decided "no": add the field to the record if the scope reads it.
+
 ### Testing argument-based scopes
 
 For scopes that reference `^arg(:name)` (see
