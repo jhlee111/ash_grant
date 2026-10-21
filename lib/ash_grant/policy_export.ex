@@ -5,7 +5,8 @@ defmodule AshGrant.PolicyExport do
   Supports:
   - **Mermaid** - Visual flowchart diagrams
   - **Markdown** - Human-readable documentation
-  - **YAML/JSON** - Machine-readable format (see `AshGrant.PolicyTest.YamlExporter`)
+  - **YAML** - `mix ash_grant.export --format=yaml`. To export a *policy test* module
+    as YAML instead, see `AshGrant.PolicyTest.to_yaml/1`
 
   ## Examples
 
