@@ -51,8 +51,10 @@ mix ecto.reset    # Drop, create, and migrate
 
 # Policy configuration testing (NOT mix test)
 mix ash_grant.verify test/support/policy_test_fixtures.ex
-mix ash_grant.verify priv/policy_tests/           # Run all YAML tests
+mix ash_grant.verify priv/policy_tests/           # Every .ex/.exs/.yaml/.yml test under it
 mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
+# verify exits 1 when a test fails, 2 when the run is incomplete (missing path,
+# compile/YAML parse failure, a named path with no tests) — a skipped file is never a pass
 
 # Check stored permission strings against the app's resources (exit 1 on any :error)
 mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app

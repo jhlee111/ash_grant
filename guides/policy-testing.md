@@ -166,15 +166,22 @@ See [Argument-Based Scope](argument-based-scope.md) for when to use this pattern
 **Run policy tests:**
 
 ```bash
-# Run DSL tests
+# Run every policy test under a directory (.ex, .exs, .yaml and .yml files)
 mix ash_grant.verify test/policy_tests/
 
-# Run YAML tests
+# Run one file
 mix ash_grant.verify priv/policy_tests/document.yaml
 
 # Verbose output
 mix ash_grant.verify test/policy_tests/ --verbose
 ```
+
+Without a path, `verify` searches `test/policy_tests` and `priv/policy_tests`, and
+finding nothing there is not an error. It exits `0` when every test passes, `1` when
+a test fails, and `2` when the run is incomplete — a path that does not exist, a file
+that does not compile, a YAML file that does not parse or defines no tests, or a path
+you named that holds no tests. A CI step can rely on that: a file that never ran is
+not a pass.
 
 **Export policies:**
 
@@ -210,13 +217,17 @@ Use the `AshGrant.PolicyTest.Runner` module:
 # Run a single module
 results = AshGrant.PolicyTest.Runner.run_module(MyApp.PolicyTests.DocumentPolicyTest)
 
-# Run all policy test modules
-summary = AshGrant.PolicyTest.Runner.run_all()
+# Run every policy test module under a directory (.ex and .exs files)
+summary = AshGrant.PolicyTest.Runner.run_all(path: "test/policy_tests")
 # => %{passed: 10, failed: 0, results: [...]}
 
 # Run specific modules
 summary = AshGrant.PolicyTest.Runner.run_all(modules: [DocumentPolicyTest, PostPolicyTest])
 ```
+
+The runner covers DSL modules only. Run YAML files with
+`AshGrant.PolicyTest.YamlParser.run_yaml_tests/1`, or with `mix ash_grant.verify`,
+which runs both.
 
 ## Dependencies
 

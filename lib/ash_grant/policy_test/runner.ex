@@ -102,13 +102,20 @@ defmodule AshGrant.PolicyTest.Runner do
   @doc """
   Discovers policy test modules from a path.
 
-  Finds all modules that `use AshGrant.PolicyTest` in the given path.
+  `path` is a directory, searched recursively for `.ex` and `.exs` files, or a
+  single such file. Only files that `use AshGrant.PolicyTest` are considered, and
+  only the policy test modules they define are returned — a helper module in the
+  same file is not.
+
+  A file that is already compiled into the running application (under
+  `elixirc_paths`) is used as loaded. Any other file — an `.exs`, or an `.ex` in a
+  directory Mix does not compile, such as `priv/` — is compiled here, so a file
+  that does not compile raises.
   """
   @spec discover_modules(String.t()) :: [module()]
   def discover_modules(path) do
     path
-    |> Path.join("**/*.ex")
-    |> Path.wildcard()
+    |> source_files()
     |> Enum.flat_map(&find_policy_test_modules/1)
   end
 
@@ -147,11 +154,21 @@ defmodule AshGrant.PolicyTest.Runner do
     end
   end
 
+  defp source_files(path) do
+    if File.dir?(path) do
+      path |> Path.join("**/*.{ex,exs}") |> Path.wildcard()
+    else
+      [path]
+    end
+  end
+
   defp find_policy_test_modules(file_path) do
     case File.read(file_path) do
       {:ok, content} ->
         if String.contains?(content, "use AshGrant.PolicyTest") do
-          extract_module_names(content)
+          file_path
+          |> load_modules(content)
+          |> Enum.filter(&policy_test_module?/1)
         else
           []
         end
@@ -161,17 +178,60 @@ defmodule AshGrant.PolicyTest.Runner do
     end
   end
 
-  defp extract_module_names(content) do
-    # Find all defmodule declarations
-    ~r/defmodule\s+([\w.]+)\s+do/
-    |> Regex.scan(content)
-    |> Enum.map(fn [_, module_name] ->
-      try do
-        String.to_existing_atom("Elixir." <> module_name)
-      rescue
-        ArgumentError -> nil
+  defp load_modules(file_path, content) do
+    case compiled_modules(content) do
+      {:ok, modules} -> modules
+      :error -> file_path |> Code.compile_file() |> Enum.map(&elem(&1, 0))
+    end
+  end
+
+  # The modules the file declares, when every one of them is already loadable —
+  # compiling the file again would redefine them under the running application.
+  # Anything that cannot be named statically sends the file to the compiler, which
+  # reports exactly what the file defines.
+  defp compiled_modules(content) do
+    with {:ok, ast} <- Code.string_to_quoted(content),
+         {_ast, {[], names}} <- Macro.traverse(ast, {[], []}, &enter_module/2, &leave_module/2),
+         false <- names == [] or :unknown in names,
+         modules = Enum.map(names, &safe_concat/1),
+         true <- Enum.all?(modules, &(&1 && Code.ensure_loaded?(&1))) do
+      {:ok, Enum.reverse(modules)}
+    else
+      _ -> :error
+    end
+  end
+
+  # A nested `defmodule` is named relative to its parent, unless it is spelled
+  # `Elixir.Name`. The stack holds the alias segments of each enclosing module.
+  defp enter_module({:defmodule, _, [{:__aliases__, _, parts} | _]} = node, {stack, names}) do
+    name =
+      case {parts, stack} do
+        {[Elixir | _], _} -> parts
+        {_, [:unknown | _]} -> :unknown
+        {_, [parent | _]} -> parent ++ parts
+        {_, []} -> parts
       end
-    end)
-    |> Enum.reject(&is_nil/1)
+
+    name = if name != :unknown and Enum.all?(name, &is_atom/1), do: name, else: :unknown
+    {node, {[name | stack], [name | names]}}
+  end
+
+  defp enter_module({:defmodule, _, _} = node, {stack, names}),
+    do: {node, {[:unknown | stack], [:unknown | names]}}
+
+  defp enter_module(node, acc), do: {node, acc}
+
+  defp leave_module({:defmodule, _, _} = node, {[_ | stack], names}), do: {node, {stack, names}}
+  defp leave_module(node, acc), do: {node, acc}
+
+  # Never creates an atom: a module whose name is not an atom yet is not loaded.
+  defp safe_concat(parts) do
+    Module.safe_concat(parts)
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp policy_test_module?(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__policy_test__, 1)
   end
 end
