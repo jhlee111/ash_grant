@@ -23,7 +23,7 @@ defmodule AshGrant.PolicyTest.Assertions do
   These macros are automatically imported when you `use AshGrant.PolicyTest`.
   """
 
-  alias AshGrant.PolicyTest.AssertionError
+  alias AshGrant.PolicyTest.{AssertionError, Checker}
 
   @doc """
   Asserts that the specified fields are visible to an actor for an action.
@@ -176,7 +176,7 @@ defmodule AshGrant.PolicyTest.Assertions do
     {record, arguments} = split_record_and_arguments(third)
     {actor, resource, action} = resolve_context(module, actor_name, action_spec)
 
-    case check_permission(resource, action, actor, record, arguments) do
+    case Checker.check(resource, actor, action, record, arguments) do
       {:allow, _details} ->
         :ok
 
@@ -191,7 +191,7 @@ defmodule AshGrant.PolicyTest.Assertions do
     {record, arguments} = split_record_and_arguments(third)
     {actor, resource, action} = resolve_context(module, actor_name, action_spec)
 
-    case check_permission(resource, action, actor, record, arguments) do
+    case Checker.check(resource, actor, action, record, arguments) do
       {:deny, _details} ->
         :ok
 
@@ -355,76 +355,6 @@ defmodule AshGrant.PolicyTest.Assertions do
       Keyword.has_key?(spec, :action_type) -> {:action_type, Keyword.fetch!(spec, :action_type)}
       true -> raise "Invalid action spec: #{inspect(spec)}"
     end
-  end
-
-  defp check_permission(resource, action, actor, nil, _arguments) do
-    # No record - just check if actor has permission for the action
-    check_basic_permission(resource, action, actor)
-  end
-
-  defp check_permission(resource, action, actor, record, arguments) when is_map(record) do
-    # Record provided - check permission AND evaluate scope against record
-    case check_basic_permission(resource, action, actor) do
-      {:deny, _} = deny ->
-        deny
-
-      {:allow, details} ->
-        # Now check if the record matches the scope
-        check_scope_against_record(resource, action, actor, record, details, arguments)
-    end
-  end
-
-  defp check_basic_permission(resource, {:action_type, type}, actor) do
-    actions = Ash.Resource.Info.actions(resource)
-    matching_actions = Enum.filter(actions, fn action -> action.type == type end)
-
-    if matching_actions == [] do
-      {:deny, %{reason: :no_matching_action_type}}
-    else
-      find_first_allowed_action(matching_actions, resource, actor)
-    end
-  end
-
-  defp check_basic_permission(resource, action, actor) when is_atom(action) do
-    AshGrant.Introspect.can?(resource, action, actor)
-  end
-
-  defp find_first_allowed_action(matching_actions, resource, actor) do
-    results =
-      Enum.map(matching_actions, fn action ->
-        AshGrant.Introspect.can?(resource, action.name, actor)
-      end)
-
-    case Enum.find(results, fn {status, _} -> status == :allow end) do
-      nil -> {:deny, %{reason: :no_permission}}
-      allow -> allow
-    end
-  end
-
-  defp check_scope_against_record(resource, _action, actor, record, permission_details, arguments) do
-    # OR-compose all matching grants' scopes (#123): the record passes when ANY
-    # grant's scope accepts it — mirroring AshGrant.Check's write-path union.
-    # Callers that only supply :scope (singular) keep working via the fallback.
-    scope_names = permission_details[:scopes] || [permission_details[:scope]]
-
-    if Enum.any?(scope_names, &scope_passes?(resource, actor, record, &1, arguments)) do
-      {:allow, permission_details}
-    else
-      {:deny, %{reason: :scope_mismatch, scopes: scope_names, record: record}}
-    end
-  end
-
-  # nil = no scope restriction (e.g. instance permission); "always"/"all"/
-  # "global" are universal scopes — all pass without filter evaluation.
-  defp scope_passes?(_resource, _actor, _record, scope_name, _arguments)
-       when scope_name in [nil, "always", "all", "global"],
-       do: true
-
-  defp scope_passes?(resource, actor, record, scope_name, arguments) do
-    scope_atom = if is_binary(scope_name), do: String.to_atom(scope_name), else: scope_name
-    filter = AshGrant.Info.resolve_scope_filter(resource, scope_atom, %{actor: actor})
-
-    evaluate_filter_against_record(filter, record, actor, resource, arguments)
   end
 
   @doc false

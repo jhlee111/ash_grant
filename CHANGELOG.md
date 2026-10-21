@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`resolve_argument` analysis no longer reads the deprecated `write:` path** ([#148](https://github.com/jhlee111/ash_grant/issues/148)). Argument analysis uses read-scope resolution, so a `write: false` scope still registers its `^arg(...)` references instead of surfacing a false "no scope references" error.
 - **Domain-inherited scopes are recognized by `resolve_argument`** ([#147](https://github.com/jhlee111/ash_grant/issues/147)). A `resolve_argument` referenced only by a domain scope no longer trips a false "no scope references" compile error, and the fix does not reintroduce the domain↔resource compile cycle (the check moved to a post-compile verifier and the runtime recomputes `scopes_needing` domain-aware).
 - **`AshGrant.Changes.ResolveArgument` runtime fixes** ([#144](https://github.com/jhlee111/ash_grant/issues/144)). A single-segment `from_path` now resolves on create and update; a resolver returning an unexpected shape resolves conservatively instead of raising `CaseClauseError`; a malformed path raises a clear error instead of silently truncating.
+- **Policy tests check a record the way the runtime does, in the DSL and YAML runners alike** ([#143](https://github.com/jhlee111/ash_grant/issues/143)). Each runner carried its own copy of the record check, and the copies had drifted; both now go through one checker.
+  - **YAML tests honor every matching grant's scope** ([#123](https://github.com/jhlee111/ash_grant/issues/123)). They read only the first, so a narrow grant listed before a broad one failed an `assert_can` the DSL — and the runtime — passed.
+  - **An instance permission admits only its own record, and a `scope_through` grant only its parent's children.** Both runners let either admit *any* record, so `assert_can` on someone else's record passed and `assert_cannot` on it failed. A record now needs the field that decides it: its instance key, or the `scope_through` foreign key.
+  - **`action_type:` with a record passes when any action of the type admits the record.** The DSL checked the record against the first allowed action only.
+  - **A YAML test naming an undefined actor fails** (`Actor :x not defined`), as a DSL test already did. It ran as an actor with no permissions, so a misspelled actor passed every `assert_cannot`.
+
+  These can change the outcome of existing policy tests, each time toward what the runtime decides.
 
 ## [0.22.0] - 2026-09-19
 
