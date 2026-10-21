@@ -202,6 +202,20 @@ mix ash_grant.import priv/policy_tests/document.yaml
 mix ash_grant.import priv/policy_tests/document.yaml --output=test/policy_tests/document_test.exs
 ```
 
+**Export DSL to YAML:**
+
+```elixir
+yaml = AshGrant.PolicyTest.to_yaml(MyApp.PolicyTests.DocumentPolicyTest)
+File.write!("priv/policy_tests/document.yaml", yaml)
+```
+
+The YAML tests exactly what the module tests, or `to_yaml/1` raises `ArgumentError`
+listing every test it cannot express. Each test body must be assertion calls with
+literal arguments — no variables, helper calls or loops. A YAML test holds one
+assertion, so a test with several becomes `name (1/3)`, `name (2/3)`, … YAML has no
+atom type, so values that would not read back unchanged (a struct, a nested map, an
+atom such as `:Draft`) are refused too.
+
 ## Running Policy Tests Programmatically
 
 Use the `AshGrant.PolicyTest.Runner` module:
