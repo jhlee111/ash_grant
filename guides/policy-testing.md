@@ -69,9 +69,11 @@ Action can be specified as:
 ### How a record is checked
 
 With a record, an assertion passes when the action is allowed **and** the record is
-admitted by the same union the read filter builds — any one of:
+admitted by the same union the runtime builds — any one of:
 
-- any matching grant's scope accepts the record (grants OR-compose; order never matters);
+- any matching grant's scope accepts the record (grants OR-compose; order never matters).
+  A read evaluates the scope's filter; any other action evaluates its `write:` override
+  when it has one, as `AshGrant.Check` does;
 - the record's instance key is in a matching instance permission — `post:post_123:read:`
   admits `%{id: "post_123"}` and nothing else;
 - through `scope_through`, the record's foreign key is in the parent's instance

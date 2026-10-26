@@ -306,6 +306,10 @@ defmodule AshGrant.PolicyTest.YamlParser do
 
   # Same rule and message as the DSL's: a misspelled actor is a failing test, not
   # an actor with no permissions (which would quietly pass every assert_cannot).
+  defp fetch_actor!(_actors, nil) do
+    raise AshGrant.PolicyTest.AssertionError, message: "The assertion has no `actor:` key"
+  end
+
   defp fetch_actor!(actors, name) do
     case Map.get(actors, name) do
       nil ->

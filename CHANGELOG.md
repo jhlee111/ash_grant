@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **YAML tests honor every matching grant's scope** ([#123](https://github.com/jhlee111/ash_grant/issues/123)). They read only the first, so a narrow grant listed before a broad one failed an `assert_can` the DSL — and the runtime — passed.
   - **An instance permission admits only its own record, and a `scope_through` grant only its parent's children.** Both runners let either admit *any* record, so `assert_can` on someone else's record passed and `assert_cannot` on it failed. A record now needs the field that decides it: its instance key, or the `scope_through` foreign key.
   - **`action_type:` with a record passes when any action of the type admits the record.** The DSL checked the record against the first allowed action only.
-  - **A YAML test naming an undefined actor fails** (`Actor :x not defined`), as a DSL test already did. It ran as an actor with no permissions, so a misspelled actor passed every `assert_cannot`.
+  - **A write action evaluates a scope's `write:` override**, as `AshGrant.Check` does. Both runners used the read filter for every action, so `assert_can` on an update passed for a `write: false` scope the runtime refuses.
+  - **The resolver gets the context the runtime check gives it** (`actor`, `resource`, `action`; no tenant), and is called once per check. It got an empty context, so a resolver that grants by action decided differently in a policy test.
+  - **A YAML test naming an undefined actor fails** (`Actor :x not defined`, or ``The assertion has no `actor:` key`` when it names none), as a DSL test already did. It ran as an actor with no permissions, so a misspelled actor passed every `assert_cannot`.
 
   These can change the outcome of existing policy tests, each time toward what the runtime decides.
 
