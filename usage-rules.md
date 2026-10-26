@@ -892,7 +892,7 @@ AshGrant.Info.resource_name(MyApp.Post)   # The resource name string
 Run policy configuration tests defined in YAML or Elixir files:
 
 ```bash
-# Run all YAML tests in default directories
+# Run every policy test (.ex, .exs, .yaml, .yml) in test/policy_tests and priv/policy_tests
 mix ash_grant.verify
 
 # Run a specific file
@@ -905,18 +905,40 @@ mix ash_grant.verify priv/policy_tests/
 mix ash_grant.verify test/support/policy_test_fixtures.ex
 ```
 
+DO: gate CI on the exit code. `0` = every test passed, `1` = a test failed, `2` = the
+run is incomplete (a missing path, a file that does not compile, a YAML file that does
+not parse or defines no tests, a path you named that holds no tests). A file that never
+ran is not a pass.
+
+DO: run `MIX_ENV=test mix ash_grant.verify` when policy tests use resources that only
+the test environment compiles (e.g. in `test/support`) — `verify` compiles `.exs` policy
+test files in its own environment.
+
 ### YAML test format
+
+Actors are attribute maps handed to the resource's resolver, as in the DSL's `actor/2`;
+each test holds exactly one of `assert_can`, `assert_cannot`, `assert_fields_visible` or
+`assert_fields_hidden`:
 
 ```yaml
 resource: MyApp.Blog.Post
+
+actors:
+  editor:
+    role: editor
+  guest:
+    permissions: []
+
 tests:
-  - name: "Editor can read all posts"
-    actor:
-      role: editor
-      permissions:
-        - "post:*:read:always"
-    action: read
-    expected: allow
+  - name: "editor can read posts"
+    assert_can:
+      actor: editor
+      action: read
+
+  - name: "guest cannot read posts"
+    assert_cannot:
+      actor: guest
+      action: read
 ```
 
 ## Common Mistakes
