@@ -41,6 +41,8 @@ defmodule AshGrant.PolicyTest.CheckerTest do
       scope(:always, true)
       scope(:frozen, [], expr(title == "frozen"), write: false)
       scope(:split, [], expr(title == "read"), write: expr(title == "write"))
+      scope(:tenanted, expr(title == ^tenant()))
+      scope(:contextual, expr(title == ^context(:title)))
     end
 
     attributes do
@@ -63,12 +65,76 @@ defmodule AshGrant.PolicyTest.CheckerTest do
     end
   end
 
+  # A parent matched by a slug, while the child's foreign key holds its id.
+  defmodule Board do
+    @moduledoc false
+    use Ash.Resource,
+      domain: AshGrant.PolicyTest.CheckerTest.NoteDomain,
+      validate_domain_inclusion?: false,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshGrant]
+
+    ets do
+      private?(true)
+    end
+
+    ash_grant do
+      resolver(fn actor, _context -> Map.get(actor, :permissions, []) end)
+      resource_name("board")
+      instance_key(:slug)
+      scope(:always, true)
+    end
+
+    attributes do
+      uuid_primary_key(:id)
+      attribute(:slug, :string, public?: true)
+    end
+
+    actions do
+      defaults([:read])
+    end
+  end
+
+  defmodule Pin do
+    @moduledoc false
+    use Ash.Resource,
+      domain: AshGrant.PolicyTest.CheckerTest.NoteDomain,
+      validate_domain_inclusion?: false,
+      data_layer: Ash.DataLayer.Ets,
+      extensions: [AshGrant]
+
+    ets do
+      private?(true)
+    end
+
+    ash_grant do
+      resolver(fn actor, _context -> Map.get(actor, :permissions, []) end)
+      resource_name("pin")
+      scope(:always, true)
+      scope_through(:board)
+    end
+
+    attributes do
+      uuid_primary_key(:id)
+    end
+
+    relationships do
+      belongs_to(:board, AshGrant.PolicyTest.CheckerTest.Board, public?: true)
+    end
+
+    actions do
+      defaults([:read])
+    end
+  end
+
   defmodule NoteDomain do
     @moduledoc false
     use Ash.Domain, validate_config_inclusion?: false
 
     resources do
       resource(AshGrant.PolicyTest.CheckerTest.Note)
+      resource(AshGrant.PolicyTest.CheckerTest.Board)
+      resource(AshGrant.PolicyTest.CheckerTest.Pin)
     end
   end
 
@@ -106,6 +172,36 @@ defmodule AshGrant.PolicyTest.CheckerTest do
       assert {:allow, _} = Checker.check(Note, actor, :update, %{title: "write"})
       assert_received {:resolved, _}
       refute_received {:resolved, _}
+    end
+  end
+
+  describe "what a policy test cannot supply is undecided, never a deny" do
+    test "a scope that reads ^tenant()" do
+      actor = %{permissions: ["note:*:read:tenanted"]}
+
+      assert {:indeterminate, %{undecided: ["scope `tenanted` uses ^tenant()" <> _]}} =
+               Checker.check(Note, actor, :read, %{title: "t1"})
+    end
+
+    test "a scope that reads ^context(...)" do
+      actor = %{permissions: ["note:*:read:contextual"]}
+
+      assert {:indeterminate, %{undecided: ["scope `contextual` uses ^context(...)" <> _]}} =
+               Checker.check(Note, actor, :read, %{title: "x"})
+    end
+
+    test "a scope_through that matches the parent through a join" do
+      actor = %{permissions: ["board:general:read:"]}
+
+      assert {:indeterminate, %{undecided: ["scope_through `board`" <> _]}} =
+               Checker.check(Pin, actor, :read, %{board_id: Ash.UUID.generate()})
+    end
+
+    test "but a join with no parent grant in play is decided" do
+      actor = %{permissions: ["pin:other:read:"]}
+
+      assert {:deny, %{reason: :scope_mismatch}} =
+               Checker.check(Pin, actor, :read, %{id: "mine", board_id: Ash.UUID.generate()})
     end
   end
 

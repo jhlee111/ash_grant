@@ -84,7 +84,7 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ### Policy Testing
 
-- **`AshGrant.PolicyTest.Checker`** (`lib/ash_grant/policy_test/checker.ex`) - The one permission check behind both policy test runners (DSL `assert_can`/`assert_cannot` in `Assertions`, and `YamlParser`). With a record it mirrors the runtime's read union: any grant's scope, an instance ID, a scope_through parent ID. Keep record evaluation here only — each runner used to carry a copy, and the copies drifted (#143)
+- **`AshGrant.PolicyTest.Checker`** (`lib/ash_grant/policy_test/checker.ex`) - The one permission check behind both policy test runners (DSL `assert_can`/`assert_cannot` in `Assertions`, and `YamlParser`). With a record it mirrors the runtime's read union: any grant's scope, an instance ID, a scope_through parent ID. The union is three-valued: a scope `Assertions.evaluate_filter_against_record/5` cannot evaluate in memory (`fragment()`, `exists()`, an eval error, a non-boolean) is `{:indeterminate, reason}`, and an undecided assertion fails in BOTH directions — never guess `true` or `false` there. Keep record evaluation here only — each runner used to carry a copy, and the copies drifted (#143)
 
 ### Argument-Based Scope Support
 

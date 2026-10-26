@@ -961,6 +961,14 @@ scope :same_org, expr(exists(org.users, id == ^actor(:id))),
   write: expr(org_id == ^actor(:org_id))
 ```
 
+### Expecting a policy test to decide a `fragment()` or `exists()` scope
+
+Policy tests (`mix ash_grant.verify`, DSL or YAML) evaluate scopes in memory, with no
+database, and cannot decide a scope that uses `fragment()` or `exists()`. Unless another
+grant admits the record, an assertion that depends on such a scope fails with
+`Cannot decide` in **both** directions — `assert_can` and `assert_cannot` alike —
+rather than guessing. Cover those scopes with a test that runs against the database.
+
 ### Forgetting that deny-wins means no order dependency
 
 Deny rules win regardless of where they appear in the permission list.
