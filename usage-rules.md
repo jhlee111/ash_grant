@@ -910,6 +910,10 @@ run is incomplete (a missing path, a file that does not compile, a YAML file tha
 not parse or defines no tests, a path you named that holds no tests). A file that never
 ran is not a pass.
 
+DO: run `MIX_ENV=test mix ash_grant.verify` when policy tests use resources that only
+the test environment compiles (e.g. in `test/support`) — `verify` compiles `.exs` policy
+test files in its own environment.
+
 ### YAML test format
 
 Actors are attribute maps handed to the resource's resolver, as in the DSL's `actor/2`;

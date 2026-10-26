@@ -26,7 +26,11 @@ defmodule Mix.Tasks.AshGrant.Verify do
 
   Without a path, `test/policy_tests` and `priv/policy_tests` are searched the same
   way. Files Mix does not compile — any `.exs`, or an `.ex` outside `elixirc_paths`
-  such as one in `priv/` — are compiled by the task.
+  such as one in `priv/` — are compiled by the task, in the task's environment. When
+  policy tests use resources that only the test environment compiles (from
+  `test/support`, say), run `MIX_ENV=test mix ash_grant.verify`. A file is run once
+  even when several paths reach it, and an ExUnit test file (one that `use`s
+  `ExUnit.Case`) is left to `mix test`.
 
   ## Options
 
@@ -94,10 +98,12 @@ defmodule Mix.Tasks.AshGrant.Verify do
   end
 
   @doc """
-  Pure entry point used by both `run/1` and the test suite.
+  Entry point used by both `run/1` and the test suite: it runs the tests but leaves
+  printing and the exit status to the caller.
 
-  Returns `{:ok | :error, output_string, exit_code}` so callers can
-  inspect the task's behaviour without intercepting Mix shell output.
+  Returns `{:ok | :error, output_string, exit_code}` so callers can inspect the
+  task's behaviour without intercepting Mix shell output. It is not side-effect
+  free — it compiles and loads policy test files and calls the resources' resolvers.
   """
   @spec run_cli([String.t()]) :: {:ok, String.t(), 0} | {:error, String.t(), 1 | 2}
   def run_cli(args) do
@@ -138,54 +144,89 @@ defmodule Mix.Tasks.AshGrant.Verify do
   # The default locations are optional — a project without policy tests is not an
   # error. A path the caller names is expected to hold some.
   defp run_paths([]) do
-    case @default_paths |> Enum.filter(&File.dir?/1) |> Enum.map(&run_path/1) |> merge() do
+    files = @default_paths |> Enum.filter(&File.dir?/1) |> Enum.flat_map(&source_files/1)
+
+    case files |> Enum.uniq_by(&Path.expand/1) |> run_files() do
       %{results: [], errors: []} -> :none_found
       run -> run
     end
   end
 
+  # Each file runs once. A path is only "empty" when none of its files ran earlier:
+  # a directory that also holds a file a previous path named already ran its tests.
   defp run_paths(paths) do
-    paths
-    |> Enum.map(fn path ->
-      case run_path(path) do
-        %{results: [], errors: []} -> load_error(path, "no policy tests found")
-        run -> run
-      end
+    {runs, _seen} =
+      Enum.map_reduce(paths, MapSet.new(), fn path, seen ->
+        case expand_path(path) do
+          {:ok, files} ->
+            new_files = Enum.reject(files, &MapSet.member?(seen, Path.expand(&1)))
+            seen = Enum.reduce(new_files, seen, &MapSet.put(&2, Path.expand(&1)))
+            {run_named(path, files, new_files), seen}
+
+          {:error, message} ->
+            {load_error(path, message), seen}
+        end
+      end)
+
+    merge(runs)
+  end
+
+  defp run_named(path, files, new_files) do
+    case run_files(new_files) do
+      %{results: [], errors: []} when new_files == files ->
+        load_error(path, "no policy tests found")
+
+      run ->
+        run
+    end
+  end
+
+  defp expand_path(path) do
+    cond do
+      not File.exists?(path) ->
+        {:error, "no such file or directory"}
+
+      File.dir?(path) ->
+        {:ok, source_files(path)}
+
+      Path.extname(path) in [".yaml", ".yml", ".ex", ".exs"] ->
+        {:ok, [path]}
+
+      true ->
+        {:error, "not a policy test file (expected a directory, .ex, .exs, .yaml or .yml)"}
+    end
+  end
+
+  defp source_files(dir), do: dir |> Path.join("**/*.{ex,exs,yaml,yml}") |> Path.wildcard()
+
+  # One file at a time, so a file that does not load is its own error and never
+  # hides the tests of the files beside it.
+  defp run_files(files) do
+    files
+    |> Enum.map(fn file ->
+      if Path.extname(file) in [".yaml", ".yml"], do: run_yaml(file), else: run_modules(file)
     end)
     |> merge()
   end
 
-  defp run_path(path) do
-    cond do
-      not File.exists?(path) ->
-        load_error(path, "no such file or directory")
+  defp run_modules(path) do
+    case discover(path) do
+      {:ok, modules} ->
+        %{results: results} = Runner.run_all(modules: modules)
+        %{@empty_run | results: results, modules: modules}
 
-      File.dir?(path) ->
-        yaml_files = path |> Path.join("**/*.{yaml,yml}") |> Path.wildcard()
-        merge([run_modules(path) | Enum.map(yaml_files, &run_yaml/1)])
-
-      Path.extname(path) in [".yaml", ".yml"] ->
-        run_yaml(path)
-
-      Path.extname(path) in [".ex", ".exs"] ->
-        run_modules(path)
-
-      true ->
-        load_error(
-          path,
-          "not a policy test file (expected a directory, .ex, .exs, .yaml or .yml)"
-        )
+      {:error, message} ->
+        load_error(path, message)
     end
   end
 
-  defp run_modules(path) do
-    modules = Runner.discover_modules(path)
-    %{results: results} = Runner.run_all(modules: modules)
-    %{@empty_run | results: results, modules: modules}
+  # Discovery compiles the files Mix does not; a file that does not compile is a
+  # run that did not happen, not a pass. Only discovery is rescued here — the
+  # runner reports a module that raises as a failed result.
+  defp discover(path) do
+    {:ok, Runner.discover_modules(path)}
   rescue
-    # Discovery compiles the files Mix does not; a file that does not compile is
-    # a run that did not happen, not a pass.
-    error -> load_error(path, Exception.message(error))
+    error -> {:error, Exception.message(error)}
   end
 
   defp run_yaml(path) do

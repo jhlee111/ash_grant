@@ -98,6 +98,21 @@ defmodule AshGrant.PolicyTest.RunnerTest do
     end
   end
 
+  describe "run_all/1 with a module that raises" do
+    defmodule RaisingPolicyTest do
+      def __policy_test__(_), do: raise("context blew up")
+    end
+
+    test "reports it as one failed result and still runs the others" do
+      summary = Runner.run_all(modules: [RaisingPolicyTest, DocumentPolicyTest])
+
+      assert [%{passed: false, message: "Unexpected error: context blew up"}] =
+               Enum.filter(summary.results, &(&1.module == RaisingPolicyTest))
+
+      assert Enum.any?(summary.results, &(&1.module == DocumentPolicyTest and &1.passed))
+    end
+  end
+
   describe "discover_modules/1" do
     defp policy_source(module_name) do
       """
@@ -168,6 +183,57 @@ defmodule AshGrant.PolicyTest.RunnerTest do
       )
 
       assert Runner.discover_modules(dir) == [RunnerDiscovery.WithHelperPolicyTest]
+    end
+
+    @tag :tmp_dir
+    test "compiles a file again on every call, so an edit is picked up", %{tmp_dir: dir} do
+      path =
+        write(dir, "edited_policy_test.exs", policy_source("RunnerDiscovery.EditedPolicyTest"))
+
+      assert [module] = Runner.discover_modules(path)
+      assert [%{passed: true}] = Runner.run_module(module)
+
+      File.write!(
+        path,
+        String.replace(
+          policy_source("RunnerDiscovery.EditedPolicyTest"),
+          "assert_can",
+          "assert_cannot"
+        )
+      )
+
+      # Recompiling warns that the module is redefined; collect that diagnostic
+      # rather than print it (a stderr capture would race the other async tests).
+      {[^module], _diagnostics} = Code.with_diagnostics(fn -> Runner.discover_modules(path) end)
+
+      assert [%{passed: false}] = Runner.run_module(module)
+    end
+
+    @tag :tmp_dir
+    test "ignores a file that only mentions AshGrant.PolicyTest", %{tmp_dir: dir} do
+      write(dir, "mention.exs", """
+      # Not a policy test, though this comment says use AshGrant.PolicyTest.
+      raise "compiled a file that is not a policy test"
+      """)
+
+      assert Runner.discover_modules(dir) == []
+    end
+
+    @tag :tmp_dir
+    test "leaves ExUnit test files to mix test", %{tmp_dir: dir} do
+      write(dir, "inline_policy_test.exs", """
+      raise "compiled an ExUnit test file"
+
+      defmodule RunnerDiscovery.InlineTest do
+        use ExUnit.Case
+
+        defmodule Inline do
+          use AshGrant.PolicyTest
+        end
+      end
+      """)
+
+      assert Runner.discover_modules(dir) == []
     end
 
     @tag :tmp_dir

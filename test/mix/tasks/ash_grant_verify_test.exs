@@ -208,6 +208,38 @@ defmodule Mix.Tasks.AshGrant.VerifyTest do
       assert output =~ "1/"
       assert output =~ "test(s) failed"
     end
+
+    @tag :tmp_dir
+    test "a file reached by several paths runs once", %{tmp_dir: dir} do
+      path = write(dir, "once_policy_test.exs", policy_source("VerifyTest.OncePolicyTest"))
+
+      assert {:ok, output, 0} = Verify.run_cli([dir, path, path])
+      assert output =~ "1 test(s) passed"
+    end
+
+    @tag :tmp_dir
+    test "a directory is not empty because a path before it ran its file", %{tmp_dir: dir} do
+      path = write(dir, "named_policy_test.exs", policy_source("VerifyTest.NamedFirstPolicyTest"))
+      write(dir, "helper.exs", "defmodule VerifyTest.NamedFirstHelper do\nend\n")
+
+      assert {:ok, output, 0} = Verify.run_cli([path, dir])
+      assert output =~ "1 test(s) passed"
+    end
+
+    @tag :tmp_dir
+    test "a file that does not compile does not hide the files beside it", %{tmp_dir: dir} do
+      write(dir, "good_policy_test.exs", policy_source("VerifyTest.BesideBrokenPolicyTest"))
+
+      write(
+        dir,
+        "broken_policy_test.exs",
+        "defmodule VerifyTest.BrokenBeside do\n  use AshGrant.PolicyTest\n"
+      )
+
+      assert {:error, output, 2} = Verify.run_cli([dir])
+      assert output =~ "1 test(s) passed, 1 error(s)"
+      assert output =~ "broken_policy_test.exs"
+    end
   end
 
   describe "output" do

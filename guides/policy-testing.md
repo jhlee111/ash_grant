@@ -183,6 +183,12 @@ that does not compile, a YAML file that does not parse or defines no tests, or a
 you named that holds no tests. A CI step can rely on that: a file that never ran is
 not a pass.
 
+`verify` compiles the policy test files Mix does not (any `.exs`, and `.ex` files
+outside `elixirc_paths`) in its own environment. If your policy tests use resources
+that only the test environment compiles, such as ones in `test/support`, run it as
+`MIX_ENV=test mix ash_grant.verify`. ExUnit test files (ones that `use ExUnit.Case`)
+are left to `mix test`, and a file reached by several paths runs once.
+
 **Export policies:**
 
 ```bash
