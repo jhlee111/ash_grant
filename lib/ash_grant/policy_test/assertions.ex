@@ -366,72 +366,14 @@ defmodule AshGrant.PolicyTest.Assertions do
   end
 
   @doc false
-  # Evaluates a scope filter against a bare record map, in memory. Returns `true`
-  # or `false` when that decides it, and `{:indeterminate, reason}` when it does
-  # not: a SQL fragment, an exists(), or anything `Ash.Expr.eval` cannot settle.
-  # An assertion that cannot be decided must fail whichever way it points —
-  # guessing `true` passes `assert_can` blindly, guessing `false` passes
-  # `assert_cannot` blindly (#143). `arguments` resolves `^arg(...)` templates.
-  def evaluate_filter_against_record(filter, record, actor, resource \\ nil, arguments \\ %{})
-
-  def evaluate_filter_against_record(true, _record, _actor, _resource, _arguments), do: true
-
-  def evaluate_filter_against_record(false, _record, _actor, _resource, _arguments), do: false
-
-  def evaluate_filter_against_record(filter, record, actor, resource, arguments) do
-    case Ash.Filter.find(filter, &database_only?/1) do
-      nil ->
-        eval_in_memory(filter, record, actor, resource, arguments)
-
-      %Ash.Query.Exists{} ->
-        {:indeterminate,
-         "uses exists(), which needs related rows a policy test record does not have"}
-
-      _fragment ->
-        {:indeterminate, "uses fragment(), which only the database can evaluate"}
-    end
-  end
-
-  # A scope's filter is not hydrated yet, so a fragment is still a `Call`; the
-  # `Fragment` struct is what a parsed filter would hold.
-  defp database_only?(%Ash.Query.Exists{}), do: true
-  defp database_only?(%Ash.Query.Call{name: :fragment}), do: true
-  defp database_only?(%Ash.Query.Function.Fragment{}), do: true
-  defp database_only?(_), do: false
-
-  defp eval_in_memory(filter, record, actor, resource, arguments) do
-    filled =
-      Ash.Expr.fill_template(filter,
-        actor: actor,
-        context: %{},
-        args: arguments || %{}
-      )
-
-    case Ash.Expr.eval(filled, record: record, resource: resource, actor: actor) do
-      {:ok, result} when is_boolean(result) ->
-        result
-
-      # A comparison against a value the record lacks is NULL, as it would be
-      # for the row — and NULL does not match. That is decided, not unknown.
-      {:ok, nil} ->
-        false
-
-      {:ok, other} ->
-        {:indeterminate, "evaluated to #{inspect(other)}, not a boolean"}
-
-      :unknown ->
-        {:indeterminate, "could not be evaluated in memory"}
-
-      {:error, error} ->
-        {:indeterminate, "could not be evaluated in memory: #{error_message(error)}"}
-    end
-  rescue
-    error -> {:indeterminate, "could not be evaluated in memory: #{Exception.message(error)}"}
-  end
-
-  defp error_message(error) when is_exception(error), do: Exception.message(error)
-  defp error_message(error) when is_binary(error), do: error
-  defp error_message(error), do: inspect(error)
+  defdelegate evaluate_filter_against_record(
+                filter,
+                record,
+                actor,
+                resource \\ nil,
+                arguments \\ %{}
+              ),
+              to: Checker
 
   defp build_error_message(:assert_can, actor_name, action_spec, nil, details) do
     "Expected actor :#{actor_name} to be able to perform #{format_action(action_spec)}, " <>

@@ -528,9 +528,16 @@ defmodule AshGrant.Introspect do
 
   def can?(resource, action, actor, opts) do
     context = Keyword.get(opts, :context, %{})
+    decide(resource, action, permissions_for(resource, actor, context: context))
+  end
+
+  @doc false
+  # `can?/4` on permissions already resolved, for a caller that needs them for
+  # more than this answer (the policy test checker).
+  @spec decide(module(), atom(), [String.t()]) :: {:allow, map()} | {:deny, map()}
+  def decide(resource, action, permissions) do
     resource_name = Info.resource_name(resource)
     action_name = to_string(action)
-    permissions = permissions_for(resource, actor, context: context)
     action_type = resolve_action_type(resource, action)
 
     if has_deny_permission?(permissions, resource_name, action_name, action_type) do
@@ -540,7 +547,9 @@ defmodule AshGrant.Introspect do
     end
   end
 
-  defp resolve_action_type(resource, action) do
+  @doc false
+  @spec resolve_action_type(module(), atom()) :: atom() | nil
+  def resolve_action_type(resource, action) do
     case Ash.Resource.Info.action(resource, action) do
       %{type: type} -> type
       _ -> nil
@@ -603,7 +612,9 @@ defmodule AshGrant.Introspect do
     end)
   end
 
-  defp scope_through_parent_resource(resource, scope_through) do
+  @doc false
+  @spec scope_through_parent_resource(module(), struct()) :: module() | nil
+  def scope_through_parent_resource(resource, scope_through) do
     case scope_through.resource do
       nil ->
         case Ash.Resource.Info.relationship(resource, scope_through.relationship) do

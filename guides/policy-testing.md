@@ -69,22 +69,25 @@ Action can be specified as:
 ### How a record is checked
 
 With a record, an assertion passes when the action is allowed **and** the record is
-admitted by the same union the read filter builds — any one of:
+admitted by the same union the runtime builds — any one of:
 
-- any matching grant's scope accepts the record (grants OR-compose; order never matters);
+- any matching grant's scope accepts the record (grants OR-compose; order never matters).
+  A read evaluates the scope's filter; any other action evaluates its `write:` override
+  when it has one, as `AshGrant.Check` does;
 - the record's instance key is in a matching instance permission — `post:post_123:read:`
   admits `%{id: "post_123"}` and nothing else;
 - through `scope_through`, the record's foreign key is in the parent's instance
   permissions — `post:post_123:read:` admits a comment with `post_id: "post_123"`.
 
 So give the record the fields that decide it: an instance grant cannot admit a record
-that has no ID. When the parent's `instance_key` is not the field the foreign key points
-at, the runtime joins to the parent row, which a policy test does not have — that
-`scope_through` does not admit the record. DSL and YAML tests share this check.
+that has no ID. DSL and YAML tests share this check.
 
 Scopes are evaluated in memory, so some cannot be decided: a `fragment()` (only the
-database can run it), an `exists()` (it needs related rows), or anything else
-`Ash.Expr.eval` cannot settle. If another part of the union admits the record, the
+database can run it), an `exists()` (it needs related rows), a `^tenant()` or
+`^context(...)` (a policy test supplies neither), or anything else `Ash.Expr.eval` cannot
+settle. Neither can a `scope_through` whose parent `instance_key` is not the field the
+foreign key points at, while a parent instance grant is in play: the runtime joins to the
+parent row, which a policy test does not have. If another part of the union admits the record, the
 assertion still passes. Otherwise it **fails whichever way it points** — `assert_can`
 and `assert_cannot` alike — with `Cannot decide: scope ... uses fragment() ...`. A
 guess either way would let one of the two pass without checking anything. Cover such
