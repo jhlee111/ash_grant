@@ -32,6 +32,10 @@ defmodule AshGrant.PolicyTest.YamlExport.ShapesPolicyTest do
     assert_fields_visible(:editor, :read, [:title, :status])
   end
 
+  test "empty record" do
+    assert_cannot(:editor, :update, %{})
+  end
+
   describe "grouped" do
     test "two assertions" do
       assert_can(:editor, :read)
@@ -68,6 +72,10 @@ defmodule AshGrant.PolicyTest.YamlExport.UnexportablePolicyTest do
 
   test "nested map" do
     assert_can(:reader, :read, %{author: %{id: "a-1"}})
+  end
+
+  test "identifier-like string" do
+    assert_can(:reader, :read, %{title: "draft"})
   end
 
   test "exportable" do
@@ -194,9 +202,12 @@ defmodule AshGrant.PolicyTest.YamlExportTest do
       assert %{type: :assert_fields_visible, action: :read, fields: [:title, :status]} =
                tests["fields"]
 
+      # Still a record check: the DSL evaluates the scopes against the empty map.
+      assert %{type: :assert_cannot, action: :update, record: %{}} = tests["empty record"]
+
       assert %{type: :assert_can, action: :read} = tests["grouped: two assertions (1/2)"]
       assert %{type: :assert_cannot, action: :destroy} = tests["grouped: two assertions (2/2)"]
-      assert map_size(tests) == 7
+      assert map_size(tests) == 8
     end
 
     test "refuses a module it cannot export faithfully, naming every reason" do
@@ -208,7 +219,8 @@ defmodule AshGrant.PolicyTest.YamlExportTest do
             ~s("no assertion"),
             ~s("date value"),
             ~s("capitalized atom"),
-            ~s("nested map")
+            ~s("nested map"),
+            ~s("identifier-like string": record: the string "draft" would read back as the atom :draft)
           ] do
         assert error.message =~ fragment
       end

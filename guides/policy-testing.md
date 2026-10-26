@@ -214,7 +214,8 @@ listing every test it cannot express. Each test body must be assertion calls wit
 literal arguments — no variables, helper calls or loops. A YAML test holds one
 assertion, so a test with several becomes `name (1/3)`, `name (2/3)`, … YAML has no
 atom type, so values that would not read back unchanged (a struct, a nested map, an
-atom such as `:Draft`) are refused too.
+atom such as `:Draft`, a string such as `"draft"` or `"user_1"` that the YAML parser
+reads back as an atom) are refused too.
 
 ## Running Policy Tests Programmatically
 

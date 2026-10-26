@@ -12,12 +12,15 @@ defmodule AshGrant.PolicyTest.YamlExporter do
       YAML tests, numbered `name (1/3)`, `name (2/3)`, … The suite passes only
       when all of them do, as the DSL test does.
     * YAML has no atom type. Atoms are written as strings, and the YAML parser
-      reads identifier-like strings (`draft`, `read_all`) back as atoms.
+      reads identifier-like strings (`draft`, `read_all`) back as atoms — so such a
+      string value (`"draft"`) cannot be exported, since it would come back as an
+      atom.
 
   Anything else — a body that computes its arguments (a variable, a helper call,
   a loop), a test with no assertion, a value YAML cannot carry back unchanged (a
   struct, a tuple, a nested map, an atom such as `:Draft` that would read back as
-  a string), an actor that is not a map — raises `ArgumentError` naming every
+  a string, a string such as `"draft"` that would read back as an atom), an actor
+  that is not a map — raises `ArgumentError` naming every
   such test and actor.
 
   ## Examples
@@ -180,7 +183,10 @@ defmodule AshGrant.PolicyTest.YamlExporter do
   defp invalid_target,
     do: {:error, "the third argument is neither a record nor [record: ..., arguments: ...]"}
 
-  defp target_map(_key, empty) when empty in [nil, %{}], do: {:ok, []}
+  # An empty record is still a record — the DSL checks it against the scopes —
+  # so only empty arguments may be left out.
+  defp target_map(_key, nil), do: {:ok, []}
+  defp target_map("arguments", empty) when empty == %{}, do: {:ok, []}
 
   defp target_map(key, map) when is_map(map) do
     case mapping(map) do
@@ -212,9 +218,16 @@ defmodule AshGrant.PolicyTest.YamlExporter do
     end
   end
 
-  defp yaml_value(value)
-       when is_nil(value) or is_boolean(value) or is_number(value) or is_binary(value),
-       do: {:ok, value}
+  defp yaml_value(value) when is_nil(value) or is_boolean(value) or is_number(value),
+    do: {:ok, value}
+
+  # The parser cannot tell `"draft"` from `:draft` — both are the YAML string
+  # draft — and reads it back as the atom.
+  defp yaml_value(string) when is_binary(string) do
+    if string =~ @atom_like,
+      do: {:error, "the string #{inspect(string)} would read back as the atom :#{string}"},
+      else: {:ok, string}
+  end
 
   defp yaml_value(atom) when is_atom(atom) do
     string = Atom.to_string(atom)
