@@ -82,6 +82,10 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 - **`AshGrant.Calculation.CanPerform`** (`lib/ash_grant/calculations/can_perform.ex`) - Per-record boolean calculation for UI visibility (mirrors FilterCheck logic, compiles to SQL)
 
+### Policy Testing
+
+- **`AshGrant.PolicyTest.Checker`** (`lib/ash_grant/policy_test/checker.ex`) - The one permission check behind both policy test runners (DSL `assert_can`/`assert_cannot` in `Assertions`, and `YamlParser`). With a record it mirrors the runtime's read union: any grant's scope, an instance ID, a scope_through parent ID. Keep record evaluation here only — each runner used to carry a copy, and the copies drifted (#143)
+
 ### Argument-Based Scope Support
 
 - **`AshGrant.ArgumentAnalyzer`** (`lib/ash_grant/argument_analyzer.ex`) - Compile-time AST walker that maps `%{arg_name => [scopes_using_it]}` for a resource's scopes
