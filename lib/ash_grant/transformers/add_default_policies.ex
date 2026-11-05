@@ -76,7 +76,8 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
         {:ok, dsl_state}
 
       value when value in [true, :all] ->
-        {:ok, insert_generated(dsl_state, [read_policy(), write_policy(), generic_action_policy()])}
+        {:ok,
+         insert_generated(dsl_state, [read_policy(), write_policy(), generic_action_policy()])}
 
       :read ->
         {:ok, insert_generated(dsl_state, [read_policy()])}

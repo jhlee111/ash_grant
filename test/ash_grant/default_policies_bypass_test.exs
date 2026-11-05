@@ -16,7 +16,9 @@ defmodule AshGrant.DefaultPoliciesBypassTest do
       policies = Ash.Policy.Info.policies(ArticleWithBypass)
 
       assert [first | _] = policies
-      assert first.bypass?, "expected the user-declared bypass to come first, got #{inspect(policies)}"
+
+      assert first.bypass?,
+             "expected the user-declared bypass to come first, got #{inspect(policies)}"
     end
 
     test "bypass short-circuits a write action for an anonymous actor" do
