@@ -190,6 +190,77 @@ defmodule AshGrant.ResolveArgumentInjectionTest do
     end
   end
 
+  describe "argument declared on the action" do
+    test "is rejected at compile time when public" do
+      defn = fn ->
+        defmodule DeclaredPublic do
+          @moduledoc false
+          use Ash.Resource,
+            domain: nil,
+            validate_domain_inclusion?: false,
+            data_layer: Ash.DataLayer.Ets,
+            extensions: [AshGrant]
+
+          ash_grant do
+            resolver(fn _, _ -> [] end)
+            scope(:at_own_unit, expr(^arg(:center_id) == ^actor(:org_id)))
+            resolve_argument(:center_id, from_path: [:org_id])
+          end
+
+          attributes do
+            uuid_primary_key(:id)
+            attribute(:org_id, :uuid, public?: true)
+          end
+
+          actions do
+            defaults([:read])
+
+            create :create do
+              accept([:org_id])
+              argument(:center_id, :uuid)
+            end
+          end
+        end
+      end
+
+      assert_raise Spark.Error.DslError, ~r/argument :center_id on action :create is public/, defn
+    end
+
+    test "is kept when declared public?: false" do
+      defmodule DeclaredPrivate do
+        @moduledoc false
+        use Ash.Resource,
+          domain: nil,
+          validate_domain_inclusion?: false,
+          data_layer: Ash.DataLayer.Ets,
+          extensions: [AshGrant]
+
+        ash_grant do
+          resolver(fn _, _ -> [] end)
+          scope(:at_own_unit, expr(^arg(:center_id) == ^actor(:org_id)))
+          resolve_argument(:center_id, from_path: [:org_id])
+        end
+
+        attributes do
+          uuid_primary_key(:id)
+          attribute(:org_id, :uuid, public?: true)
+        end
+
+        actions do
+          defaults([:read])
+
+          create :create do
+            accept([:org_id])
+            argument(:center_id, :uuid, public?: false)
+          end
+        end
+      end
+
+      arguments = Ash.Resource.Info.action(DeclaredPrivate, :create).arguments
+      assert [%{name: :center_id, public?: false}] = arguments
+    end
+  end
+
   describe "legitimate actor" do
     test "is allowed when the record's real center is the actor's", ctx do
       order = create_order!(ctx.mine)

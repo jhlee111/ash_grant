@@ -18,9 +18,12 @@ defmodule AshGrant.Changes.ResolveArgument do
 
   ## Runtime contract
 
+  The change always discards any value the caller supplied for the argument.
   If the actor is nil, or none of the actor's permissions (as returned by the
   resource's configured `AshGrant.PermissionResolver`) use a scope in
-  `:scopes_needing`, the change is a no-op — no DB load is performed.
+  `:scopes_needing`, no DB load is performed and the argument stays unset. The
+  actor must therefore be passed when the changeset is built
+  (`for_create/4`, `for_update/4`, `for_destroy/4`), not only to the action call.
 
   If the resource has no resolver configured, or the resolver raises/returns
   an unexpected shape, the change conservatively resolves the argument
@@ -37,9 +40,8 @@ defmodule AshGrant.Changes.ResolveArgument do
       read the leaf attribute.
 
   If any intermediate value is nil or the path cannot be resolved (e.g., the
-  referenced record was deleted), the change returns the changeset unchanged —
-  the scope will then evaluate against a `nil` argument and typically fail
-  closed (authorization denied).
+  referenced record was deleted), the argument stays unset and the scope
+  evaluates against `nil`.
 
   ## Multi-tenancy
 
@@ -63,7 +65,11 @@ defmodule AshGrant.Changes.ResolveArgument do
 
     actor = actor_from_context(ctx, changeset)
 
-    if needs_resolution?(actor, changeset.resource, scopes_needing, changeset) do
+    # The argument is authorization input, so a caller-supplied value must never
+    # reach the policy check, whether or not the path resolves below.
+    changeset = Changeset.delete_argument(changeset, name)
+
+    if needs_resolution?(actor, scopes_needing, changeset) do
       case resolve_value(changeset, path) do
         {:ok, value} -> Changeset.set_argument(changeset, name, value)
         :skip -> changeset
@@ -98,11 +104,11 @@ defmodule AshGrant.Changes.ResolveArgument do
 
   defp actor_from_context(_, _), do: nil
 
-  defp needs_resolution?(nil, _resource, _scopes_needing, _changeset), do: false
-  defp needs_resolution?(_actor, _resource, [], _changeset), do: false
+  defp needs_resolution?(nil, _scopes_needing, _changeset), do: false
+  defp needs_resolution?(_actor, [], _changeset), do: false
 
-  defp needs_resolution?(actor, resource, scopes_needing, changeset) do
-    case actor_permissions(actor, resource, changeset) do
+  defp needs_resolution?(actor, scopes_needing, changeset) do
+    case actor_permissions(actor, changeset.resource, changeset) do
       :unknown ->
         # Conservative fallback: we couldn't introspect the actor's
         # permissions (no resolver configured, or resolver raised). Resolve
@@ -111,7 +117,7 @@ defmodule AshGrant.Changes.ResolveArgument do
         true
 
       perms when is_list(perms) ->
-        Enum.any?(perms, &permission_uses_listed_scope?(&1, resource, scopes_needing))
+        Enum.any?(perms, &permission_uses_listed_scope?(&1, scopes_needing))
 
       _other ->
         # The resolver returned an unexpected shape (nil, a map, ...). Resolve
@@ -161,24 +167,15 @@ defmodule AshGrant.Changes.ResolveArgument do
   defp literal_permissions(%{permissions: perms}) when is_list(perms), do: perms
   defp literal_permissions(_), do: :unknown
 
-  defp permission_uses_listed_scope?(perm_string, resource, scopes_needing) do
+  # The permission's resource segment is not compared: a policy can match
+  # permissions under any name via `AshGrant.check(resource: "...")`, so only the
+  # scope decides whether the load is needed.
+  defp permission_uses_listed_scope?(perm_string, scopes_needing) do
     case AshGrant.Permission.parse(perm_string) do
-      {:ok, %{resource: res_name, scope: scope_str}} ->
-        resource_matches?(resource, res_name) and
-          scope_atom_in?(scope_str, scopes_needing)
-
-      _ ->
-        false
+      {:ok, %{scope: scope_str}} -> scope_atom_in?(scope_str, scopes_needing)
+      _ -> false
     end
   end
-
-  defp resource_matches?(_resource, "*"), do: true
-
-  defp resource_matches?(resource, name) when is_binary(name) do
-    to_string(AshGrant.Info.resource_name(resource)) == name
-  end
-
-  defp resource_matches?(_, _), do: false
 
   defp scope_atom_in?(scope_str, scopes) do
     case safe_to_existing_atom(scope_str) do
