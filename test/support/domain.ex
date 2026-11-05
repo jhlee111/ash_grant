@@ -68,6 +68,7 @@ defmodule AshGrant.Test.Domain do
     resource(AshGrant.Test.BulkTeam)
     resource(AshGrant.Test.BulkMembership)
     resource(AshGrant.Test.BulkItem)
+    resource(AshGrant.Test.WriteExistsItem)
 
     # Instance key test resource (custom field for instance permission matching)
     resource(AshGrant.Test.Feed)
