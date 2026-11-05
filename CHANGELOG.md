@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Global scope registry.** Declare `use AshGrant.ScopeRegistry` in a module, point `config :ash_grant, :scope_registry` at it, and every resource that uses `AshGrant` picks up its scopes silently. Precedence is resource > domain > registry; no config = behaviour unchanged. See `guides/scopes.md`.
+
 ### Changed
 
 - **`mix ash_grant.verify` output** ([#143](https://github.com/jhlee111/ash_grant/issues/143)). Failing tests are now listed without `--verbose` (`--verbose` adds the passing ones), and the progress lines `--verbose` printed during discovery are gone. Like `mix ash_grant.check_permissions` and `mix ash_grant.explain`, the report goes to stdout when the exit code is 0 and to stderr otherwise — **this includes `--format json`**, which previously always went to stdout; redirect stderr if you capture the JSON of a failing run. The JSON gains an `errors` list (`path`, `message`) for files that could not be run. Unknown options and an unknown `--format` are now rejected with exit code 2 instead of being ignored.

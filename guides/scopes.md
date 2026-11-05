@@ -366,3 +366,50 @@ ash_grant do
   scope :my_accounts, expr(account_manager_id == ^actor(:id))
 end
 ```
+
+## Global scope registry
+
+When the same scope — `:own`, `:same_org`, `:always` — appears on every
+resource across several domains, declare it once in a config-level registry
+and let every resource pick it up automatically.
+
+```elixir
+# lib/my_app/global_scopes.ex
+defmodule MyApp.GlobalScopes do
+  use AshGrant.ScopeRegistry
+
+  scopes do
+    scope :always, true
+    scope :own, expr(author_id == ^actor(:id))
+    scope :same_org, expr(org_id == ^actor(:org_id))
+  end
+end
+
+# config/config.exs
+config :ash_grant, scope_registry: MyApp.GlobalScopes
+```
+
+Every resource that uses `AshGrant` now sees `:always`, `:own`, and
+`:same_org` as if it had declared them in its own `ash_grant do` block.
+
+### Precedence
+
+A scope declared closer to the resource wins:
+
+    resource > domain > registry
+
+A resource that declares its own `scope :own, expr(...)` overrides the
+registry's `:own`, and a domain that declares `scope :own, expr(...)` overrides
+the registry's `:own` for every resource in that domain. Same-name is the
+only rule — unrelated scopes merge freely.
+
+### Inheritance
+
+Registry scopes support the same `scope :name, [:parent], expr(...)` form:
+
+```elixir
+scope :own_draft, [:own], expr(status == :draft)
+```
+
+Parents are resolved by name through the merged scope set, so a registry
+scope can inherit from a domain or resource scope and vice versa.
