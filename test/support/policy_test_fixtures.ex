@@ -138,7 +138,7 @@ defmodule AshGrant.PolicyTest.Fixtures.PostPolicyTest do
   resource(AshGrant.Test.Post)
 
   actor(:admin, %{role: :admin})
-  actor(:editor, %{role: :editor, id: "editor_001"})
+  actor(:editor, %{role: :editor, id: "editor-001"})
   actor(:viewer, %{role: :viewer})
 
   test "editor can read all posts" do
@@ -146,11 +146,11 @@ defmodule AshGrant.PolicyTest.Fixtures.PostPolicyTest do
   end
 
   test "editor can update own posts" do
-    assert_can(:editor, :update, %{author_id: "editor_001"})
+    assert_can(:editor, :update, %{author_id: "editor-001"})
   end
 
   test "editor cannot update others posts" do
-    assert_cannot(:editor, :update, %{author_id: "other_user"})
+    assert_cannot(:editor, :update, %{author_id: "other-user"})
   end
 
   test "viewer can read published posts" do
@@ -251,7 +251,7 @@ defmodule AshGrant.PolicyTest.Fixtures.MissingFieldTest do
     # Reader has permission document:*:read:approved
     # Record has no status - scope check might pass or fail
     # depending on implementation
-    assert_can(:reader, :read, %{title: "test"})
+    assert_can(:reader, :read, %{title: "A title"})
   end
 end
 
@@ -357,7 +357,7 @@ defmodule AshGrant.PolicyTest.Fixtures.ScopeThroughTest do
   resource(AshGrant.Test.ChildComment)
 
   actor(:post_reader, %{permissions: ["post:post_123:read:"]})
-  actor(:own_reader, %{id: "user_1", permissions: ["child_comment:*:read:own"]})
+  actor(:own_reader, %{id: "user-1", permissions: ["child_comment:*:read:own"]})
   actor(:nobody, %{permissions: []})
 
   test "post_reader can read (parent instance permission)" do
