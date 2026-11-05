@@ -132,14 +132,16 @@ defmodule AshGrant.Calculation.CanPerform do
       parent_filters =
         build_parent_instance_filters(resource, permissions, action, action_type)
 
-      build_expression(
-        scopes,
-        instance_ids,
-        instance_key,
-        parent_filters,
-        scope_resolver,
-        resource
-      )
+      deny_summary =
+        AshGrant.Evaluator.deny_summary(permissions, resource_name, action, action_type)
+
+      scopes
+      |> build_expression(instance_ids, instance_key, parent_filters, scope_resolver, resource)
+      |> AshGrant.Evaluator.restrict_filter(deny_summary, instance_key)
+      |> case do
+        false -> expr(false)
+        expression -> expression
+      end
     end
   end
 

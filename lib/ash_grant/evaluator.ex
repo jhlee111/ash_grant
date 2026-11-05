@@ -128,11 +128,14 @@ defmodule AshGrant.Evaluator do
   | `get_instance_scope/3` | Get scope from instance permission (for ABAC conditions) |
   | `get_all_instance_scopes/3` | Get all scopes from instance permissions |
   | `get_matching_instance_ids/3` | Get all instance IDs for a resource/action |
+  | `deny_summary/4` | RBAC and instance denies for a resource/action (for every check) |
   | `find_matching/3` | Get all matching permissions (debug/introspection) |
   | `combine/1` | Merge multiple permission lists |
   """
 
   alias AshGrant.Permission
+
+  require Ash.Expr
 
   @type permissions :: [Permission.t() | String.t() | map()]
 
@@ -684,6 +687,72 @@ defmodule AshGrant.Evaluator do
     |> Enum.map(& &1.instance_id)
     |> Enum.reject(&MapSet.member?(denied_ids, &1))
     |> Enum.uniq()
+  end
+
+  @doc """
+  Summarises the deny rules that apply to a resource and action, across both tiers.
+
+  `denied_all?` is true when an RBAC deny (`!resource:*:action:...`) matches: no
+  record is reachable, whatever instance or `scope_through` grants exist.
+  `denied_instance_ids` lists the ids of matching instance denies
+  (`!resource:<id>:action:`), which subtract those records from every allow.
+
+  `AshGrant.FilterCheck`, `AshGrant.FieldFilterCheck`, `AshGrant.Check`,
+  `AshGrant.Calculation.CanPerform` and `AshGrant.Introspect` all apply this
+  summary, so reads, writes and introspection agree.
+
+  ## Examples
+
+      iex> AshGrant.Evaluator.deny_summary(["!blog:*:read:always", "blog:b1:read:"], "blog", "read")
+      %{denied_all?: true, denied_instance_ids: []}
+
+      iex> AshGrant.Evaluator.deny_summary(["blog:*:read:always", "!blog:b1:read:"], "blog", "read")
+      %{denied_all?: false, denied_instance_ids: ["b1"]}
+
+  """
+  @spec deny_summary(permissions(), String.t(), String.t(), atom() | nil) :: %{
+          denied_all?: boolean(),
+          denied_instance_ids: [String.t()]
+        }
+  def deny_summary(permissions, resource, action, action_type \\ nil) do
+    permissions = normalize_permissions(permissions)
+    match = &Permission.matches?(&1, resource, action, action_type)
+
+    denied_instance_ids =
+      permissions
+      |> Enum.filter(fn perm ->
+        Permission.deny?(perm) and Permission.instance_permission?(perm) and
+          Permission.matches_resource?(perm.resource, resource) and
+          Permission.matches_action?(perm.action, action, action_type)
+      end)
+      |> Enum.map(& &1.instance_id)
+      |> Enum.uniq()
+
+    compute = fn match ->
+      %{denied_all?: denied?(permissions, match), denied_instance_ids: denied_instance_ids}
+    end
+
+    AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
+  end
+
+  @doc """
+  Restricts a read filter by a `deny_summary/4`.
+
+  Returns `false` when `denied_all?` is set. Otherwise ANDs
+  `not (instance_key in ^denied_instance_ids)` onto `filter`, so an instance deny
+  removes its record from RBAC, instance and `scope_through` grants alike.
+  """
+  @spec restrict_filter(term(), map(), atom()) :: term()
+  def restrict_filter(_filter, %{denied_all?: true}, _instance_key), do: false
+  def restrict_filter(false, _summary, _instance_key), do: false
+  def restrict_filter(filter, %{denied_instance_ids: []}, _instance_key), do: filter
+
+  def restrict_filter(true, %{denied_instance_ids: ids}, instance_key) do
+    Ash.Expr.expr(^Ash.Expr.ref(instance_key) not in ^ids)
+  end
+
+  def restrict_filter(filter, %{denied_instance_ids: ids}, instance_key) do
+    Ash.Expr.expr(^filter and ^Ash.Expr.ref(instance_key) not in ^ids)
   end
 
   @doc """
