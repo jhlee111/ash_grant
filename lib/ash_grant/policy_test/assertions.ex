@@ -23,7 +23,7 @@ defmodule AshGrant.PolicyTest.Assertions do
   These macros are automatically imported when you `use AshGrant.PolicyTest`.
   """
 
-  alias AshGrant.PolicyTest.AssertionError
+  alias AshGrant.PolicyTest.{AssertionError, Checker}
 
   @doc """
   Asserts that the specified fields are visible to an actor for an action.
@@ -176,7 +176,7 @@ defmodule AshGrant.PolicyTest.Assertions do
     {record, arguments} = split_record_and_arguments(third)
     {actor, resource, action} = resolve_context(module, actor_name, action_spec)
 
-    case check_permission(resource, action, actor, record, arguments) do
+    case Checker.check(resource, actor, action, record, arguments) do
       {:allow, _details} ->
         :ok
 
@@ -191,7 +191,7 @@ defmodule AshGrant.PolicyTest.Assertions do
     {record, arguments} = split_record_and_arguments(third)
     {actor, resource, action} = resolve_context(module, actor_name, action_spec)
 
-    case check_permission(resource, action, actor, record, arguments) do
+    case Checker.check(resource, actor, action, record, arguments) do
       {:deny, _details} ->
         :ok
 
@@ -357,158 +357,15 @@ defmodule AshGrant.PolicyTest.Assertions do
     end
   end
 
-  defp check_permission(resource, action, actor, nil, _arguments) do
-    # No record - just check if actor has permission for the action
-    check_basic_permission(resource, action, actor)
-  end
-
-  defp check_permission(resource, action, actor, record, arguments) when is_map(record) do
-    # Record provided - check permission AND evaluate scope against record
-    case check_basic_permission(resource, action, actor) do
-      {:deny, _} = deny ->
-        deny
-
-      {:allow, details} ->
-        # Now check if the record matches the scope
-        check_scope_against_record(resource, action, actor, record, details, arguments)
-    end
-  end
-
-  defp check_basic_permission(resource, {:action_type, type}, actor) do
-    actions = Ash.Resource.Info.actions(resource)
-    matching_actions = Enum.filter(actions, fn action -> action.type == type end)
-
-    if matching_actions == [] do
-      {:deny, %{reason: :no_matching_action_type}}
-    else
-      find_first_allowed_action(matching_actions, resource, actor)
-    end
-  end
-
-  defp check_basic_permission(resource, action, actor) when is_atom(action) do
-    AshGrant.Introspect.can?(resource, action, actor)
-  end
-
-  defp find_first_allowed_action(matching_actions, resource, actor) do
-    results =
-      Enum.map(matching_actions, fn action ->
-        AshGrant.Introspect.can?(resource, action.name, actor)
-      end)
-
-    case Enum.find(results, fn {status, _} -> status == :allow end) do
-      nil -> {:deny, %{reason: :no_permission}}
-      allow -> allow
-    end
-  end
-
-  defp check_scope_against_record(resource, _action, actor, record, permission_details, arguments) do
-    # OR-compose all matching grants' scopes (#123): the record passes when ANY
-    # grant's scope accepts it — mirroring AshGrant.Check's write-path union.
-    # Callers that only supply :scope (singular) keep working via the fallback.
-    scope_names = permission_details[:scopes] || [permission_details[:scope]]
-
-    if Enum.any?(scope_names, &scope_passes?(resource, actor, record, &1, arguments)) do
-      {:allow, permission_details}
-    else
-      {:deny, %{reason: :scope_mismatch, scopes: scope_names, record: record}}
-    end
-  end
-
-  # nil = no scope restriction (e.g. instance permission); "always"/"all"/
-  # "global" are universal scopes — all pass without filter evaluation.
-  defp scope_passes?(_resource, _actor, _record, scope_name, _arguments)
-       when scope_name in [nil, "always", "all", "global"],
-       do: true
-
-  defp scope_passes?(resource, actor, record, scope_name, arguments) do
-    scope_atom = if is_binary(scope_name), do: String.to_atom(scope_name), else: scope_name
-    filter = AshGrant.Info.resolve_scope_filter(resource, scope_atom, %{actor: actor})
-
-    evaluate_filter_against_record(filter, record, actor, resource, arguments)
-  end
-
   @doc false
-  # Note: `arguments` is a map of action-argument values (or `%{}`) used to
-  # resolve `^arg(...)` templates in the filter. The old 4-arity version is
-  # preserved for back-compat; new callers should pass arguments.
-  def evaluate_filter_against_record(filter, record, actor, resource \\ nil, arguments \\ %{})
-
-  def evaluate_filter_against_record(true, _record, _actor, _resource, _arguments), do: true
-
-  def evaluate_filter_against_record(false, _record, _actor, _resource, _arguments), do: false
-
-  def evaluate_filter_against_record(filter, record, actor, resource, arguments) do
-    filled =
-      Ash.Expr.fill_template(filter,
-        actor: actor,
-        context: %{},
-        args: arguments || %{}
-      )
-
-    case Ash.Expr.eval(filled, record: record, resource: resource, actor: actor) do
-      {:ok, true} -> true
-      {:ok, false} -> false
-      {:ok, nil} -> false
-      {:ok, _other} -> true
-      :unknown -> fallback_evaluation(filter, record, actor)
-      {:error, _} -> fallback_evaluation(filter, record, actor)
-    end
-  end
-
-  # Fallback evaluation for expressions that Ash.Expr.eval can't handle
-  defp fallback_evaluation(filter, record, actor) do
-    filter_str = inspect(filter)
-
-    cond do
-      # Handle actor field comparison: expr(field == ^actor(:id))
-      String.contains?(filter_str, ":_actor") ->
-        evaluate_actor_comparison(filter_str, record, actor)
-
-      # Handle status comparison: expr(status == :value)
-      String.contains?(filter_str, "status") ->
-        evaluate_status_comparison(filter_str, record)
-
-      true ->
-        # Default to true if we can't evaluate
-        true
-    end
-  end
-
-  defp evaluate_actor_comparison(filter_str, record, actor) do
-    # Extract patterns like `field == {:_actor, :id}` or `field == {:_actor, :field_name}`
-    cond do
-      match = Regex.run(~r/(\w+)\s*==\s*\{:_actor,\s*:(\w+)\}/, filter_str) ->
-        [_, record_field, actor_field] = match
-        record_value = Map.get(record, String.to_atom(record_field))
-        actor_value = Map.get(actor, String.to_atom(actor_field))
-        record_value == actor_value
-
-      match = Regex.run(~r/:name,\s*:(\w+).*:_actor,\s*:(\w+)/, filter_str) ->
-        [_, record_field, actor_field] = match
-        record_value = Map.get(record, String.to_atom(record_field))
-        actor_value = Map.get(actor, String.to_atom(actor_field))
-        record_value == actor_value
-
-      true ->
-        true
-    end
-  end
-
-  defp evaluate_status_comparison(filter_str, record) do
-    # Handle patterns like `status == :draft` or `status == :published`
-    if match = Regex.run(~r/status\s*==\s*:(\w+)/, filter_str) do
-      [_, expected_status] = match
-      record_status = Map.get(record, :status)
-
-      if is_atom(record_status) do
-        record_status == String.to_atom(expected_status)
-      else
-        to_string(record_status) == expected_status
-      end
-    else
-      true
-    end
-  end
+  defdelegate evaluate_filter_against_record(
+                filter,
+                record,
+                actor,
+                resource \\ nil,
+                arguments \\ %{}
+              ),
+              to: Checker
 
   defp build_error_message(:assert_can, actor_name, action_spec, nil, details) do
     "Expected actor :#{actor_name} to be able to perform #{format_action(action_spec)}, " <>
