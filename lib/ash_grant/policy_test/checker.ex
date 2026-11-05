@@ -23,10 +23,15 @@ defmodule AshGrant.PolicyTest.Checker do
   The resolver gets the context `AshGrant.Check` gives it (`actor`, `resource`,
   `action`), with no tenant: a policy test has none.
 
+  The union is three-valued. A scope that cannot be evaluated in memory does
+  not stop another component from admitting the record, but when nothing
+  admits it the answer is `{:indeterminate, %{undecided: [reason]}}`, never a
+  deny: the caller must fail the assertion either way.
+
   `{:action_type, type}` holds when any action of that type passes.
   """
   @spec check(module(), map() | nil, action_spec(), map() | nil, map()) ::
-          {:allow, map()} | {:deny, map()}
+          {:allow, map()} | {:deny, map()} | {:indeterminate, map()}
   def check(resource, actor, action_spec, record, arguments \\ %{})
 
   def check(resource, actor, {:action_type, type}, record, arguments) do
@@ -38,6 +43,7 @@ defmodule AshGrant.PolicyTest.Checker do
         results = Enum.map(names, &check(resource, actor, &1, record, arguments))
 
         Enum.find(results, &match?({:allow, _}, &1)) ||
+          Enum.find(results, &match?({:indeterminate, _}, &1)) ||
           Enum.find(results, &match?({:deny, %{reason: :scope_mismatch}}, &1)) ||
           hd(results)
     end
@@ -60,15 +66,35 @@ defmodule AshGrant.PolicyTest.Checker do
     end
   end
 
+  @doc """
+  The reasons an `{:indeterminate, details}` result could not be decided, as
+  one sentence for an assertion failure message.
+  """
+  @spec undecided_reason(map()) :: String.t()
+  def undecided_reason(%{undecided: undecided}) do
+    Enum.join(undecided, "; ") <>
+      ". Policy tests evaluate scopes in memory; test this one against the database instead"
+  end
+
+  # Unknown OR true is true; unknown OR false is unknown.
   defp admit(resource, actor, action, permissions, record, details, arguments) do
     scopes = Map.get(details, :scopes, [])
     context = context(resource, actor, action)
 
-    if Enum.any?(scopes, &scope_admits?(resource, context, record, &1, arguments)) or
-         instance_admits?(resource, action, permissions, record) do
-      {:allow, details}
-    else
-      {:deny, %{reason: :scope_mismatch, scopes: scopes, record: record}}
+    verdicts =
+      Enum.map(scopes, fn scope ->
+        case scope_admits?(resource, context, record, scope, arguments) do
+          {:indeterminate, reason} -> {:indeterminate, "scope `#{scope}` #{reason}"}
+          verdict -> verdict
+        end
+      end) ++ instance_verdicts(resource, action, permissions, record)
+
+    undecided = for {:indeterminate, reason} <- verdicts, do: reason
+
+    cond do
+      true in verdicts -> {:allow, details}
+      undecided != [] -> {:indeterminate, %{undecided: undecided, record: record}}
+      true -> {:deny, %{reason: :scope_mismatch, scopes: scopes, record: record}}
     end
   end
 
@@ -86,9 +112,25 @@ defmodule AshGrant.PolicyTest.Checker do
           false
 
         scope_atom ->
-          filter = scope_filter(resource, scope_atom, context)
-          evaluate_filter_against_record(filter, record, context.actor, resource, arguments)
+          resource
+          |> scope_filter(scope_atom, context)
+          |> evaluate_scope(record, context.actor, resource, arguments)
       end
+    end
+  end
+
+  # A policy test has no tenant and no query context, so a scope that reads
+  # either would be judged against nil — a guess either way.
+  defp evaluate_scope(filter, record, actor, resource, arguments) do
+    cond do
+      Ash.Expr.template_references?(filter, &(&1 == :_tenant)) ->
+        {:indeterminate, "uses ^tenant(), which a policy test does not supply"}
+
+      Ash.Expr.template_references_context?(filter) ->
+        {:indeterminate, "uses ^context(...), which a policy test does not supply"}
+
+      true ->
+        evaluate_filter_against_record(filter, record, actor, resource, arguments)
     end
   end
 
@@ -98,7 +140,7 @@ defmodule AshGrant.PolicyTest.Checker do
   defp scope_filter(resource, scope, context),
     do: Info.resolve_write_scope_filter(resource, scope, context)
 
-  defp instance_admits?(resource, action, permissions, record) do
+  defp instance_verdicts(resource, action, permissions, record) do
     action_name = to_string(action)
     action_type = Introspect.resolve_action_type(resource, action)
 
@@ -106,22 +148,37 @@ defmodule AshGrant.PolicyTest.Checker do
       Evaluator.get_matching_instance_ids(permissions, resource_name, action_name, action_type)
     end
 
-    id_in?(record, Info.instance_key(resource), ids_for.(Info.resource_name(resource))) or
-      Enum.any?(Info.scope_throughs(resource), fn scope_through ->
-        Info.scope_through_allows_action?(scope_through, action_name, action_type) and
-          parent_admits?(resource, scope_through, record, ids_for)
-      end)
+    parents =
+      for scope_through <- Info.scope_throughs(resource),
+          Info.scope_through_allows_action?(scope_through, action_name, action_type),
+          do: parent_admits?(resource, scope_through, record, ids_for)
+
+    [
+      id_in?(record, Info.instance_key(resource), ids_for.(Info.resource_name(resource)))
+      | parents
+    ]
   end
 
   # Decidable from the record only when the foreign key points at the parent's
   # instance_key. Otherwise the runtime joins to the parent row, which a policy
-  # test does not have, so the record is not admitted.
+  # test does not have: with a parent grant in play that is undecided, not a deny.
   defp parent_admits?(resource, scope_through, record, ids_for) do
     relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
     parent = Introspect.scope_through_parent_resource(resource, scope_through)
+    parent_ids = ids_for.(Info.resource_name(parent))
 
-    Info.instance_key(parent) == relationship.destination_attribute and
-      id_in?(record, relationship.source_attribute, ids_for.(Info.resource_name(parent)))
+    cond do
+      Info.instance_key(parent) == relationship.destination_attribute ->
+        id_in?(record, relationship.source_attribute, parent_ids)
+
+      parent_ids == [] ->
+        false
+
+      true ->
+        {:indeterminate,
+         "scope_through `#{scope_through.relationship}` matches the parent by " <>
+           "`#{Info.instance_key(parent)}`, which only a join to the parent row can check"}
+    end
   end
 
   # Instance IDs are strings in a permission; a policy test record may hold the
@@ -143,9 +200,12 @@ defmodule AshGrant.PolicyTest.Checker do
   end
 
   @doc false
-  # Note: `arguments` is a map of action-argument values (or `%{}`) used to
-  # resolve `^arg(...)` templates in the filter. The old 4-arity version is
-  # preserved for back-compat; new callers should pass arguments.
+  # Evaluates a scope filter against a bare record map, in memory. Returns `true`
+  # or `false` when that decides it, and `{:indeterminate, reason}` when it does
+  # not: a SQL fragment, an exists(), or anything `Ash.Expr.eval` cannot settle.
+  # An assertion that cannot be decided must fail whichever way it points —
+  # guessing `true` passes `assert_can` blindly, guessing `false` passes
+  # `assert_cannot` blindly (#143). `arguments` resolves `^arg(...)` templates.
   def evaluate_filter_against_record(filter, record, actor, resource \\ nil, arguments \\ %{})
 
   def evaluate_filter_against_record(true, _record, _actor, _resource, _arguments), do: true
@@ -153,6 +213,27 @@ defmodule AshGrant.PolicyTest.Checker do
   def evaluate_filter_against_record(false, _record, _actor, _resource, _arguments), do: false
 
   def evaluate_filter_against_record(filter, record, actor, resource, arguments) do
+    case Ash.Filter.find(filter, &database_only?/1) do
+      nil ->
+        eval_in_memory(filter, record, actor, resource, arguments)
+
+      %Ash.Query.Exists{} ->
+        {:indeterminate,
+         "uses exists(), which needs related rows a policy test record does not have"}
+
+      _fragment ->
+        {:indeterminate, "uses fragment(), which only the database can evaluate"}
+    end
+  end
+
+  # A scope's filter is not hydrated yet, so a fragment is still a `Call`; the
+  # `Fragment` struct is what a parsed filter would hold.
+  defp database_only?(%Ash.Query.Exists{}), do: true
+  defp database_only?(%Ash.Query.Call{name: :fragment}), do: true
+  defp database_only?(%Ash.Query.Function.Fragment{}), do: true
+  defp database_only?(_), do: false
+
+  defp eval_in_memory(filter, record, actor, resource, arguments) do
     filled =
       Ash.Expr.fill_template(filter,
         actor: actor,
@@ -161,67 +242,28 @@ defmodule AshGrant.PolicyTest.Checker do
       )
 
     case Ash.Expr.eval(filled, record: record, resource: resource, actor: actor) do
-      {:ok, true} -> true
-      {:ok, false} -> false
-      {:ok, nil} -> false
-      {:ok, _other} -> true
-      :unknown -> fallback_evaluation(filter, record, actor)
-      {:error, _} -> fallback_evaluation(filter, record, actor)
+      {:ok, result} when is_boolean(result) ->
+        result
+
+      # A comparison against a value the record lacks is NULL, as it would be
+      # for the row — and NULL does not match. That is decided, not unknown.
+      {:ok, nil} ->
+        false
+
+      {:ok, other} ->
+        {:indeterminate, "evaluated to #{inspect(other)}, not a boolean"}
+
+      :unknown ->
+        {:indeterminate, "could not be evaluated in memory"}
+
+      {:error, error} ->
+        {:indeterminate, "could not be evaluated in memory: #{error_message(error)}"}
     end
+  rescue
+    error -> {:indeterminate, "could not be evaluated in memory: #{Exception.message(error)}"}
   end
 
-  # Fallback evaluation for expressions that Ash.Expr.eval can't handle
-  defp fallback_evaluation(filter, record, actor) do
-    filter_str = inspect(filter)
-
-    cond do
-      # Handle actor field comparison: expr(field == ^actor(:id))
-      String.contains?(filter_str, ":_actor") ->
-        evaluate_actor_comparison(filter_str, record, actor)
-
-      # Handle status comparison: expr(status == :value)
-      String.contains?(filter_str, "status") ->
-        evaluate_status_comparison(filter_str, record)
-
-      true ->
-        # Default to true if we can't evaluate
-        true
-    end
-  end
-
-  defp evaluate_actor_comparison(filter_str, record, actor) do
-    # Extract patterns like `field == {:_actor, :id}` or `field == {:_actor, :field_name}`
-    cond do
-      match = Regex.run(~r/(\w+)\s*==\s*\{:_actor,\s*:(\w+)\}/, filter_str) ->
-        [_, record_field, actor_field] = match
-        record_value = Map.get(record, String.to_atom(record_field))
-        actor_value = Map.get(actor, String.to_atom(actor_field))
-        record_value == actor_value
-
-      match = Regex.run(~r/:name,\s*:(\w+).*:_actor,\s*:(\w+)/, filter_str) ->
-        [_, record_field, actor_field] = match
-        record_value = Map.get(record, String.to_atom(record_field))
-        actor_value = Map.get(actor, String.to_atom(actor_field))
-        record_value == actor_value
-
-      true ->
-        true
-    end
-  end
-
-  defp evaluate_status_comparison(filter_str, record) do
-    # Handle patterns like `status == :draft` or `status == :published`
-    if match = Regex.run(~r/status\s*==\s*:(\w+)/, filter_str) do
-      [_, expected_status] = match
-      record_status = Map.get(record, :status)
-
-      if is_atom(record_status) do
-        record_status == String.to_atom(expected_status)
-      else
-        to_string(record_status) == expected_status
-      end
-    else
-      true
-    end
-  end
+  defp error_message(error) when is_exception(error), do: Exception.message(error)
+  defp error_message(error) when is_binary(error), do: error
+  defp error_message(error), do: inspect(error)
 end

@@ -330,6 +330,10 @@ defmodule AshGrant.PolicyTest.YamlParser do
       {:deny, details} ->
         raise AshGrant.PolicyTest.AssertionError,
           message: "Expected allow, got deny: #{inspect(details)}"
+
+      {:indeterminate, details} ->
+        raise AshGrant.PolicyTest.AssertionError,
+          message: "Cannot decide: #{Checker.undecided_reason(details)}"
     end
   end
 
@@ -341,6 +345,10 @@ defmodule AshGrant.PolicyTest.YamlParser do
       {:allow, details} ->
         raise AshGrant.PolicyTest.AssertionError,
           message: "Expected deny, got allow: #{inspect(details)}"
+
+      {:indeterminate, details} ->
+        raise AshGrant.PolicyTest.AssertionError,
+          message: "Cannot decide: #{Checker.undecided_reason(details)}"
     end
   end
 

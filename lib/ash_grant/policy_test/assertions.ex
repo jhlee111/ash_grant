@@ -183,6 +183,10 @@ defmodule AshGrant.PolicyTest.Assertions do
       {:deny, details} ->
         raise AssertionError,
           message: build_error_message(:assert_can, actor_name, action_spec, record, details)
+
+      {:indeterminate, details} ->
+        raise AssertionError,
+          message: undecided_message(actor_name, action_spec, record, details)
     end
   end
 
@@ -198,6 +202,10 @@ defmodule AshGrant.PolicyTest.Assertions do
       {:allow, details} ->
         raise AssertionError,
           message: build_error_message(:assert_cannot, actor_name, action_spec, record, details)
+
+      {:indeterminate, details} ->
+        raise AssertionError,
+          message: undecided_message(actor_name, action_spec, record, details)
     end
   end
 
@@ -385,6 +393,11 @@ defmodule AshGrant.PolicyTest.Assertions do
   defp build_error_message(:assert_cannot, actor_name, action_spec, record, details) do
     "Expected actor :#{actor_name} to NOT be able to perform #{format_action(action_spec)} " <>
       "on record #{inspect(record)}, but was allowed: #{inspect(details)}"
+  end
+
+  defp undecided_message(actor_name, action_spec, record, details) do
+    "Cannot decide whether actor :#{actor_name} can perform #{format_action(action_spec)} " <>
+      "on record #{inspect(record)}: #{Checker.undecided_reason(details)}"
   end
 
   defp format_action(action) when is_atom(action), do: ":#{action}"
