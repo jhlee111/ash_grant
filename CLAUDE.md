@@ -51,8 +51,10 @@ mix ecto.reset    # Drop, create, and migrate
 
 # Policy configuration testing (NOT mix test)
 mix ash_grant.verify test/support/policy_test_fixtures.ex
-mix ash_grant.verify priv/policy_tests/           # Run all YAML tests
+mix ash_grant.verify priv/policy_tests/           # Every .ex/.exs/.yaml/.yml test under it
 mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
+# verify exits 1 when a test fails, 2 when the run is incomplete (missing path,
+# compile/YAML parse failure, a named path with no tests) — a skipped file is never a pass
 
 # Check stored permission strings against the app's resources (exit 1 on any :error)
 mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
@@ -81,6 +83,10 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 ### Calculations
 
 - **`AshGrant.Calculation.CanPerform`** (`lib/ash_grant/calculations/can_perform.ex`) - Per-record boolean calculation for UI visibility (mirrors FilterCheck logic, compiles to SQL)
+
+### Policy Testing
+
+- **`AshGrant.PolicyTest.Checker`** (`lib/ash_grant/policy_test/checker.ex`) - The one permission check behind both policy test runners (DSL `assert_can`/`assert_cannot` in `Assertions`, and `YamlParser`). With a record it mirrors the runtime's read union: any grant's scope, an instance ID, a scope_through parent ID. The union is three-valued: a scope `Assertions.evaluate_filter_against_record/5` cannot evaluate in memory (`fragment()`, `exists()`, an eval error, a non-boolean) is `{:indeterminate, reason}`, and an undecided assertion fails in BOTH directions — never guess `true` or `false` there. Keep record evaluation here only — each runner used to carry a copy, and the copies drifted (#143)
 
 ### Argument-Based Scope Support
 

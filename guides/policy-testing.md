@@ -64,7 +64,37 @@ end
 Action can be specified as:
 - Atom: `:read` (shorthand for `action: :read`)
 - Keyword: `action: :approve` (specific action name)
-- Keyword: `action_type: :update` (all actions of type)
+- Keyword: `action_type: :update` (passes when any action of that type does)
+
+### How a record is checked
+
+With a record, an assertion passes when the action is allowed **and** the record is
+admitted by the same union the runtime builds — any one of:
+
+- any matching grant's scope accepts the record (grants OR-compose; order never matters).
+  A read evaluates the scope's filter; any other action evaluates its `write:` override
+  when it has one, as `AshGrant.Check` does;
+- the record's instance key is in a matching instance permission — `post:post_123:read:`
+  admits `%{id: "post_123"}` and nothing else;
+- through `scope_through`, the record's foreign key is in the parent's instance
+  permissions — `post:post_123:read:` admits a comment with `post_id: "post_123"`.
+
+So give the record the fields that decide it: an instance grant cannot admit a record
+that has no ID. DSL and YAML tests share this check.
+
+Scopes are evaluated in memory, so some cannot be decided: a `fragment()` (only the
+database can run it), an `exists()` (it needs related rows), a `^tenant()` or
+`^context(...)` (a policy test supplies neither), or anything else `Ash.Expr.eval` cannot
+settle. Neither can a `scope_through` whose parent `instance_key` is not the field the
+foreign key points at, while a parent instance grant is in play: the runtime joins to the
+parent row, which a policy test does not have. If another part of the union admits the record, the
+assertion still passes. Otherwise it **fails whichever way it points** — `assert_can`
+and `assert_cannot` alike — with `Cannot decide: scope ... uses fragment() ...`. A
+guess either way would let one of the two pass without checking anything. Cover such
+scopes with a test that runs against the database.
+
+A field the record does not carry is `nil`, as it would be in the row, and `nil` does
+not match. That is a decided "no": add the field to the record if the scope reads it.
 
 ### Testing argument-based scopes
 
@@ -166,15 +196,28 @@ See [Argument-Based Scope](argument-based-scope.md) for when to use this pattern
 **Run policy tests:**
 
 ```bash
-# Run DSL tests
+# Run every policy test under a directory (.ex, .exs, .yaml and .yml files)
 mix ash_grant.verify test/policy_tests/
 
-# Run YAML tests
+# Run one file
 mix ash_grant.verify priv/policy_tests/document.yaml
 
 # Verbose output
 mix ash_grant.verify test/policy_tests/ --verbose
 ```
+
+Without a path, `verify` searches `test/policy_tests` and `priv/policy_tests`, and
+finding nothing there is not an error. It exits `0` when every test passes, `1` when
+a test fails, and `2` when the run is incomplete — a path that does not exist, a file
+that does not compile, a YAML file that does not parse or defines no tests, or a path
+you named that holds no tests. A CI step can rely on that: a file that never ran is
+not a pass.
+
+`verify` compiles the policy test files Mix does not (any `.exs`, and `.ex` files
+outside `elixirc_paths`) in its own environment. If your policy tests use resources
+that only the test environment compiles, such as ones in `test/support`, run it as
+`MIX_ENV=test mix ash_grant.verify`. ExUnit test files (ones that `use ExUnit.Case`)
+are left to `mix test`, and a file reached by several paths runs once.
 
 **Export policies:**
 
@@ -225,13 +268,17 @@ Use the `AshGrant.PolicyTest.Runner` module:
 # Run a single module
 results = AshGrant.PolicyTest.Runner.run_module(MyApp.PolicyTests.DocumentPolicyTest)
 
-# Run all policy test modules
-summary = AshGrant.PolicyTest.Runner.run_all()
+# Run every policy test module under a directory (.ex and .exs files)
+summary = AshGrant.PolicyTest.Runner.run_all(path: "test/policy_tests")
 # => %{passed: 10, failed: 0, results: [...]}
 
 # Run specific modules
 summary = AshGrant.PolicyTest.Runner.run_all(modules: [DocumentPolicyTest, PostPolicyTest])
 ```
+
+The runner covers DSL modules only. Run YAML files with
+`AshGrant.PolicyTest.YamlParser.run_yaml_tests/1`, or with `mix ash_grant.verify`,
+which runs both.
 
 ## Dependencies
 
