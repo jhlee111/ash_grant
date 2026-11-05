@@ -27,4 +27,12 @@ config :ash_grant,
 # here; `indeterminate_match_test.exs` sets the mode explicitly per case.
 config :ash_grant, indeterminate_type_wildcard: :off
 
+# App-wide resolver fallback. The resolver-fallback fixtures in
+# `test/support/resolver_fallback_fixtures.ex` deliberately declare neither a
+# resource nor a domain resolver, so this config is what satisfies the
+# `ValidateResolverPresent` verifier for them at compile time. Individual
+# tests under `test/ash_grant/resolver_fallback_test.exs` reassign and
+# unassign it per case.
+config :ash_grant, resolver: AshGrant.Test.ResolverFallbackResolver
+
 config :logger, level: :warning

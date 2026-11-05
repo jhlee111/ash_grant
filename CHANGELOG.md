@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **App-wide `PermissionResolver` fallback.** Set `config :ash_grant, resolver: MyApp.PermissionResolver` and every resource that uses `AshGrant` picks it up when neither the resource nor its domain declares one. Precedence is resource > domain > app config; `AshGrant.Verifiers.ValidateResolverPresent` treats the app-config fallback as present, so the compile warning does not fire for resources covered by it; no config = behaviour unchanged. See `guides/getting-started.md`.
+
 ### Changed
 
 - **`mix ash_grant.verify` output** ([#143](https://github.com/jhlee111/ash_grant/issues/143)). Failing tests are now listed without `--verbose` (`--verbose` adds the passing ones), and the progress lines `--verbose` printed during discovery are gone. Like `mix ash_grant.check_permissions` and `mix ash_grant.explain`, the report goes to stdout when the exit code is 0 and to stderr otherwise — **this includes `--format json`**, which previously always went to stdout; redirect stderr if you capture the JSON of a failing run. The JSON gains an `errors` list (`path`, `message`) for files that could not be run. Unknown options and an unknown `--format` are now rejected with exit code 2 instead of being ignored.

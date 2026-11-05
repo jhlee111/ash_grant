@@ -203,6 +203,24 @@ defmodule AshGrant.DomainInheritanceTest do
   # ── validation ───────────────────────────────────────────
 
   describe "validation" do
+    setup do
+      # The resolver-fallback tests set a project-wide `config :ash_grant,
+      # :resolver` so their fixtures compile clean. The "no resolver
+      # anywhere" paths below require that fallback to be unset, otherwise
+      # the verifier is satisfied and the runtime guard never fires.
+      previous = Application.get_env(:ash_grant, :resolver)
+      Application.delete_env(:ash_grant, :resolver)
+
+      on_exit(fn ->
+        case previous do
+          nil -> :ok
+          other -> Application.put_env(:ash_grant, :resolver, other)
+        end
+      end)
+
+      :ok
+    end
+
     test "compile warning when no resolver in resource or domain" do
       # The compile-time check is a Spark verifier. Spark wraps verifier
       # failures in `Spark.Warning.warn` (see the `catch` in
@@ -277,7 +295,7 @@ defmodule AshGrant.DomainInheritanceTest do
 
       assert warnings =~ "No resolver configured"
 
-      # The verifier still surfaces the misconfiguration, but because the
+      # The verifier still reports the misconfiguration, but because the
       # module is compiled inside the test it no longer breaks CI's global
       # warnings-as-errors compile step. Attempting to authorize an action on
       # it must raise our runtime guard message. Ash wraps the ArgumentError in

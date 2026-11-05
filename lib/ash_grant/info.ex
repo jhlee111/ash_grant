@@ -41,16 +41,19 @@ defmodule AshGrant.Info do
   @doc """
   Gets the permission resolver for a resource.
 
-  Falls back to the resolver on the resource's domain (if the domain uses the
-  `AshGrant.Domain` extension) when the resource does not define its own.
-  Merging at runtime avoids a compile-time cycle between resource and domain
-  that occurs when the domain also has `code_interface` declarations.
+  Precedence is `resource > domain > app config`. The resource's own
+  `resolver` wins; absent that, the resource's domain (when it uses the
+  `AshGrant.Domain` extension) supplies one; absent both,
+  `Application.get_env(:ash_grant, :resolver)` supplies the app-wide
+  fallback. Merging happens at runtime to avoid a compile-time cycle
+  between resource and domain that occurs when the domain also has
+  `code_interface` declarations.
   """
   @spec resolver(resource :: Ash.Resource.t()) :: module() | function() | nil
   def resolver(resource) do
-    case Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :resolver) do
-      nil -> domain_resolver(resource)
-      resolver -> resolver
+    with nil <- Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :resolver),
+         nil <- domain_resolver(resource) do
+      app_resolver()
     end
   end
 
@@ -60,6 +63,11 @@ defmodule AshGrant.Info do
       nil -> nil
       domain -> AshGrant.Domain.Info.resolver(domain)
     end
+  end
+
+  @spec app_resolver() :: module() | function() | nil
+  defp app_resolver do
+    Application.get_env(:ash_grant, :resolver)
   end
 
   @doc """
