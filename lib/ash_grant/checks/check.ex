@@ -132,16 +132,22 @@ defmodule AshGrant.Check do
   ## Relational Scopes and DB Query Fallback
 
   Scopes using `exists()` or dot-path references cannot be evaluated in-memory.
-  When such a scope has no explicit `write:` option and the resource has a data layer,
-  the check automatically uses a **DB query** to verify the scope instead:
+  Any write filter with such a reference is verified with a **DB query** instead,
+  whether it comes from an inline scope, a `write:` expression, or a legacy
+  `scope_resolver`:
 
   | `write:` value | Strategy | Behavior |
   |---|---|---|
   | `write: false` | Deny | Returns false immediately |
   | `write: true` | Allow | Returns true immediately |
-  | `write: expr(...)` | In-memory | Evaluate custom expression |
-  | _(omitted, no relationships)_ | In-memory | Current behavior |
+  | `write: expr(...)`, no relationships | In-memory | Evaluate custom expression |
+  | `write: expr(...)`, has relationships | **DB query** | Query DB with the `write:` expression |
+  | _(omitted, no relationships)_ | In-memory | Evaluate the scope filter |
   | _(omitted, has relationships)_ | **DB query** | Query DB with read scope |
+  | legacy `scope_resolver`, has relationships | **DB query** | Query DB with the resolved filter |
+
+  A relationship-bearing filter is never evaluated in memory. If one reaches the
+  in-memory path, the check logs a warning and returns false.
 
   **For update/destroy**: Queries the DB to check if the existing record matches
   the read scope expression.
@@ -492,15 +498,20 @@ defmodule AshGrant.Check do
 
   # Decide between DB query and in-memory evaluation, then execute.
   defp check_scope_with_strategy(scope, filter, resource, action_type, context, authorizer, opts) do
-    scope_def = get_scope_def(resource, scope)
-
-    if should_use_db_query?(scope_def, filter, resource) do
-      read_filter = resolve_read_scope(resource, scope, context)
-      db_query_scope_check(resource, action_type, authorizer, read_filter, context)
+    if should_use_db_query?(filter, resource) do
+      db_filter = db_query_filter(get_scope_def(resource, scope), scope, filter, context)
+      db_query_scope_check(resource, action_type, authorizer, db_filter, context)
     else
       check_scope_in_memory(action_type, filter, context, authorizer, opts)
     end
   end
+
+  # An inline scope without `write:` checks its read filter, as it always has.
+  # A `write:` expression or a legacy scope_resolver filter is checked as given.
+  defp db_query_filter(%{write: nil}, scope, _filter, context),
+    do: resolve_read_scope(context.resource, scope, context)
+
+  defp db_query_filter(_scope_def, _scope, filter, _context), do: filter
 
   defp check_scope_in_memory(:create, filter, context, _authorizer, opts) do
     check_create_scope_in_memory(context, filter, opts)
@@ -532,14 +543,10 @@ defmodule AshGrant.Check do
   # DB Query Strategy
   # ============================================================
 
-  # Determine if we should use a DB query instead of in-memory evaluation.
-  # Used when: scope has relationship references, no explicit write: option, and resource has a data layer.
-  defp should_use_db_query?(nil, _filter, _resource), do: false
-
-  defp should_use_db_query?(scope_def, filter, resource) do
-    is_nil(scope_def.write) and
-      has_data_layer?(resource) and
-      contains_relationship_reference?(filter)
+  # Any write filter with relationship references goes to the DB, whether it
+  # came from an inline scope, its `write:` expression, or a legacy scope_resolver.
+  defp should_use_db_query?(filter, resource) do
+    contains_relationship_reference?(filter) and has_data_layer?(resource)
   end
 
   defp has_data_layer?(resource) do
@@ -860,19 +867,28 @@ defmodule AshGrant.Check do
   defp record_matches_filter?(_record, true, _context, _opts), do: true
   defp record_matches_filter?(_record, false, _context, _opts), do: false
 
-  defp record_matches_filter?(record, filter, context, _opts) do
+  defp record_matches_filter?(record, filter, context, opts) do
+    if contains_relationship_reference?(filter) do
+      Logger.warning(
+        "AshGrant: scope filter #{inspect(filter)} references a relationship and " <>
+          "cannot be evaluated in memory on #{inspect(context[:resource])}; failing closed"
+      )
+
+      false
+    else
+      eval_record_filter(record, filter, context, opts)
+    end
+  end
+
+  defp eval_record_filter(record, filter, context, _opts) do
     actor = context[:actor]
     tenant = context[:tenant]
     resource = context[:resource]
 
-    # Replace exists() nodes with true before in-memory evaluation.
-    # Ash.Expr.eval cannot resolve exists() in-memory (requires DB queries).
-    simplified = simplify_exists_for_eval(filter)
-
     # Resolve actor/tenant/context/arguments templates to concrete values before
     # eval, then pass resource: so Ash can hydrate attribute references.
     filled =
-      Ash.Expr.fill_template(simplified,
+      Ash.Expr.fill_template(filter,
         actor: actor,
         tenant: tenant,
         context: context[:query_context] || %{},
@@ -903,18 +919,6 @@ defmodule AshGrant.Check do
       {:error, _} ->
         fallback_evaluation(record, filter, context)
     end
-  end
-
-  # Replace exists() nodes with true for in-memory evaluation.
-  # Ash.Expr.eval cannot resolve exists() without DB queries, causing a crash:
-  # `nil.persisted(:relationships_by_name)` (ArgumentError)
-  # `filter` is never a bare boolean here: record_matches_filter?/4 matches
-  # `true` and `false` in its own earlier clauses.
-  defp simplify_exists_for_eval(filter) do
-    Ash.Filter.map(filter, fn
-      %Ash.Query.Exists{} -> true
-      other -> other
-    end)
   end
 
   # Fallback for cases where Ash.Expr.eval returns :unknown or errors
@@ -1053,7 +1057,7 @@ defmodule AshGrant.Check do
         Map.get(record, record_field) == Map.get(actor, actor_field)
 
       nil ->
-        true
+        false
     end
   end
 
