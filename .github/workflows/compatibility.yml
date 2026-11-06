@@ -17,6 +17,9 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+
 env:
   MIX_ENV: test
   ELIXIR_VERSION: "1.18.4"
@@ -26,6 +29,7 @@ jobs:
   # Test with latest compatible versions (deps unlock)
   latest:
     name: Latest Deps (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    timeout-minutes: 30
     if: github.event_name == 'schedule' || (github.event.inputs.ash_version == '' && github.event.inputs.spark_version == '')
     runs-on: ubuntu-latest
 
@@ -81,6 +85,7 @@ jobs:
   # Test with minimum supported Ash version (floor)
   floor:
     name: Ash Floor (3.33.4)
+    timeout-minutes: 30
     # Also runs on a blank workflow_dispatch. Schedule-only meant this job
     # could not be exercised on demand, which is how it stayed broken from
     # 2026-07 to 2026-09 — a fix could not be verified before merging it.
@@ -132,6 +137,7 @@ jobs:
   # Manual: test against specific Ash version or main branch
   custom:
     name: "Ash ${{ github.event.inputs.ash_version || 'custom' }}"
+    timeout-minutes: 30
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.ash_version != '' || github.event.inputs.spark_version != '')
     runs-on: ubuntu-latest
 
@@ -176,3 +182,32 @@ jobs:
           ASH_VERSION: ${{ github.event.inputs.ash_version }}
           SPARK_VERSION: ${{ github.event.inputs.spark_version }}
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
+
+  # A scheduled run has no one watching it. GitHub emails a scheduled failure only
+  # to whoever last edited the cron line, and from 2026-10-19 this workflow was red
+  # for three weeks before anyone noticed. On failure, open an issue, or comment on
+  # the one already open, so the failure lands in the issue list.
+  notify-failure:
+    name: Report failure
+    needs: [latest, floor]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Weekly Compatibility workflow is failing"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          number=$(gh issue list -R "$GITHUB_REPOSITORY" --state open \
+            --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" -R "$GITHUB_REPOSITORY" --body "Still failing: $run_url"
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" \
+              --body "The scheduled Compatibility run failed: $run_url"
+          fi
