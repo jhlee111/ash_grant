@@ -75,7 +75,7 @@ defmodule AshGrant.ArgumentAnalyzerTest do
 
     test "if(...) function wrapper exposes inner arg refs" do
       expr =
-        expr(if(^arg(:enabled) == true, do: ^arg(:center_id), else: nil) == nil)
+        expr(is_nil(if(^arg(:enabled) == true, do: ^arg(:center_id), else: nil)))
 
       args = ArgumentAnalyzer.referenced_args(expr)
       assert :enabled in args

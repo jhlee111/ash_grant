@@ -64,7 +64,37 @@ end
 Action can be specified as:
 - Atom: `:read` (shorthand for `action: :read`)
 - Keyword: `action: :approve` (specific action name)
-- Keyword: `action_type: :update` (all actions of type)
+- Keyword: `action_type: :update` (passes when any action of that type does)
+
+### How a record is checked
+
+With a record, an assertion passes when the action is allowed **and** the record is
+admitted by the same union the runtime builds — any one of:
+
+- any matching grant's scope accepts the record (grants OR-compose; order never matters).
+  A read evaluates the scope's filter; any other action evaluates its `write:` override
+  when it has one, as `AshGrant.Check` does;
+- the record's instance key is in a matching instance permission — `post:post_123:read:`
+  admits `%{id: "post_123"}` and nothing else;
+- through `scope_through`, the record's foreign key is in the parent's instance
+  permissions — `post:post_123:read:` admits a comment with `post_id: "post_123"`.
+
+So give the record the fields that decide it: an instance grant cannot admit a record
+that has no ID. DSL and YAML tests share this check.
+
+Scopes are evaluated in memory, so some cannot be decided: a `fragment()` (only the
+database can run it), an `exists()` (it needs related rows), a `^tenant()` or
+`^context(...)` (a policy test supplies neither), or anything else `Ash.Expr.eval` cannot
+settle. Neither can a `scope_through` whose parent `instance_key` is not the field the
+foreign key points at, while a parent instance grant is in play: the runtime joins to the
+parent row, which a policy test does not have. If another part of the union admits the record, the
+assertion still passes. Otherwise it **fails whichever way it points** — `assert_can`
+and `assert_cannot` alike — with `Cannot decide: scope ... uses fragment() ...`. A
+guess either way would let one of the two pass without checking anything. Cover such
+scopes with a test that runs against the database.
+
+A field the record does not carry is `nil`, as it would be in the row, and `nil` does
+not match. That is a decided "no": add the field to the record if the scope reads it.
 
 ### Testing argument-based scopes
 
@@ -214,6 +244,21 @@ mix ash_grant.import priv/policy_tests/document.yaml
 # Generate and write to file
 mix ash_grant.import priv/policy_tests/document.yaml --output=test/policy_tests/document_test.exs
 ```
+
+**Export DSL to YAML:**
+
+```elixir
+yaml = AshGrant.PolicyTest.to_yaml(MyApp.PolicyTests.DocumentPolicyTest)
+File.write!("priv/policy_tests/document.yaml", yaml)
+```
+
+The YAML tests exactly what the module tests, or `to_yaml/1` raises `ArgumentError`
+listing every test it cannot express. Each test body must be assertion calls with
+literal arguments — no variables, helper calls or loops. A YAML test holds one
+assertion, so a test with several becomes `name (1/3)`, `name (2/3)`, … YAML has no
+atom type, so values that would not read back unchanged (a struct, a nested map, an
+atom such as `:Draft`, a string such as `"draft"` or `"user_1"` that the YAML parser
+reads back as an atom) are refused too.
 
 ## Running Policy Tests Programmatically
 
