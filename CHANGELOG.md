@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Global scope registry.** Declare `use AshGrant.ScopeRegistry` in a module, point `config :ash_grant, :scope_registry` at it, and every resource that uses `AshGrant` picks up its scopes silently. Precedence is resource > domain > registry; no config = behaviour unchanged. A `:scope_registry` value that is not a `use AshGrant.ScopeRegistry` module raises an `ArgumentError` naming it on first scope lookup. See `guides/scopes.md`.
+- **App-wide `PermissionResolver` fallback.** Set `config :ash_grant, resolver: MyApp.PermissionResolver` and every resource that uses `AshGrant` picks it up when neither the resource nor its domain declares one. Precedence is resource > domain > app config; `AshGrant.Verifiers.ValidateResolverPresent` treats the app-config fallback as present, so the compile warning does not fire for resources covered by it; no config = behaviour unchanged. See `guides/getting-started.md`.
 
 ### Changed
 

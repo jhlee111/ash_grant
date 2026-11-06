@@ -285,7 +285,7 @@ defmodule AshGrant do
 
   | Option | Type | Description |
   |--------|------|-------------|
-  | `resolver` | module/function | **Required.** Resolves permissions for actors |
+  | `resolver` | module/function | **Required** (unless a domain or `config :ash_grant, resolver:` supplies one — precedence: resource > domain > app config). Resolves permissions for actors |
   | `default_policies` | boolean/atom | Auto-generate policies: `true`, `:all`, `:read`, `:write` |
   | `can_perform_actions` | list of atoms | Batch-generate CanPerform calculations |
   | `resource_name` | string | Resource name for permission matching |
