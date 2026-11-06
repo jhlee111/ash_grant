@@ -159,6 +159,76 @@ defmodule AshGrant.DenyAcrossTiersTest do
     end
   end
 
+  describe "instance deny id spelling" do
+    test "an uppercase UUID denies the update, as it hides the record on read" do
+      denied = generate(post())
+      upper_id = String.upcase(denied.id)
+
+      actor = actor(["post:*:read:always", "post:*:update:always", "!post:#{upper_id}:update:"])
+
+      assert {:error, %Ash.Error.Forbidden{}} =
+               denied
+               |> Ash.Changeset.for_update(:update, %{title: "changed"}, actor: actor)
+               |> Ash.update()
+
+      refute denied.id in read_ids(Post, actor(["post:*:read:always", "!post:#{upper_id}:read:"]))
+    end
+
+    test "an uppercase UUID makes CanPerform false for the denied record" do
+      denied = generate(post())
+
+      actor =
+        actor([
+          "post:*:read:always",
+          "post:*:update:always",
+          "!post:#{String.upcase(denied.id)}:update:"
+        ])
+
+      assert can_update_by_id(actor)[denied.id] == false
+    end
+
+    test "an id that does not cast to the instance key type denies nothing" do
+      post = generate(post())
+
+      actor = actor(["post:*:read:always", "post:*:update:always", "!post:not-a-uuid:read:"])
+
+      assert post.id in read_ids(Post, actor)
+
+      assert {:ok, _} =
+               post
+               |> Ash.Changeset.for_update(:update, %{title: "changed"}, actor: actor)
+               |> Ash.update()
+    end
+  end
+
+  describe "instance deny with a type wildcard" do
+    test "!post:<id>:@read: hides the record" do
+      denied = generate(post())
+      visible = generate(post())
+
+      ids = read_ids(Post, actor(["post:*:read:always", "!post:#{denied.id}:@read:"]))
+
+      refute denied.id in ids
+      assert visible.id in ids
+    end
+
+    test "!post:<id>:@update: forbids the update" do
+      denied = generate(post())
+
+      actor =
+        actor(["post:*:read:always", "post:*:update:always", "!post:#{denied.id}:@update:"])
+
+      assert {:error, %Ash.Error.Forbidden{}} =
+               denied
+               |> Ash.Changeset.for_update(:update, %{title: "changed"}, actor: actor)
+               |> Ash.update()
+    end
+
+    test "is not reported as :dead_instance_type_wildcard" do
+      assert AshGrant.Permission.diagnostics("!post:post_abc:@read:") == []
+    end
+  end
+
   describe "positive cases" do
     test "an instance allow without any deny returns the record" do
       post = generate(post())

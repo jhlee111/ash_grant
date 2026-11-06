@@ -740,19 +740,50 @@ defmodule AshGrant.Evaluator do
 
   Returns `false` when `denied_all?` is set. Otherwise ANDs
   `not (instance_key in ^denied_instance_ids)` onto `filter`, so an instance deny
-  removes its record from RBAC, instance and `scope_through` grants alike.
+  removes its record from RBAC, instance and `scope_through` grants alike. The ids
+  are cast as `cast_instance_ids/2` describes.
   """
-  @spec restrict_filter(term(), map(), atom()) :: term()
-  def restrict_filter(_filter, %{denied_all?: true}, _instance_key), do: false
-  def restrict_filter(false, _summary, _instance_key), do: false
-  def restrict_filter(filter, %{denied_instance_ids: []}, _instance_key), do: filter
+  @spec restrict_filter(term(), map(), Ash.Resource.t()) :: term()
+  def restrict_filter(_filter, %{denied_all?: true}, _resource), do: false
+  def restrict_filter(false, _summary, _resource), do: false
 
-  def restrict_filter(true, %{denied_instance_ids: ids}, instance_key) do
-    Ash.Expr.expr(^Ash.Expr.ref(instance_key) not in ^ids)
+  def restrict_filter(filter, %{denied_instance_ids: ids}, resource) do
+    instance_key = AshGrant.Info.instance_key(resource)
+
+    case cast_instance_ids(ids, resource) do
+      [] -> filter
+      cast_ids when filter == true -> Ash.Expr.expr(^Ash.Expr.ref(instance_key) not in ^cast_ids)
+      cast_ids -> Ash.Expr.expr(^filter and ^Ash.Expr.ref(instance_key) not in ^cast_ids)
+    end
   end
 
-  def restrict_filter(filter, %{denied_instance_ids: ids}, instance_key) do
-    Ash.Expr.expr(^filter and ^Ash.Expr.ref(instance_key) not in ^ids)
+  @doc """
+  Casts instance ids from permission strings to the type of the resource's `instance_key`.
+
+  An id that does not cast is dropped, because no record can carry it. Reads and
+  writes compare the same cast values, so `"ABC…"` and `"abc…"` name the same UUID
+  on both paths.
+  """
+  @spec cast_instance_ids([String.t()], Ash.Resource.t()) :: [term()]
+  def cast_instance_ids([], _resource), do: []
+
+  def cast_instance_ids(ids, resource) do
+    case Ash.Resource.Info.attribute(resource, AshGrant.Info.instance_key(resource)) do
+      nil ->
+        ids
+
+      %{type: type, constraints: constraints} ->
+        ids
+        |> Enum.flat_map(&cast_instance_id(&1, type, constraints))
+        |> Enum.uniq()
+    end
+  end
+
+  defp cast_instance_id(id, type, constraints) do
+    case Ash.Type.cast_input(type, id, constraints) do
+      {:ok, value} when not is_nil(value) -> [value]
+      _ -> []
+    end
   end
 
   @doc """

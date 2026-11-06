@@ -97,7 +97,7 @@ defmodule AshGrant.FieldFilterCheck do
 
     scopes
     |> build_filter(instance_ids, instance_key, Info.scope_resolver(resource), resource)
-    |> Evaluator.restrict_filter(deny_summary, instance_key)
+    |> Evaluator.restrict_filter(deny_summary, resource)
   end
 
   # RBAC grants (instance_id "*") contribute their scope; instance grants

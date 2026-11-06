@@ -137,7 +137,7 @@ defmodule AshGrant.Calculation.CanPerform do
 
       scopes
       |> build_expression(instance_ids, instance_key, parent_filters, scope_resolver, resource)
-      |> AshGrant.Evaluator.restrict_filter(deny_summary, instance_key)
+      |> AshGrant.Evaluator.restrict_filter(deny_summary, resource)
       |> case do
         false -> expr(false)
         expression -> expression

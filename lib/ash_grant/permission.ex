@@ -487,9 +487,10 @@ defmodule AshGrant.Permission do
 
     * `:deprecated_type_wildcard` — the `"read*"` spelling. Prefer `"@read"`; the
       trailing-`*` form is slated for removal in v1.0.0.
-    * `:dead_instance_type_wildcard` — a type wildcard on an instance permission.
+    * `:dead_instance_type_wildcard` — a type wildcard on an instance allow.
       Instance matching has no action type available, so the grant never matches
-      anything. See `matches_instance?/3`.
+      anything. See `matches_instance?/3`. Instance denies are not reported: they
+      are matched with the action type, so `"!blog:post_abc123:@read:"` takes effect.
     * `:unknown_action_type` — a type wildcard naming something that is not an Ash
       action type (`:action`, `:read`, `:create`, `:update`, `:destroy`), so it never
       matches. `"delete*"` is the common case — Ash calls that type `:destroy`.
@@ -778,8 +779,10 @@ defmodule AshGrant.Permission do
     ]
   end
 
+  # Instance denies are matched with the action type by `AshGrant.Evaluator.deny_summary/4`,
+  # so a type wildcard there takes effect.
   defp dead_instance_diagnostic(perm, string) do
-    if instance_permission?(perm) do
+    if instance_permission?(perm) and not perm.deny do
       [
         %{
           code: :dead_instance_type_wildcard,

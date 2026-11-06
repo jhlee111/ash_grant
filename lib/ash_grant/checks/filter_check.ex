@@ -270,7 +270,7 @@ defmodule AshGrant.FilterCheck do
       scope_resolver,
       context
     )
-    |> AshGrant.Evaluator.restrict_filter(deny_summary, instance_key)
+    |> AshGrant.Evaluator.restrict_filter(deny_summary, resource_module)
   end
 
   defp action_type_from(%{type: type}), do: type
