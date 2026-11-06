@@ -39,6 +39,30 @@ defmodule AshGrant.ScopeRegistryTest do
       Application.delete_env(:ash_grant, :scope_registry)
       assert AshGrant.ScopeRegistry.scopes() == []
     end
+
+    test "scopes/0 raises naming a configured module that is not a registry" do
+      Application.put_env(:ash_grant, :scope_registry, Enum)
+
+      assert_raise ArgumentError, ~r/:scope_registry is set to Enum, which is not a module/, fn ->
+        AshGrant.ScopeRegistry.scopes()
+      end
+    end
+
+    test "scopes/0 raises naming a module that does not exist" do
+      Application.put_env(:ash_grant, :scope_registry, MyApp.MissingRegistry)
+
+      assert_raise ArgumentError, ~r/is set to MyApp.MissingRegistry/, fn ->
+        AshGrant.ScopeRegistry.scopes()
+      end
+    end
+
+    test "a misconfigured registry fails Info.scopes/1 with the registry error" do
+      Application.put_env(:ash_grant, :scope_registry, Enum)
+
+      assert_raise ArgumentError, ~r/:scope_registry is set to Enum/, fn ->
+        Info.scopes(RegistryOnlyPost)
+      end
+    end
   end
 
   describe "Info.scopes/1 merging" do

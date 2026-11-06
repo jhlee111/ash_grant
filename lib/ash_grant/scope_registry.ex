@@ -55,21 +55,31 @@ defmodule AshGrant.ScopeRegistry do
 
   @doc """
   Returns the scopes defined by the configured registry module, or `[]` when
-  no registry is configured or the configured module is not a
-  `ScopeRegistry`.
+  no registry is configured.
+
+  Raises `ArgumentError` naming the configured value when it is not a module
+  that uses `AshGrant.ScopeRegistry`.
   """
   @spec scopes() :: [AshGrant.Dsl.Scope.t()]
   def scopes do
     case Application.get_env(:ash_grant, :scope_registry) do
       nil -> []
-      module when is_atom(module) -> scopes_for(module)
+      registry -> scopes_for(registry)
     end
   end
 
-  @spec scopes_for(module()) :: [AshGrant.Dsl.Scope.t()]
-  defp scopes_for(module) do
-    Spark.Dsl.Extension.get_entities(module, [:scopes])
-  rescue
-    _ -> []
+  @spec scopes_for(term()) :: [AshGrant.Dsl.Scope.t()]
+  defp scopes_for(registry) do
+    if Spark.Dsl.is?(registry, __MODULE__) do
+      Spark.Dsl.Extension.get_entities(registry, [:scopes])
+    else
+      raise ArgumentError, """
+      AshGrant: config :ash_grant, :scope_registry is set to #{inspect(registry)}, \
+      which is not a module that uses AshGrant.ScopeRegistry.
+
+      Define the registry with `use AshGrant.ScopeRegistry` and a `scopes do ... end` \
+      block, or remove the :scope_registry setting.
+      """
+    end
   end
 end

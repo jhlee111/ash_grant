@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Global scope registry.** Declare `use AshGrant.ScopeRegistry` in a module, point `config :ash_grant, :scope_registry` at it, and every resource that uses `AshGrant` picks up its scopes silently. Precedence is resource > domain > registry; no config = behaviour unchanged. See `guides/scopes.md`.
+- **Global scope registry.** Declare `use AshGrant.ScopeRegistry` in a module, point `config :ash_grant, :scope_registry` at it, and every resource that uses `AshGrant` picks up its scopes silently. Precedence is resource > domain > registry; no config = behaviour unchanged. A `:scope_registry` value that is not a `use AshGrant.ScopeRegistry` module raises an `ArgumentError` naming it on first scope lookup. See `guides/scopes.md`.
 
 ### Changed
 
