@@ -298,11 +298,19 @@ defmodule AshGrant.PolicyTest.Assertions do
     permissions = AshGrant.Introspect.permissions_for(resource, actor)
     resource_name = AshGrant.Info.resource_name(resource)
     action_name = normalize_action_to_string(action)
+    # Without the action type, a type wildcard (`@read`) grant is skipped.
+    action_type = action_type_of(resource, action_name)
 
     field_groups =
-      AshGrant.Evaluator.get_all_field_groups(permissions, resource_name, action_name)
+      AshGrant.Evaluator.get_all_field_groups(
+        permissions,
+        resource_name,
+        action_name,
+        action_type
+      )
 
-    has_any_permission = AshGrant.Evaluator.has_access?(permissions, resource_name, action_name)
+    has_any_permission =
+      AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type)
 
     cond do
       not has_any_permission -> :no_access
@@ -405,6 +413,12 @@ defmodule AshGrant.PolicyTest.Assertions do
   defp format_action(action: action), do: "action: :#{action}"
   defp format_action(action_type: type), do: "action_type: :#{type}"
   defp format_action(other), do: inspect(other)
+
+  defp action_type_of(resource, action_name) do
+    resource
+    |> Ash.Resource.Info.actions()
+    |> Enum.find_value(fn action -> to_string(action.name) == action_name && action.type end)
+  end
 
   defp normalize_action_to_string(action) when is_atom(action), do: Atom.to_string(action)
 

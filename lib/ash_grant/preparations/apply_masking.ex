@@ -56,8 +56,15 @@ defmodule AshGrant.Preparations.ApplyMasking do
 
     permissions = resolve_permissions(resolver, actor, context)
 
+    # Pass the action type: without it a type wildcard (`@read`) grant is
+    # skipped, and the fields its group masks come back unmasked.
     actor_field_groups =
-      AshGrant.Evaluator.get_all_field_groups(permissions, resource_name, action_name)
+      AshGrant.Evaluator.get_all_field_groups(
+        permissions,
+        resource_name,
+        action_name,
+        query.action.type
+      )
 
     if actor_field_groups == [] do
       # No field groups in permissions — no masking applies
