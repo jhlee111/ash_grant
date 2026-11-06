@@ -7,7 +7,11 @@ defmodule AshGrant.PermissionValidationTest do
   The validator only *signals* this per the configured mode — it never changes the
   authorization outcome.
   """
-  use ExUnit.Case, async: true
+  # Not async: `capture_log/1` captures every process's log output, so a deny +
+  # field_group warning emitted by a concurrent test (for example on
+  # SensitiveRecord) leaks into the `refute log =~ "field_group"` assertions here.
+  # That turned the Compatibility floor job red on 2026-11-02.
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
