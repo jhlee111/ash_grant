@@ -29,8 +29,10 @@ defmodule AshGrant.Test.Domain do
     # Uses default_policies: true
     resource(AshGrant.Test.Article)
 
-    # default_policies + user-declared bypass (regression for #TODO).
+    # default_policies + user-declared bypass (regression for #183).
     resource(AshGrant.Test.ArticleWithBypass)
+    resource(AshGrant.Test.ArticleForbidBeforeBypass)
+    resource(AshGrant.Test.ArticleWithPolicyGroup)
 
     # Multi-tenancy test resource
     # Uses ^tenant() scope expression

@@ -45,7 +45,7 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
 
   This transformer:
   - Runs **before** `Ash.Policy.Authorizer` to inject policies
-  - Uses `Spark.Dsl.Transformer.add_entity/3` to add policy entities
+  - Appends the generated policies after the ones declared in `policies do`, so a user `bypass` takes precedence
   - Sets appropriate `access_type` (`:filter` for read, `:strict` for write)
 
   ## See Also
@@ -87,22 +87,13 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
     end
   end
 
-  # Inserts the generated policies after any user-declared `bypass` entries,
-  # and before any user-declared non-bypass policies. A bypass that short-circuits
-  # (for example, `AshAuthentication.Checks.AshAuthenticationInteraction` on a
-  # user resource) must get a chance to allow before the generated strict policies
-  # can deny. `Transformer.add_entity/3` prepends, which would place the generated
-  # policies ahead of the bypass and make every action with no actor fail.
+  # Ash only lets a `bypass` short-circuit the policies after it, so the generated
+  # policies go after every user entry. A bypass such as
+  # `AshAuthentication.Checks.AshAuthenticationInteraction` then runs before the
+  # generated strict write policy can deny a sign-in with no actor. Appending keeps
+  # the user's own order and leaves `policy_group` entries alone.
   defp insert_generated(dsl_state, generated) do
-    existing = Transformer.get_entities(dsl_state, [:policies])
-    {bypasses, non_bypasses} = Enum.split_with(existing, & &1.bypass?)
-    set_policies(dsl_state, bypasses ++ generated ++ non_bypasses)
-  end
-
-  defp set_policies(dsl_state, policies) do
-    Map.update(dsl_state, [:policies], %{entities: policies, opts: []}, fn config ->
-      Map.put(config, :entities, policies)
-    end)
+    Enum.reduce(generated, dsl_state, &Transformer.add_entity(&2, [:policies], &1, type: :append))
   end
 
   defp read_policy do

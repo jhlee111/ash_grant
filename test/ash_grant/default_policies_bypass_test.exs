@@ -9,11 +9,12 @@ defmodule AshGrant.DefaultPoliciesBypassTest do
 
   use ExUnit.Case, async: true
 
-  alias AshGrant.Test.ArticleWithBypass
+  alias Ash.Policy.Info
+  alias AshGrant.Test.{ArticleForbidBeforeBypass, ArticleWithBypass, ArticleWithPolicyGroup}
 
   describe "default_policies true alongside a bypass" do
     test "bypass is evaluated before the generated write policy" do
-      policies = Ash.Policy.Info.policies(ArticleWithBypass)
+      policies = Info.policies(ArticleWithBypass)
 
       assert [first | _] = policies
 
@@ -40,6 +41,24 @@ defmodule AshGrant.DefaultPoliciesBypassTest do
                  actor: nil,
                  authorize?: true
                )
+    end
+  end
+
+  describe "default_policies true keeps the user's policies as declared" do
+    test "a forbid policy declared before a bypass still forbids" do
+      assert {:error, %Ash.Error.Forbidden{}} =
+               Ash.create(ArticleForbidBeforeBypass, %{}, actor: %{id: 1}, authorize?: true)
+    end
+
+    test "the generated policies come after the user's policies" do
+      assert [forbid, bypass | _] = Info.policies(ArticleForbidBeforeBypass)
+      assert [%{type: :forbid_if}] = forbid.policies
+      assert bypass.bypass?
+    end
+
+    test "a policy_group compiles and its actions still authorize" do
+      assert {:ok, _} =
+               Ash.create(ArticleWithPolicyGroup, %{}, actor: %{id: 1}, authorize?: true)
     end
   end
 end
