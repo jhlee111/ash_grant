@@ -87,6 +87,34 @@ defmodule AshGrant.Check do
      against the target record — the action is authorized if ANY grant's
      scope passes. Grants are additive: a narrow grant never shadows a
      broader one (issue #123), matching the read path's OR-composition
+  4. **Instance grants**: On an update or destroy, an instance permission
+     naming the target record (see below) also authorizes
+  5. **scope_through**: A parent's instance permission authorizes writes to
+     its children (see `AshGrant.Info.scope_throughs/1`)
+
+  Steps 3–5 are one union: the action is authorized when any of them passes.
+  A matching `!` deny on the resource wins over all of them.
+
+  ## Instance Permissions
+
+  An instance permission (`resource:<instance_id>:action:scope`) authorizes an
+  **update** or **destroy** of the one record whose `instance_key` (the primary
+  key unless configured) equals `instance_id`. The id is compared in the key
+  attribute's own type, so an uppercase UUID still names the record.
+
+      "post:3f2c…:update:"        # update this post
+      "post:3f2c…:*:"             # update and destroy this post
+      "post:3f2c…:update:draft"   # update this post while `draft` holds for it
+
+  - An empty scope is unconditional for the record. A named scope is evaluated
+    against the record like an RBAC scope; an undeclared one never passes (it
+    does not raise).
+  - The action is matched by name or `*`. A type wildcard (`@update`) on an
+    instance permission never matches — `AshGrant.Permission.diagnostics/1`
+    reports it as `:dead_instance_type_wildcard`.
+  - Creates and generic actions have no existing record, so instance grants
+    never authorize them.
+  - `!resource:<instance_id>:action:` cancels instance grants on that record.
 
   ## Scope Evaluation
 
@@ -308,24 +336,127 @@ defmodule AshGrant.Check do
       :unrestricted ->
         true
 
-      {:scopes, [_ | _] = scopes} ->
-        Enum.any?(scopes, &check_scope_access(&1, scope_resolver, context, authorizer, opts))
-
       :denied ->
-        # A deny rule matches — deny-wins, never overridden by scope_through (#170).
+        # A deny rule matches — deny-wins, never overridden by an instance or
+        # scope_through grant (#170).
         false
 
-      {:scopes, []} ->
-        # No matching RBAC grant and no deny — try scope_through (parent instance
-        # permissions).
-        check_scope_through_write(
-          resource_module,
-          permissions,
-          action_name,
-          action_type,
-          authorizer
-        )
+      {:scopes, scopes} ->
+        # The RBAC scopes, the record's own instance grants and its scope_through
+        # parent's instance grants are one union, as on the read path: a failing
+        # RBAC scope must not hide an instance grant on the same record.
+        Enum.any?(scopes, &check_scope_access(&1, scope_resolver, context, authorizer, opts)) or
+          instance_grants_write?(
+            permissions,
+            resource_name,
+            action_name,
+            action,
+            scope_resolver,
+            context,
+            authorizer,
+            opts
+          ) or
+          check_scope_through_write(
+            resource_module,
+            permissions,
+            action_name,
+            action_type,
+            authorizer
+          )
     end
+  end
+
+  # ============================================================
+  # Instance permissions (resource:<instance_id>:action:scope)
+  # ============================================================
+
+  # An instance grant names one existing record, so it can only authorize an
+  # update or destroy — a create or generic action has no record to compare.
+  # `action` is the Ash action itself, so an `action:` override in opts still
+  # gates on the real action type.
+  defp instance_grants_write?(
+         permissions,
+         resource_name,
+         action_name,
+         action,
+         scope_resolver,
+         context,
+         authorizer,
+         opts
+       ) do
+    with type when type in [:update, :destroy] <- action_type_from(action),
+         record when not is_nil(record) <- get_target_record(authorizer) do
+      resource = context.resource
+
+      grants =
+        permissions
+        |> AshGrant.Evaluator.normalize_permissions()
+        |> Enum.filter(
+          &instance_grant_for_record?(&1, resource, resource_name, action_name, record)
+        )
+
+      # An instance deny on the record cancels its instance allows (RBAC denies
+      # were already settled by get_write_scopes/4).
+      not Enum.any?(grants, & &1.deny) and
+        Enum.any?(
+          grants,
+          &instance_scope_passes?(&1.scope, scope_resolver, context, authorizer, opts)
+        )
+    else
+      _ -> false
+    end
+  end
+
+  # Matched by action name only: a type wildcard (`@update`) on an instance
+  # permission stays dead, as `AshGrant.Permission.diagnostics/1` reports.
+  defp instance_grant_for_record?(perm, resource, resource_name, action_name, record) do
+    AshGrant.Permission.instance_permission?(perm) and
+      AshGrant.Permission.matches_resource?(perm.resource, resource_name) and
+      AshGrant.Permission.matches_action?(perm.action, action_name) and
+      instance_id_matches?(resource, perm.instance_id, record)
+  end
+
+  defp instance_id_matches?(resource, instance_id, record) do
+    instance_key = AshGrant.Info.instance_key(resource)
+
+    case Map.get(record, instance_key) do
+      nil -> false
+      value -> instance_id_equal?(resource, instance_key, instance_id, value)
+    end
+  end
+
+  # Compare in the key's own type, so an uppercase UUID in the permission still
+  # names the record — as it does on reads, where the data layer casts it.
+  defp instance_id_equal?(resource, instance_key, instance_id, value) do
+    with %{type: type, constraints: constraints} <-
+           Ash.Resource.Info.attribute(resource, instance_key),
+         {:ok, cast} when not is_nil(cast) <- Ash.Type.cast_input(type, instance_id, constraints) do
+      Ash.Type.equal?(type, cast, value)
+    else
+      _ -> to_string(instance_id) == to_string(value)
+    end
+  end
+
+  # An empty scope is unconditional for the record. A named scope is an
+  # authorization condition evaluated against the record, like an RBAC scope —
+  # except that an undeclared one never passes instead of raising: a stored
+  # instance grant with a stale scope name authorizes nothing.
+  defp instance_scope_passes?(nil, _scope_resolver, _context, _authorizer, _opts), do: true
+  defp instance_scope_passes?("", _scope_resolver, _context, _authorizer, _opts), do: true
+
+  defp instance_scope_passes?(scope, scope_resolver, context, authorizer, opts) do
+    if AshGrant.Scope.universal?(scope) or not is_nil(scope_resolver) or
+         instance_scope_declared?(context.resource, scope) do
+      check_scope_access(scope, scope_resolver, context, authorizer, opts)
+    else
+      false
+    end
+  end
+
+  defp instance_scope_declared?(resource, scope) do
+    AshGrant.Info.get_scope(resource, String.to_existing_atom(scope)) != nil
+  rescue
+    ArgumentError -> false
   end
 
   # Ash passes :resource as the module; we want the string name, and only use a
