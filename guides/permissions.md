@@ -244,7 +244,33 @@ Ash.update!(published_doc, %{title: "New"}, actor: user)
 
 Instance permissions work with both:
 - **Read actions** (`filter_check/1`) - Adds `WHERE id IN (instance_ids)` filter
-- **Write actions** (`check/1`) - Validates access to specific instance
+- **Write actions** (`check/1`) - Authorizes an **update** or **destroy** of the named record
+
+### Instance Permissions on Writes
+
+`check/1` compares the target record's `instance_key` with the permission's instance id
+(in the key attribute's own type, so an uppercase UUID still matches):
+
+```elixir
+"post:3f2c…:update:"    # update this post — and no other
+"post:3f2c…:*:"         # update AND destroy this post (every update/destroy action)
+"post:3f2c…:publish:"   # the :publish update action only
+```
+
+- Instance grants join the same union as RBAC scopes and `scope_through`: a failing
+  RBAC scope (`post:*:update:own` on someone else's post) does not hide an instance
+  grant on that post.
+- A named scope must hold for the record (`update:draft` above). An undeclared scope
+  never passes — the grant authorizes nothing, and nothing raises.
+- Creates and generic actions have no existing record, so instance grants never
+  authorize them.
+- Deny wins: `!post:*:update:always` forbids the update whatever instance grants exist,
+  and `!post:3f2c…:update:` cancels instance grants on that post.
+
+> **Up to v0.22.0:** `check/1` ignored a resource's own instance grants, so they authorized
+> no write, while `CanPerform` and `AshGrant.Introspect` reported them as allowed. Grants
+> that were inert become effective when you upgrade — `resource:<id>:*:` grants destroy as
+> well as update. Audit stored instance grants on write actions before upgrading.
 
 ### Instance Permission Read Example
 
