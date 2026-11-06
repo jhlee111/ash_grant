@@ -17,12 +17,17 @@ AshGrant is a permission-based authorization extension for Ash Framework. It pro
 ## Toolchain
 
 `.tool-versions` pins **Elixir 1.20.4 / OTP 28** (asdf). 1.20's type checker reports
-dead and unreachable clauses as compiler warnings, which is why the pin is ahead of
-CI: `mix compile --warnings-as-errors` must pass on 1.20, and per-PR CI (`ci.yml`,
-Elixir 1.18.4 / OTP 27) cannot see a clause that only 1.20 can. The weekly
-`Compatibility` workflow runs 1.20 in its Latest Deps matrix, so a dead clause is
-caught eventually — but weekly, against unlocked deps, and after merge. Develop on
-the pin; treat 1.18.4 as the supported floor, not as the reference build.
+dead and unreachable clauses as compiler warnings, so `mix compile --warnings-as-errors`
+must pass on 1.20. Per-PR CI (`ci.yml`) runs a matrix of the 1.18.4 / OTP 27 floor and
+the 1.20.4 / OTP 28 pin, both on the committed lock; format and credo run on the pin
+leg only. Keep the pin leg in step with `.tool-versions`. Develop on the pin; treat
+1.18.4 as the supported floor, not as the reference build.
+
+`ci.yml` also runs an **exact Ash floor** job (`ASH_VERSION="=3.33.4"`, see
+`ash_version/1` in `mix.exs`; a bare version means `~>`). Branch protection requires a
+single check named `Test`, which is an aggregate job in `ci.yml`: a job is required
+when it is in that job's `needs`. The floor job is not in `needs` yet (the Ash floor
+still has the ETS TableManager race, fixed in Ash 3.37.1).
 
 ## Common Commands
 

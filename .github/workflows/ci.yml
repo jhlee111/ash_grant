@@ -12,15 +12,37 @@ on:
   # Allow manual trigger
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's older run. Runs on main are never
+# cancelled, so every merged commit gets a full result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   MIX_ENV: test
-  ELIXIR_VERSION: "1.18.4"
-  OTP_VERSION: "27"
 
 jobs:
-  test:
-    name: Test
+  build:
+    name: Build & test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # 1.18.4 is the supported floor. 1.20.4 is the .tool-versions pin: its type
+    # checker reports dead and unreachable clauses as warnings, which
+    # --warnings-as-errors turns into failures that 1.18 cannot see. Both legs
+    # use the committed lock. Keep the pin leg in step with .tool-versions.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: "1.18.4"
+            otp: "27"
+          - elixir: "1.20.4"
+            otp: "28"
+            pin: true
 
     services:
       postgres:
@@ -44,8 +66,8 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: ${{ env.ELIXIR_VERSION }}
-          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
 
       - name: Cache deps
         uses: actions/cache@v4
@@ -53,15 +75,77 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          key: mix-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-
+            mix-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
 
       - name: Install dependencies
         run: mix deps.get
 
+      - name: Check for unused dependencies in mix.lock
+        run: mix deps.unlock --check-unused
+
+      # Formatter output can differ between Elixir versions; check with the
+      # pinned one, which is what the pre-commit hook uses.
       - name: Check formatting
+        if: matrix.pin
         run: mix format --check-formatted
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Credo
+        if: matrix.pin
+        run: mix credo
+
+      - name: Run tests
+        run: mix test
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
+
+  # The declared Ash floor, exactly: "=3.33.4" means == 3.33.4 (see
+  # ash_version/1 in mix.exs). Resolved without the lock, because the committed
+  # mix.lock pins an ash_postgres that needs a newer Ash. Keep ASH_VERSION in
+  # step with the `ash` requirement in mix.exs.
+  #
+  # Not yet part of the required `Test` check below: the Ash floor has the ETS
+  # TableManager race fixed only in Ash 3.37.1, so this job can flake. Add it
+  # to `needs` once it has been reliably green.
+  floor:
+    name: Ash floor (=3.33.4, Elixir 1.18.4 / OTP 27)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      ASH_VERSION: "=3.33.4"
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ash_grant_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18.4"
+          otp-version: "27"
+
+      - name: Fetch deps with the Ash floor
+        run: mix deps.unlock --all && mix deps.get
 
       - name: Compile (warnings as errors)
         run: mix compile --warnings-as-errors
@@ -71,15 +155,25 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
 
-  # Optional: Run dialyzer for type checking
-  # dialyzer:
-  #   name: Dialyzer
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: erlef/setup-beam@v1
-  #       with:
-  #         elixir-version: ${{ env.ELIXIR_VERSION }}
-  #         otp-version: ${{ env.OTP_VERSION }}
-  #     - run: mix deps.get
-  #     - run: mix dialyzer
+  # The single required status check. Branch protection on main requires a
+  # check named "Test", so this job keeps that name and fails unless every job
+  # in `needs` succeeded. Adding a job to `needs` makes it required, with no
+  # change to branch protection.
+  test:
+    name: Test
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every needed job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A required job finished with: $result"
+              exit 1
+            fi
+          done
