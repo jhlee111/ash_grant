@@ -95,7 +95,8 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ### Behaviours
 
-- **`AshGrant.PermissionResolver`** - Behaviour for fetching actor permissions
+- **`AshGrant.PermissionResolver`** - Behaviour for fetching actor permissions. Optional `ceiling/2` returns a second list (e.g. an API key's permissions) that caps the grants
+- **`AshGrant.Ceiling`** (`lib/ash_grant/ceiling.ex`) - Reads `ceiling/2` from a resolver (`nil` = none; function resolvers have none) and AND-combines filters. Every call site that resolves permissions (`Check`, `FilterCheck`, `FieldFilterCheck`, `FieldCheck`, `CanPerform`, `ApplyMasking`, `ResolveArgument`, `Explainer`, `Introspect`, `PolicyTest.Checker`) evaluates the grants and the ceiling as **separate** permission lists and intersects the results, so a deny in either wins. Never merge the two lists into one: a concatenation is a union. `ceiling_property_test.exs` pins reads, `Introspect.can?/4` and the write check to the intersection
 - **`AshGrant.ScopeResolver`** - Legacy behaviour for custom scope resolution
 
 ### Domain-Level Extension

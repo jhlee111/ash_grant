@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Permission ceiling.** `AshGrant.PermissionResolver` gains an optional `ceiling/2` callback that returns a second permission list, such as an API key's permissions. `AshGrant.Check`, `AshGrant.FilterCheck`, `AshGrant.FieldFilterCheck`, `AshGrant.FieldCheck`, `AshGrant.Calculation.CanPerform`, field masking, `AshGrant.explain/4`, `AshGrant.Introspect` and the policy test checker evaluate the grants and the ceiling separately and authorize only what both authorize. A deny in either list wins, and `[]` denies everything. A resolver without the callback, a `nil` return, and a function resolver behave exactly as before. `AshGrant.Explanation` gains a `:ceiling` field and the `:ceiling_denied` reason code, `AshGrant.Introspect.can?/4` returns `{:deny, %{reason: :denied_by_ceiling}}`, and `AshGrant.Introspect.ceiling_for/3` returns the ceiling's permission strings. The Getting Started guide shows a resolver that reads an `AshAuthentication` API key from `actor.__metadata__[:api_key]`.
+
 ### Changed
 
 - **`mix ash_grant.verify` output** ([#143](https://github.com/jhlee111/ash_grant/issues/143)). Failing tests are now listed without `--verbose` (`--verbose` adds the passing ones), and the progress lines `--verbose` printed during discovery are gone. Like `mix ash_grant.check_permissions` and `mix ash_grant.explain`, the report goes to stdout when the exit code is 0 and to stderr otherwise — **this includes `--format json`**, which previously always went to stdout; redirect stderr if you capture the JSON of a failing run. The JSON gains an `errors` list (`path`, `message`) for files that could not be run. Unknown options and an unknown `--format` are now rejected with exit code 2 instead of being ignored.

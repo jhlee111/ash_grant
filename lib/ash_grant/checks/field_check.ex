@@ -67,8 +67,30 @@ defmodule AshGrant.FieldCheck do
       tenant: get_tenant(authorizer)
     }
 
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
 
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.all?(
+      &field_group_allowed?(
+        &1,
+        resource_module,
+        resource_name,
+        action_name,
+        action_type,
+        required_group
+      )
+    )
+  end
+
+  defp field_group_allowed?(
+         permissions,
+         resource_module,
+         resource_name,
+         action_name,
+         action_type,
+         required_group
+       ) do
     AshGrant.PermissionValidation.validate(
       permissions,
       AshGrant.Info.field_group_permissions(resource_module),

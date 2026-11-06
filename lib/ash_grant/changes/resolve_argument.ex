@@ -133,7 +133,16 @@ defmodule AshGrant.Changes.ResolveArgument do
         literal_permissions(actor)
 
       resolver ->
-        resolve_permissions(resolver, actor, resolver_context(actor, resource, changeset))
+        context = resolver_context(actor, resource, changeset)
+
+        # The argument is needed when the grants or the ceiling use a scope that reads it.
+        case resolve_permissions(resolver, actor, context) do
+          grants when is_list(grants) ->
+            resolver |> AshGrant.Ceiling.permission_sets(actor, context, grants) |> Enum.concat()
+
+          other ->
+            other
+        end
     end
   rescue
     _ -> :unknown

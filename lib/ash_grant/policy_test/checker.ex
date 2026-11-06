@@ -21,7 +21,8 @@ defmodule AshGrant.PolicyTest.Checker do
   scope's `write:` override when it has one (`AshGrant.Check`).
 
   The resolver gets the context `AshGrant.Check` gives it (`actor`, `resource`,
-  `action`), with no tenant: a policy test has none.
+  `action`), with no tenant: a policy test has none. A ceiling from the resolver
+  is checked the same way, and the record must be admitted by both lists.
 
   The union is three-valued. A scope that cannot be evaluated in memory does
   not stop another component from admitting the record, but when nothing
@@ -52,11 +53,21 @@ defmodule AshGrant.PolicyTest.Checker do
   def check(_resource, nil, _action, _record, _arguments), do: {:deny, %{reason: :no_actor}}
 
   # The grants are resolved once per check: the same ones decide the action and
-  # the instance IDs, as they do in one runtime authorization.
+  # the instance IDs, as they do in one runtime authorization. A ceiling is
+  # checked the same way as its own permission list, and both must admit.
   def check(resource, actor, action, record, arguments) do
-    permissions =
-      Introspect.permissions_for(resource, actor, context: context(resource, actor, action))
+    context = context(resource, actor, action)
+    grants = Introspect.permissions_for(resource, actor, context: context)
 
+    resource
+    |> check_permissions(actor, action, record, arguments, grants)
+    |> Introspect.within_ceiling(
+      Introspect.ceiling_for(resource, actor, context: context),
+      &check_permissions(resource, actor, action, record, arguments, &1)
+    )
+  end
+
+  defp check_permissions(resource, actor, action, record, arguments, permissions) do
     case {Introspect.decide(resource, action, permissions), record} do
       {{:allow, details}, record} when is_map(record) ->
         admit(resource, actor, action, permissions, record, details, arguments)

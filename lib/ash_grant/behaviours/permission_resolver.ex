@@ -190,5 +190,39 @@ defmodule AshGrant.PermissionResolver do
   """
   @callback load_actor(id :: term()) :: {:ok, actor()} | :error
 
-  @optional_callbacks load_actor: 1
+  @doc """
+  Optional. Returns a second permission list that caps what `resolve/2` grants.
+
+  Effective access is the intersection of the two lists: an action, a row, or a
+  field group is authorized only when both lists authorize it, and a deny in
+  either list wins. A ceiling can narrow the actor's grants but never widen them.
+
+  The typical ceiling is the permission list of an API key, which must never
+  grant more than its owner currently holds. Checking that at key creation is
+  not enough, because the owner's roles change later.
+
+  Takes the same arguments as `resolve/2`. Return `nil` for no ceiling, which
+  leaves `resolve/2`'s grants as the only source. Return `[]` to deny
+  everything. A resolver that does not implement this callback has no ceiling,
+  and neither does a function resolver.
+
+  ## Example
+
+  An `AshAuthentication` API-key sign-in puts the key on the user's metadata:
+
+      defmodule MyApp.PermissionResolver do
+        @behaviour AshGrant.PermissionResolver
+
+        @impl true
+        def resolve(user, _context), do: MyApp.Accounts.permissions_for(user)
+
+        @impl true
+        def ceiling(%{__metadata__: %{api_key: api_key}}, _context), do: api_key.permissions
+        def ceiling(_user, _context), do: nil
+      end
+
+  """
+  @callback ceiling(actor(), context()) :: [permission()] | nil
+
+  @optional_callbacks load_actor: 1, ceiling: 2
 end

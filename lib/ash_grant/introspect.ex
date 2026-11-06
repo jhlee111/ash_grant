@@ -19,6 +19,10 @@ defmodule AshGrant.Introspect do
   | `can?/4` | Debugging | `:allow` or `:deny` with details |
   | `allowed_actions/3` | API response | List of allowed actions |
   | `permissions_for/3` | Raw access | Permission strings from resolver |
+  | `ceiling_for/3` | Raw access | Ceiling permission strings from resolver, or `nil` |
+
+  Every function that reports a decision intersects the actor's grants with the
+  resolver's ceiling (`c:AshGrant.PermissionResolver.ceiling/2`), as the runtime checks do.
 
   ## Examples
 
@@ -401,6 +405,7 @@ defmodule AshGrant.Introspect do
     context = Keyword.get(opts, :context, %{})
     resource_name = Info.resource_name(resource)
     permissions = permissions_for(resource, actor, context: context)
+    ceiling = ceiling_for(resource, actor, context: context)
     actions = get_resource_actions(resource)
 
     Enum.map(actions, fn action ->
@@ -422,7 +427,10 @@ defmodule AshGrant.Introspect do
         Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
 
       # Determine status
-      allowed = (scopes != [] or instance_ids != []) and not has_deny
+      allowed =
+        (scopes != [] or instance_ids != []) and not has_deny and
+          ceiling_allows?(ceiling, resource_name, action_name, action_type)
+
       scope = if scopes != [], do: hd(scopes), else: nil
 
       %{
@@ -506,6 +514,10 @@ defmodule AshGrant.Introspect do
 
   - `:context` - Additional context to pass to the resolver
 
+  When the grants allow the action and the resolver's ceiling does not, the
+  result is `{:deny, %{reason: :denied_by_ceiling, ceiling: details}}`, where
+  `details` is the ceiling's own deny.
+
   ## Examples
 
       iex> Introspect.can?(Post, :read, %{role: :editor})
@@ -528,8 +540,29 @@ defmodule AshGrant.Introspect do
 
   def can?(resource, action, actor, opts) do
     context = Keyword.get(opts, :context, %{})
-    decide(resource, action, permissions_for(resource, actor, context: context))
+
+    grants_decision = decide(resource, action, permissions_for(resource, actor, context: context))
+
+    within_ceiling(grants_decision, ceiling_for(resource, actor, context: context), fn ceiling ->
+      decide(resource, action, ceiling)
+    end)
   end
+
+  @doc false
+  # Intersects a decision on the grants with the same decision on the ceiling.
+  # `decide_ceiling` runs only when the grants allow and a ceiling exists.
+  @spec within_ceiling(result, list() | nil, (list() -> result)) :: result
+        when result: {:allow, map()} | {:deny, map()} | {:indeterminate, map()}
+  def within_ceiling({:allow, _} = grants_decision, ceiling, decide_ceiling)
+      when is_list(ceiling) do
+    case decide_ceiling.(ceiling) do
+      {:allow, _} -> grants_decision
+      {:deny, details} -> {:deny, %{reason: :denied_by_ceiling, ceiling: details}}
+      indeterminate -> indeterminate
+    end
+  end
+
+  def within_ceiling(grants_decision, _ceiling, _decide_ceiling), do: grants_decision
 
   @doc false
   # `can?/4` on permissions already resolved, for a caller that needs them for
@@ -715,7 +748,37 @@ defmodule AshGrant.Introspect do
     end
   end
 
+  @doc """
+  Returns the ceiling permissions the resolver sets for an actor, or `nil` when it sets none.
+
+  See `c:AshGrant.PermissionResolver.ceiling/2`.
+
+  ## Options
+
+  - `:context` - Additional context to pass to the resolver
+  """
+  @spec ceiling_for(module(), term(), keyword()) :: [String.t()] | nil
+  def ceiling_for(resource, actor, opts \\ []) do
+    if actor != nil do
+      context = Keyword.get(opts, :context, %{})
+
+      case AshGrant.Ceiling.resolve(Info.resolver(resource), actor, context) do
+        nil -> nil
+        ceiling -> normalize_to_strings(ceiling)
+      end
+    end
+  end
+
   # Private functions
+
+  defp ceiling_allows?(nil, _resource_name, _action_name, _action_type), do: true
+
+  defp ceiling_allows?(ceiling, resource_name, action_name, action_type) do
+    not has_deny_permission?(ceiling, resource_name, action_name, action_type) and
+      (Evaluator.get_all_scopes(ceiling, resource_name, action_name, action_type) != [] or
+         Evaluator.get_matching_instance_ids(ceiling, resource_name, action_name, action_type) !=
+           [])
+  end
 
   defp uses_ash_grant?(resource) do
     AshGrant in Spark.extensions(resource)

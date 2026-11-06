@@ -44,6 +44,7 @@ defmodule AshGrant.Test.Domain do
 
     # Field-group column-level authorization test resource
     resource(AshGrant.Test.SensitiveRecord)
+    resource(AshGrant.Test.CeilingPost)
 
     # field_group_permissions :strict test resource (issue #117)
     resource(AshGrant.Test.StrictFieldGroupRecord)

@@ -54,8 +54,16 @@ defmodule AshGrant.Preparations.ApplyMasking do
       tenant: query.tenant
     }
 
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
 
+    # A field masked by either the grants or the ceiling stays masked.
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.map(&masked_fields_for(&1, resource, resource_name, action_name))
+    |> Enum.reduce(%{}, &Map.merge(&2, &1))
+  end
+
+  defp masked_fields_for(permissions, resource, resource_name, action_name) do
     actor_field_groups =
       AshGrant.Evaluator.get_all_field_groups(permissions, resource_name, action_name)
 
