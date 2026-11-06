@@ -29,7 +29,6 @@ defmodule AshGrant.Test.ResolverFallbackBareDomain do
     validate_config_inclusion?: false
 
   resources do
-    resource(AshGrant.Test.ResolverFallbackOnlyPost)
     resource(AshGrant.Test.ResolverFallbackResourceOverridePost)
   end
 end
@@ -46,27 +45,6 @@ defmodule AshGrant.Test.ResolverFallbackDomain do
 
   resources do
     resource(AshGrant.Test.ResolverFallbackDomainOverridePost)
-  end
-end
-
-defmodule AshGrant.Test.ResolverFallbackOnlyPost do
-  @moduledoc false
-  use Ash.Resource,
-    domain: AshGrant.Test.ResolverFallbackBareDomain,
-    data_layer: Ash.DataLayer.Ets,
-    extensions: [AshGrant]
-
-  ash_grant do
-    scope(:always, true)
-  end
-
-  actions do
-    defaults([:read])
-  end
-
-  attributes do
-    uuid_primary_key(:id)
-    attribute(:author_id, :uuid, public?: true)
   end
 end
 
