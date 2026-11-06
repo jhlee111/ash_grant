@@ -237,8 +237,9 @@ defmodule AshGrant.Info do
   Gets all scope definitions for a resource.
 
   Merges resource-defined scopes with scopes inherited from the domain (if the
-  domain uses the `AshGrant.Domain` extension). Resource scopes take precedence
-  over domain scopes with the same name. Merging at runtime avoids a
+  domain uses the `AshGrant.Domain` extension) and from the app-wide scope
+  registry (if `config :ash_grant, :scope_registry` is set). Precedence is
+  resource > domain > registry; same-name wins. Merging at runtime avoids a
   compile-time cycle between resource and domain that occurs when the domain
   also has `code_interface` declarations.
   """
@@ -248,14 +249,29 @@ defmodule AshGrant.Info do
       Spark.Dsl.Extension.get_entities(resource, [:ash_grant])
       |> Enum.filter(&match?(%AshGrant.Dsl.Scope{}, &1))
 
-    merge_domain_scopes(resource, resource_scopes)
+    resource_scopes
+    |> merge_domain_scopes(resource)
+    |> merge_registry_scopes()
+  end
+
+  @spec merge_registry_scopes([AshGrant.Dsl.Scope.t()]) :: [AshGrant.Dsl.Scope.t()]
+  defp merge_registry_scopes(scopes) do
+    case AshGrant.ScopeRegistry.scopes() do
+      [] ->
+        scopes
+
+      registry_scopes ->
+        names = MapSet.new(scopes, & &1.name)
+        registry_only = Enum.reject(registry_scopes, &MapSet.member?(names, &1.name))
+        scopes ++ registry_only
+    end
   end
 
   @spec merge_domain_scopes(
-          resource :: Ash.Resource.t(),
-          resource_scopes :: [AshGrant.Dsl.Scope.t()]
+          resource_scopes :: [AshGrant.Dsl.Scope.t()],
+          resource :: Ash.Resource.t()
         ) :: [AshGrant.Dsl.Scope.t()]
-  defp merge_domain_scopes(resource, resource_scopes) do
+  defp merge_domain_scopes(resource_scopes, resource) do
     case Ash.Resource.Info.domain(resource) do
       nil ->
         resource_scopes
