@@ -50,6 +50,10 @@ defmodule AshGrant.Verifiers.ValidateResolverPresent do
              ash_grant do
                resolver MyApp.PermissionResolver
              end
+
+         Or configure an app-wide fallback:
+
+             config :ash_grant, resolver: MyApp.PermissionResolver
          """
        )}
     end
@@ -58,7 +62,13 @@ defmodule AshGrant.Verifiers.ValidateResolverPresent do
   @spec resolver_present?(dsl_state :: map()) :: boolean()
   defp resolver_present?(dsl_state) do
     Verifier.get_option(dsl_state, [:ash_grant], :resolver) != nil or
-      domain_resolver_present?(dsl_state)
+      domain_resolver_present?(dsl_state) or
+      app_resolver_present?()
+  end
+
+  @spec app_resolver_present?() :: boolean()
+  defp app_resolver_present? do
+    Application.get_env(:ash_grant, :resolver) != nil
   end
 
   @spec domain_resolver_present?(dsl_state :: map()) :: boolean()
