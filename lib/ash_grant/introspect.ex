@@ -426,10 +426,13 @@ defmodule AshGrant.Introspect do
       field_groups =
         Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
 
-      # Determine status
-      allowed =
-        (scopes != [] or instance_ids != []) and not has_deny and
-          ceiling_allows?(ceiling, resource_name, action_name, action_type)
+      grants_allow =
+        (scopes != [] or instance_ids != [] or
+           has_parent_instance_access?(resource, permissions, action_name, action_type)) and
+          not has_deny
+
+      {allowed, field_groups} =
+        apply_ceiling(resource, action.name, ceiling, grants_allow, field_groups)
 
       scope = if scopes != [], do: hd(scopes), else: nil
 
@@ -543,26 +546,98 @@ defmodule AshGrant.Introspect do
 
     grants_decision = decide(resource, action, permissions_for(resource, actor, context: context))
 
-    within_ceiling(grants_decision, ceiling_for(resource, actor, context: context), fn ceiling ->
-      decide(resource, action, ceiling)
-    end)
+    within_ceiling(
+      grants_decision,
+      ceiling_for(resource, actor, context: context),
+      &decide(resource, action, &1),
+      resource
+    )
   end
 
   @doc false
-  # Intersects a decision on the grants with the same decision on the ceiling.
-  # `decide_ceiling` runs only when the grants allow and a ceiling exists.
-  @spec within_ceiling(result, list() | nil, (list() -> result)) :: result
+  # Intersects a decision on the grants with the same decision on the ceiling,
+  # three-valued: a deny on either side is a deny, and an undecided side with an
+  # allow on the other stays undecided. `decide_ceiling` runs only when the
+  # grants do not deny and a ceiling exists.
+  @spec within_ceiling(result, list() | nil, (list() -> result), module()) :: result
         when result: {:allow, map()} | {:deny, map()} | {:indeterminate, map()}
-  def within_ceiling({:allow, _} = grants_decision, ceiling, decide_ceiling)
-      when is_list(ceiling) do
-    case decide_ceiling.(ceiling) do
-      {:allow, _} -> grants_decision
-      {:deny, details} -> {:deny, %{reason: :denied_by_ceiling, ceiling: details}}
-      indeterminate -> indeterminate
+  def within_ceiling(
+        {decision, grants_details} = grants_decision,
+        ceiling,
+        decide_ceiling,
+        resource
+      )
+      when decision in [:allow, :indeterminate] and is_list(ceiling) do
+    case {decision, decide_ceiling.(ceiling)} do
+      {_, {:deny, details}} ->
+        {:deny, %{reason: :denied_by_ceiling, ceiling: details}}
+
+      {:allow, {:allow, ceiling_details}} ->
+        {:allow,
+         Map.update(grants_details, :field_groups, [], fn grants_groups ->
+           intersect_field_groups(
+             resource,
+             grants_groups,
+             Map.get(ceiling_details, :field_groups, [])
+           )
+         end)}
+
+      {:allow, indeterminate} ->
+        indeterminate
+
+      {:indeterminate, _} ->
+        grants_decision
     end
   end
 
-  def within_ceiling(grants_decision, _ceiling, _decide_ceiling), do: grants_decision
+  def within_ceiling(grants_decision, _ceiling, _decide_ceiling, _resource), do: grants_decision
+
+  @doc false
+  # The field groups two permission lists both show, where `[]` means every
+  # field. A group is kept when all of its fields are visible under both lists.
+  # When no group fits, the narrower list's groups are reported: `[]` would
+  # claim every field is visible.
+  @spec intersect_field_groups(module(), [String.t()], [String.t()]) :: [String.t()]
+  def intersect_field_groups(_resource, [], ceiling_groups), do: ceiling_groups
+  def intersect_field_groups(_resource, grants_groups, []), do: grants_groups
+
+  def intersect_field_groups(resource, grants_groups, ceiling_groups) do
+    grants_fields = field_group_fields(resource, grants_groups)
+    ceiling_fields = field_group_fields(resource, ceiling_groups)
+    both = MapSet.intersection(grants_fields, ceiling_fields)
+
+    fitting =
+      for group <- Enum.uniq(grants_groups ++ ceiling_groups),
+          MapSet.subset?(field_group_fields(resource, [group]), both),
+          do: group
+
+    cond do
+      fitting != [] -> fitting
+      MapSet.size(ceiling_fields) <= MapSet.size(grants_fields) -> ceiling_groups
+      true -> grants_groups
+    end
+  end
+
+  @doc false
+  # Every field the named groups show, inherited fields included.
+  @spec field_group_fields(module(), [String.t() | atom()]) :: MapSet.t(atom())
+  def field_group_fields(resource, groups) do
+    for group <- groups,
+        resolved = resolve_field_group(resource, group),
+        resolved != nil,
+        field <- resolved.fields,
+        into: MapSet.new(),
+        do: field
+  end
+
+  defp resolve_field_group(resource, group) when is_atom(group),
+    do: Info.resolve_field_group(resource, group)
+
+  defp resolve_field_group(resource, group) when is_binary(group) do
+    Info.resolve_field_group(resource, String.to_existing_atom(group))
+  rescue
+    ArgumentError -> nil
+  end
 
   @doc false
   # `can?/4` on permissions already resolved, for a caller that needs them for
@@ -771,13 +846,17 @@ defmodule AshGrant.Introspect do
 
   # Private functions
 
-  defp ceiling_allows?(nil, _resource_name, _action_name, _action_type), do: true
+  defp apply_ceiling(_resource, _action, nil, grants_allow, field_groups),
+    do: {grants_allow, field_groups}
 
-  defp ceiling_allows?(ceiling, resource_name, action_name, action_type) do
-    not has_deny_permission?(ceiling, resource_name, action_name, action_type) and
-      (Evaluator.get_all_scopes(ceiling, resource_name, action_name, action_type) != [] or
-         Evaluator.get_matching_instance_ids(ceiling, resource_name, action_name, action_type) !=
-           [])
+  defp apply_ceiling(resource, action, ceiling, grants_allow, field_groups) do
+    case decide(resource, action, ceiling) do
+      {:allow, %{field_groups: ceiling_groups}} ->
+        {grants_allow, intersect_field_groups(resource, field_groups, ceiling_groups)}
+
+      _deny ->
+        {false, field_groups}
+    end
   end
 
   defp uses_ash_grant?(resource) do

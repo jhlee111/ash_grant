@@ -53,7 +53,11 @@ defmodule AshGrant.Explainer do
         grants
 
       ceiling ->
-        within_ceiling(grants, explain_permissions(resource, action, actor, context, ceiling))
+        within_ceiling(
+          grants,
+          explain_permissions(resource, action, actor, context, ceiling),
+          resource
+        )
     end
   end
 
@@ -61,7 +65,8 @@ defmodule AshGrant.Explainer do
   # action is allowed only when both allow, and their read filters are ANDed.
   defp within_ceiling(
          %Explanation{decision: :allow} = grants,
-         %Explanation{decision: :allow} = ceiling
+         %Explanation{decision: :allow} = ceiling,
+         resource
        ) do
     scope_filter =
       AshGrant.Ceiling.intersect_filters([
@@ -74,6 +79,12 @@ defmodule AshGrant.Explainer do
     %{
       grants
       | ceiling: ceiling,
+        field_groups:
+          AshGrant.Introspect.intersect_field_groups(
+            resource,
+            grants.field_groups,
+            ceiling.field_groups
+          ),
         scope_filter: scope_filter,
         scope_filter_string: scope_filter_string,
         summary:
@@ -88,7 +99,7 @@ defmodule AshGrant.Explainer do
     }
   end
 
-  defp within_ceiling(%Explanation{decision: :allow} = grants, ceiling) do
+  defp within_ceiling(%Explanation{decision: :allow} = grants, ceiling, _resource) do
     %{
       grants
       | ceiling: ceiling,
@@ -101,7 +112,7 @@ defmodule AshGrant.Explainer do
     }
   end
 
-  defp within_ceiling(grants, ceiling), do: %{grants | ceiling: ceiling}
+  defp within_ceiling(grants, ceiling, _resource), do: %{grants | ceiling: ceiling}
 
   defp explain_permissions(resource, action, actor, context, raw_permissions) do
     resource_name = Info.resource_name(resource)

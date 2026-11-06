@@ -203,8 +203,8 @@ defmodule AshGrant.PermissionResolver do
 
   Takes the same arguments as `resolve/2`. Return `nil` for no ceiling, which
   leaves `resolve/2`'s grants as the only source. Return `[]` to deny
-  everything. A resolver that does not implement this callback has no ceiling,
-  and neither does a function resolver.
+  everything. Any other return raises `ArgumentError`. A resolver that does not
+  implement this callback has no ceiling, and neither does a function resolver.
 
   ## Example
 

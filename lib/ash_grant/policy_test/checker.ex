@@ -63,7 +63,8 @@ defmodule AshGrant.PolicyTest.Checker do
     |> check_permissions(actor, action, record, arguments, grants)
     |> Introspect.within_ceiling(
       Introspect.ceiling_for(resource, actor, context: context),
-      &check_permissions(resource, actor, action, record, arguments, &1)
+      &check_permissions(resource, actor, action, record, arguments, &1),
+      resource
     )
   end
 

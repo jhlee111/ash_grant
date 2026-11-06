@@ -4,7 +4,8 @@ defmodule AshGrant.CeilingTest do
   require Ash.Query
 
   alias AshGrant.{Introspect, PolicyTest.Checker}
-  alias AshGrant.Test.CeilingPost
+  alias AshGrant.PolicyTest.Assertions
+  alias AshGrant.Test.{CeilingComment, CeilingPost}
 
   defp actor(permissions, opts) do
     base = %{id: Keyword.get(opts, :id, Ash.UUID.generate()), permissions: permissions}
@@ -49,7 +50,7 @@ defmodule AshGrant.CeilingTest do
   setup do
     owner_id = Ash.UUID.generate()
 
-    own = create!(%{title: "own", body: "own body", author_id: owner_id})
+    own = create!(%{title: "own", body: "own body", notes: "own notes", author_id: owner_id})
 
     other =
       create!(%{
@@ -221,6 +222,239 @@ defmodule AshGrant.CeilingTest do
         |> Ash.read_one!(actor: key_actor)
 
       assert post.body == "own body"
+    end
+  end
+
+  describe "field groups in reporting" do
+    setup do
+      %{
+        key_actor:
+          actor(["ceiling_post:*:read:always:full"],
+            ceiling: ["ceiling_post:*:read:always:summary"]
+          )
+      }
+    end
+
+    test "can?/4, explain/4 and actor_permissions/3 report the narrower group", %{
+      key_actor: key_actor
+    } do
+      assert {:allow, %{field_groups: ["summary"]}} =
+               Introspect.can?(CeilingPost, :read, key_actor)
+
+      assert AshGrant.explain(CeilingPost, :read, key_actor).field_groups == ["summary"]
+
+      statuses = Map.new(Introspect.actor_permissions(CeilingPost, key_actor), &{&1.action, &1})
+      assert statuses["read"].field_groups == ["summary"]
+    end
+
+    test "policy test field assertions hide what the ceiling hides", %{key_actor: key_actor} do
+      visible = Assertions.resolve_visible_fields(CeilingPost, key_actor, :read)
+
+      assert :title in visible
+      refute :body in visible
+      refute :notes in visible
+    end
+
+    test "a ceiling without a field group leaves the grants' groups" do
+      key_actor =
+        actor(["ceiling_post:*:read:always:summary"], ceiling: ["ceiling_post:*:read:always"])
+
+      assert {:allow, %{field_groups: ["summary"]}} =
+               Introspect.can?(CeilingPost, :read, key_actor)
+    end
+  end
+
+  describe "masking" do
+    defp read_own(actor, own) do
+      CeilingPost
+      |> Ash.Query.filter(id == ^own.id)
+      |> Ash.read_one!(actor: actor)
+    end
+
+    test "a masking group in the ceiling masks a field the grants show", %{own: own} do
+      post =
+        read_own(
+          actor(["ceiling_post:*:read:always:full"],
+            ceiling: ["ceiling_post:*:read:always:masked"]
+          ),
+          own
+        )
+
+      assert post.notes == "*********"
+      assert %Ash.ForbiddenField{} = post.body
+    end
+
+    test "a masking group in the grants stays masked under a broader ceiling", %{own: own} do
+      post =
+        read_own(
+          actor(["ceiling_post:*:read:always:masked"],
+            ceiling: ["ceiling_post:*:read:always:full"]
+          ),
+          own
+        )
+
+      assert post.notes == "*********"
+    end
+
+    test "a masking ceiling masks grants with no field group", %{own: own} do
+      post =
+        read_own(
+          actor(["ceiling_post:*:read:always"], ceiling: ["ceiling_post:*:read:always:masked"]),
+          own
+        )
+
+      assert post.notes == "*********"
+    end
+  end
+
+  describe "FieldCheck" do
+    defp field_check?(actor, group) do
+      authorizer = %{
+        resource: CeilingPost,
+        action: %{name: :read, type: :read},
+        query: %{tenant: nil},
+        changeset: nil
+      }
+
+      AshGrant.FieldCheck.match?(actor, authorizer, field_group: group)
+    end
+
+    test "requires the group in both lists" do
+      key_actor =
+        actor(["ceiling_post:*:read:always:full"],
+          ceiling: ["ceiling_post:*:read:always:summary"]
+        )
+
+      assert field_check?(key_actor, :summary)
+      refute field_check?(key_actor, :full)
+      assert field_check?(Map.delete(key_actor, :ceiling), :full)
+    end
+  end
+
+  describe "scope_through" do
+    setup %{own: own, other: other} do
+      on_own = create_comment!(own)
+      on_other = create_comment!(other)
+      %{on_own: on_own, on_other: on_other}
+    end
+
+    defp create_comment!(post) do
+      CeilingComment
+      |> Ash.Changeset.for_create(:create, %{body: "c", ceiling_post_id: post.id})
+      |> Ash.create!(authorize?: false)
+    end
+
+    defp comment_ids(actor) do
+      CeilingComment
+      |> Ash.read!(actor: actor)
+      |> MapSet.new(& &1.id)
+    end
+
+    test "a parent instance grant is capped by a child RBAC ceiling", %{
+      own: own,
+      on_own: on_own
+    } do
+      key_actor =
+        actor(["ceiling_post:#{own.id}:read:"], ceiling: ["ceiling_comment:*:read:always"])
+
+      assert comment_ids(key_actor) == MapSet.new([on_own.id])
+      assert {:allow, _} = Introspect.can?(CeilingComment, :read, key_actor)
+
+      statuses =
+        Map.new(Introspect.actor_permissions(CeilingComment, key_actor), &{&1.action, &1})
+
+      assert statuses["read"].allowed
+    end
+
+    test "a parent instance ceiling caps a child RBAC grant", %{own: own, on_own: on_own} do
+      key_actor =
+        actor(["ceiling_comment:*:read:always"], ceiling: ["ceiling_post:#{own.id}:read:"])
+
+      assert comment_ids(key_actor) == MapSet.new([on_own.id])
+
+      statuses =
+        Map.new(Introspect.actor_permissions(CeilingComment, key_actor), &{&1.action, &1})
+
+      assert statuses["read"].allowed
+    end
+  end
+
+  describe "ResolveArgument" do
+    setup %{own: own, other: other} do
+      %{on_own: create_comment!(own), on_other: create_comment!(other)}
+    end
+
+    defp update_comment(actor, comment) do
+      comment
+      |> Ash.Changeset.for_update(:update, %{body: "changed"}, actor: actor)
+      |> Ash.update()
+    end
+
+    test "resolves the argument when only the grants use a scope that needs it", %{
+      owner_id: owner_id,
+      on_own: on_own,
+      on_other: on_other
+    } do
+      key_actor =
+        actor(["ceiling_comment:*:update:on_own_post"],
+          id: owner_id,
+          ceiling: ["ceiling_comment:*:update:always"]
+        )
+
+      assert {:ok, _} = update_comment(key_actor, on_own)
+      assert {:error, %Ash.Error.Forbidden{}} = update_comment(key_actor, on_other)
+    end
+
+    test "resolves the argument when only the ceiling uses a scope that needs it", %{
+      owner_id: owner_id,
+      on_own: on_own,
+      on_other: on_other
+    } do
+      key_actor =
+        actor(["ceiling_comment:*:update:always"],
+          id: owner_id,
+          ceiling: ["ceiling_comment:*:update:on_own_post"]
+        )
+
+      assert {:ok, _} = update_comment(key_actor, on_own)
+      assert {:error, %Ash.Error.Forbidden{}} = update_comment(key_actor, on_other)
+    end
+  end
+
+  describe "a malformed ceiling" do
+    test "a non-list return raises an ArgumentError naming ceiling/2" do
+      key_actor = actor(["ceiling_post:*:*:always"], ceiling: :everything)
+
+      assert_raise ArgumentError, ~r/ceiling\/2 must return a list of permissions or nil/, fn ->
+        Introspect.can?(CeilingPost, :read, key_actor)
+      end
+
+      refute match?({:ok, _}, safe_read(key_actor))
+    end
+
+    test "a raising ceiling fails closed" do
+      key_actor =
+        actor(["ceiling_post:*:*:always"], ceiling: fn -> raise "key store unavailable" end)
+
+      refute match?({:ok, _}, safe_read(key_actor))
+    end
+
+    defp safe_read(actor) do
+      Ash.read(CeilingPost, actor: actor)
+    rescue
+      error -> {:raised, error}
+    end
+  end
+
+  describe "the policy test checker with a scope it cannot decide" do
+    test "a ceiling that denies the action decides it", %{owner_id: owner_id, own: own} do
+      key_actor =
+        actor(["ceiling_post:*:*:titled_x"], id: owner_id, ceiling: ["ceiling_post:*:read:own"])
+
+      assert {:deny, %{reason: :denied_by_ceiling}} =
+               Checker.check(CeilingPost, key_actor, :update, own)
+
+      assert {:indeterminate, _} = Checker.check(CeilingPost, key_actor, :read, own)
     end
   end
 

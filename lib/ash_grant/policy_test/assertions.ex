@@ -294,8 +294,24 @@ defmodule AshGrant.PolicyTest.Assertions do
   end
 
   @doc false
+  # A ceiling is resolved as its own permission list; a field is visible only
+  # when both lists show it.
   def resolve_visible_fields(resource, actor, action) do
-    permissions = AshGrant.Introspect.permissions_for(resource, actor)
+    grants = AshGrant.Introspect.permissions_for(resource, actor)
+
+    case AshGrant.Introspect.ceiling_for(resource, actor) do
+      nil ->
+        visible_fields(resource, action, grants)
+
+      ceiling ->
+        intersect_visible(
+          visible_fields(resource, action, grants),
+          visible_fields(resource, action, ceiling)
+        )
+    end
+  end
+
+  defp visible_fields(resource, action, permissions) do
     resource_name = AshGrant.Info.resource_name(resource)
     action_name = normalize_action_to_string(action)
 
@@ -310,6 +326,12 @@ defmodule AshGrant.PolicyTest.Assertions do
       true -> resolve_field_groups_to_fields(resource, field_groups)
     end
   end
+
+  defp intersect_visible(:no_access, _ceiling), do: :no_access
+  defp intersect_visible(_grants, :no_access), do: :no_access
+  defp intersect_visible(:all_fields, ceiling), do: ceiling
+  defp intersect_visible(grants, :all_fields), do: grants
+  defp intersect_visible(grants, ceiling), do: Enum.filter(grants, &(&1 in ceiling))
 
   defp resolve_field_groups_to_fields(resource, field_groups) do
     field_groups

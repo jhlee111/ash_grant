@@ -6,6 +6,8 @@ defmodule AshGrant.CeilingPropertyTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
+  require Ash.Query
+
   alias AshGrant.Introspect
   alias AshGrant.Test.CeilingPost
 
@@ -17,7 +19,13 @@ defmodule AshGrant.CeilingPropertyTest do
     posts =
       for author_id <- [actor_id, Ash.UUID.generate()], status <- [:draft, :published] do
         CeilingPost
-        |> Ash.Changeset.for_create(:create, %{title: "t", status: status, author_id: author_id})
+        |> Ash.Changeset.for_create(:create, %{
+          title: "t",
+          body: "b",
+          notes: "n",
+          status: status,
+          author_id: author_id
+        })
         |> Ash.create!(authorize?: false)
       end
 
@@ -104,6 +112,98 @@ defmodule AshGrant.CeilingPropertyTest do
       ceiling_only = can?.(%{id: actor_id, permissions: ceiling})
 
       assert with_ceiling == (grants_only and ceiling_only)
+    end
+  end
+
+  # RBAC grants on named actions only. `CanPerform` disagrees with the write
+  # check without any ceiling for an `@update` grant and for an instance-only
+  # grant, bugs that predate the ceiling and are tracked separately.
+  defp rbac_permission_gen do
+    gen all(
+          deny? <- boolean(),
+          action <- member_of(["*", "read", "update", "destroy"]),
+          scope <- member_of(["always", "own", "published"])
+        ) do
+      prefix = if deny?, do: "!", else: ""
+      "#{prefix}ceiling_post:*:#{action}:#{scope}"
+    end
+  end
+
+  defp field_permission_gen do
+    gen all(
+          deny? <- frequency([{4, constant(false)}, {1, constant(true)}]),
+          action <- member_of(["*", "read"]),
+          group <- member_of([nil, "summary", "masked", "full"])
+        ) do
+      # A deny cannot carry a field group.
+      if deny?,
+        do: "!ceiling_post:*:#{action}:always",
+        else: "ceiling_post:*:#{action}:always#{if group, do: ":#{group}", else: ""}"
+    end
+  end
+
+  # How a read shows `field`: :absent (row not read), :hidden, :masked or :shown.
+  defp field_view(actor, post, field) do
+    case CeilingPost |> Ash.Query.filter(id == ^post.id) |> Ash.read_one(actor: actor) do
+      {:ok, nil} -> :absent
+      {:error, %Ash.Error.Forbidden{}} -> :absent
+      {:ok, read} -> view_of(Map.fetch!(read, field), Map.fetch!(post, field))
+    end
+  end
+
+  defp view_of(%Ash.ForbiddenField{}, _original), do: :hidden
+  defp view_of(value, value), do: :shown
+  defp view_of(_masked, _original), do: :masked
+
+  @view_order [:absent, :hidden, :masked, :shown]
+  defp narrower(a, b),
+    do: Enum.min_by([a, b], &Enum.find_index(@view_order, fn view -> view == &1 end))
+
+  property "CanPerform agrees with the write check under a ceiling", %{
+    actor_id: actor_id,
+    posts: posts
+  } do
+    check all(
+            grants <- list_of(rbac_permission_gen(), max_length: 4),
+            ceiling <- list_of(rbac_permission_gen(), max_length: 4),
+            post <- member_of(posts),
+            max_runs: 200
+          ) do
+      actor = %{id: actor_id, permissions: grants, ceiling: ceiling}
+
+      # authorize?: false skips field policies, which on Elixir 1.18 forbid the
+      # generated can_*? calculations (fixed separately).
+      loaded =
+        CeilingPost
+        |> Ash.Query.filter(id == ^post.id)
+        |> Ash.read_one!(
+          actor: actor,
+          authorize?: false,
+          load: [:can_update?, :can_destroy?]
+        )
+
+      assert loaded.can_update? == Ash.can?({post, :update}, actor)
+      assert loaded.can_destroy? == Ash.can?({post, :destroy}, actor)
+    end
+  end
+
+  property "field visibility under a ceiling is the narrower of the two lists' views", %{
+    actor_id: actor_id,
+    posts: [post | _]
+  } do
+    check all(
+            grants <- list_of(field_permission_gen(), max_length: 3),
+            ceiling <- list_of(field_permission_gen(), max_length: 3),
+            field <- member_of([:title, :body, :notes]),
+            max_runs: 200
+          ) do
+      with_ceiling =
+        field_view(%{id: actor_id, permissions: grants, ceiling: ceiling}, post, field)
+
+      grants_only = field_view(%{id: actor_id, permissions: grants}, post, field)
+      ceiling_only = field_view(%{id: actor_id, permissions: ceiling}, post, field)
+
+      assert with_ceiling == narrower(grants_only, ceiling_only)
     end
   end
 end

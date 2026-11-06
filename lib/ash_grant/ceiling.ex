@@ -17,11 +17,20 @@ defmodule AshGrant.Ceiling do
   Returns the ceiling `resolver` sets for `actor`, or `nil` when it sets none.
 
   A function resolver, and a module that does not export `ceiling/2`, has no ceiling.
+  Raises `ArgumentError` when `ceiling/2` returns anything other than a list or `nil`.
   """
   @spec resolve(resolver(), term(), map()) :: [AshGrant.PermissionResolver.permission()] | nil
   def resolve(resolver, actor, context) when is_atom(resolver) and not is_nil(resolver) do
     if Code.ensure_loaded?(resolver) and function_exported?(resolver, :ceiling, 2) do
-      resolver.ceiling(actor, context)
+      case resolver.ceiling(actor, context) do
+        ceiling when is_list(ceiling) or is_nil(ceiling) ->
+          ceiling
+
+        other ->
+          raise ArgumentError,
+                "#{inspect(resolver)}.ceiling/2 must return a list of permissions or nil, " <>
+                  "got: #{inspect(other)}"
+      end
     end
   end
 

@@ -19,9 +19,17 @@ defmodule AshGrant.Test.CeilingPost do
     scope(:always, true)
     scope(:own, expr(author_id == ^actor(:id)))
     scope(:published, expr(status == :published))
+    scope(:titled_x, expr(fragment("? = 'x'", title)))
 
     field_group(:summary, [:title, :status, :author_id])
-    field_group(:full, [:body], inherits: [:summary])
+
+    field_group(:masked, [:notes],
+      inherits: [:summary],
+      mask: [:notes],
+      mask_with: &AshGrant.Test.MaskHelpers.mask_string/2
+    )
+
+    field_group(:full, [:body], inherits: [:masked])
 
     can_perform_actions([:update, :destroy])
   end
@@ -30,6 +38,7 @@ defmodule AshGrant.Test.CeilingPost do
     uuid_primary_key(:id)
     attribute(:title, :string, public?: true)
     attribute(:body, :string, public?: true)
+    attribute(:notes, :string, public?: true)
 
     attribute :status, :atom do
       constraints(one_of: [:draft, :published])
