@@ -29,12 +29,12 @@ jobs:
     if: github.event_name == 'schedule' || (github.event.inputs.ash_version == '' && github.event.inputs.spark_version == '')
     runs-on: ubuntu-latest
 
-    # 1.20 is here and nowhere else in CI. Its type checker reports unreachable
-    # clauses as warnings, which `--warnings-as-errors` then turns into a
-    # failure — the only automated guard against a dead clause reappearing.
-    # 1.18.4 stays so this job still answers "do the latest deps support the
-    # Elixir CI builds on?". The floor job is deliberately not in the matrix:
-    # on 1.20 it fails on a type warning in Ash's own generated code.
+    # Per-PR CI (ci.yml) runs 1.20 against the committed lock. This job runs it
+    # against the latest deps, so a type warning that only a newer dep version
+    # triggers on 1.20 shows up here. 1.18.4 stays so this job still answers "do
+    # the latest deps support the Elixir floor?". The floor job is deliberately
+    # not in the matrix: on 1.20 it fails on a type warning in Ash's own
+    # generated code.
     strategy:
       fail-fast: false
       matrix:
