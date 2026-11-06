@@ -8,7 +8,7 @@ defmodule AshGrant.MixProject do
     [
       app: :ash_grant,
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       consolidate_protocols: Mix.env() != :test,
       deps: deps(),
@@ -104,11 +104,16 @@ defmodule AshGrant.MixProject do
     ]
   end
 
+  # ASH_VERSION / SPARK_VERSION (CI's Compatibility workflow sets these):
+  #   "3.33"    -> "~> 3.33" (newest 3.x at or above 3.33)
+  #   "=3.33.4" -> "== 3.33.4" (exactly that release, for the floor job:
+  #                "~> 3.33.4" would resolve the newest 3.33.x patch instead)
   defp ash_version(default_version) do
     case System.get_env("ASH_VERSION") do
       nil -> default_version
       "local" -> [path: "../ash", override: true]
       "main" -> [git: "https://github.com/ash-project/ash.git", override: true]
+      "=" <> version -> "== #{version}"
       version -> "~> #{version}"
     end
   end
@@ -118,6 +123,7 @@ defmodule AshGrant.MixProject do
       nil -> default_version
       "local" -> [path: "../spark", override: true]
       "main" -> [git: "https://github.com/ash-project/spark.git", override: true]
+      "=" <> version -> "== #{version}"
       version -> "~> #{version}"
     end
   end
