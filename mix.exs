@@ -8,7 +8,7 @@ defmodule AshGrant.MixProject do
     [
       app: :ash_grant,
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       consolidate_protocols: Mix.env() != :test,
       deps: deps(),

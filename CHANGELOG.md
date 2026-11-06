@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The declared Elixir requirement is now `~> 1.18`** (was `~> 1.15`). CI tests Elixir 1.18.4 (the floor) and 1.20, and nothing tested 1.15–1.17, so the old requirement claimed support that was never checked. If you are on Elixir 1.17 or older, stay on AshGrant 0.22.x until you upgrade Elixir.
+
 - **`mix ash_grant.verify` output** ([#143](https://github.com/jhlee111/ash_grant/issues/143)). Failing tests are now listed without `--verbose` (`--verbose` adds the passing ones), and the progress lines `--verbose` printed during discovery are gone. Like `mix ash_grant.check_permissions` and `mix ash_grant.explain`, the report goes to stdout when the exit code is 0 and to stderr otherwise — **this includes `--format json`**, which previously always went to stdout; redirect stderr if you capture the JSON of a failing run. The JSON gains an `errors` list (`path`, `message`) for files that could not be run. Unknown options and an unknown `--format` are now rejected with exit code 2 instead of being ignored.
 
 ### Fixed
