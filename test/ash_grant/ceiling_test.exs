@@ -82,11 +82,30 @@ defmodule AshGrant.CeilingTest do
       assert {:error, %Ash.Error.Forbidden{}} = destroy(key_actor, own)
     end
 
-    test "CanPerform agrees with the write check", %{key_actor: key_actor} do
-      [post] = Ash.read!(CeilingPost, actor: key_actor, load: [:can_update?, :can_destroy?])
+    test "CanPerform agrees with the write check", %{key_actor: key_actor, own: own} do
+      # authorize?: false skips field policies, which on Elixir 1.18 forbid the
+      # generated can_*? calculations on a resource with default_field_policies.
+      post =
+        CeilingPost
+        |> Ash.Query.filter(id == ^own.id)
+        |> Ash.read_one!(
+          actor: key_actor,
+          authorize?: false,
+          load: [:can_update?, :can_destroy?]
+        )
 
       refute post.can_update?
       refute post.can_destroy?
+
+      owner = Map.delete(key_actor, :ceiling)
+
+      post =
+        CeilingPost
+        |> Ash.Query.filter(id == ^own.id)
+        |> Ash.read_one!(actor: owner, authorize?: false, load: [:can_update?, :can_destroy?])
+
+      assert post.can_update?
+      assert post.can_destroy?
     end
 
     test "Introspect.can?/4 allows read and denies update", %{key_actor: key_actor} do
