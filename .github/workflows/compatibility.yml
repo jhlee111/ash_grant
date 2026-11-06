@@ -9,11 +9,11 @@ on:
   workflow_dispatch:
     inputs:
       ash_version:
-        description: "Ash version (blank=latest, 'main'=git main, '3.11'=specific)"
+        description: "Ash version (blank=latest, 'main'=git main, '3.11'=~> 3.11, '=3.33.4'=exact)"
         required: false
         default: ""
       spark_version:
-        description: "Spark version (blank=latest, 'main'=git main)"
+        description: "Spark version (blank=latest, 'main'=git main, '2.7'=~> 2.7, '=2.7.3'=exact)"
         required: false
         default: ""
 
@@ -113,20 +113,23 @@ jobs:
       # deps.unlock is required: the committed mix.lock pins an ash_postgres
       # that depends on a much newer Ash, so resolving the floor against the
       # lock is unsatisfiable and `mix deps.get` fails before it starts.
+      # "=3.33.4" means exactly 3.33.4 (see ash_version/1 in mix.exs). A bare
+      # "3.33.4" becomes "~> 3.33.4", which resolves the newest 3.33.x patch:
+      # until this was fixed, the job tested 3.33.11 and never the floor.
       - name: Fetch deps with Ash floor version
         run: mix deps.unlock --all && mix deps.get
         env:
-          ASH_VERSION: "3.33.4"
+          ASH_VERSION: "=3.33.4"
 
       - name: Compile
         run: mix compile --warnings-as-errors
         env:
-          ASH_VERSION: "3.33.4"
+          ASH_VERSION: "=3.33.4"
 
       - name: Test
         run: mix test
         env:
-          ASH_VERSION: "3.33.4"
+          ASH_VERSION: "=3.33.4"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
 
   # Manual: test against specific Ash version or main branch
