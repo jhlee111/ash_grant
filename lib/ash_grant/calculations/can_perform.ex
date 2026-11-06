@@ -126,6 +126,8 @@ defmodule AshGrant.Calculation.CanPerform do
       permissions = resolve_permissions(resolver, actor, resolver_context)
       scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action, action_type)
 
+      # Left untyped on purpose: whether instance type wildcards (`doc:abc:@read:`)
+      # match is undecided (issue #131).
       instance_ids =
         AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
 
