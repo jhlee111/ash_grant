@@ -233,6 +233,48 @@ defmodule AshGrant.InstanceWriteTest do
     end
   end
 
+  # The CHANGELOG's upgrade advice for parent grants issued for scope_through.
+  describe "a parent grant issued for its scope_through children" do
+    setup do
+      post = generate(post())
+
+      comment =
+        Ash.create!(
+          ChildComment,
+          %{body: "b", post_id: post.id, user_id: Ash.UUID.generate()},
+          action: :create,
+          authorize?: false
+        )
+
+      %{post: post, comment: comment}
+    end
+
+    test "`*` now also writes the parent itself", %{post: post, comment: comment} do
+      actor = actor(["post:#{post.id}:*:"])
+
+      assert {:ok, _} = update_as(comment, actor, %{body: "changed"})
+      assert {:ok, post} = update_as(post, actor)
+      assert :ok = Ash.destroy(post, actor: actor)
+    end
+
+    test "RBAC denies on the parent keep the children writable", %{post: post, comment: comment} do
+      actor =
+        actor(["post:#{post.id}:*:", "!post:*:update:always", "!post:*:destroy:always"])
+
+      assert {:ok, _} = update_as(comment, actor, %{body: "changed"})
+      assert {:error, %Ash.Error.Forbidden{}} = update_as(post, actor)
+      assert {:error, %Ash.Error.Forbidden{}} = Ash.destroy(post, actor: actor)
+    end
+
+    test "an instance deny on the parent also cancels the children's grant",
+         %{post: post, comment: comment} do
+      actor = actor(["post:#{post.id}:*:", "!post:#{post.id}:update:"])
+
+      assert {:error, %Ash.Error.Forbidden{}} = update_as(comment, actor, %{body: "changed"})
+      assert {:error, %Ash.Error.Forbidden{}} = update_as(post, actor)
+    end
+  end
+
   describe "CanPerform agrees with the runtime" do
     for grant <- ["update:", "*:"] do
       test "for `post:<id>:#{grant}`, on the record and off it" do

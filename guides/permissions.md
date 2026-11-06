@@ -271,6 +271,12 @@ Instance permissions work with both:
 > no write, while `CanPerform` and `AshGrant.Introspect` reported them as allowed. Grants
 > that were inert become effective when you upgrade — `resource:<id>:*:` grants destroy as
 > well as update. Audit stored instance grants on write actions before upgrading.
+>
+> Watch for parent grants issued so that [`scope_through`](#scope-through-parent-child-propagation)
+> children become writable: `feed:<id>:*:` now also updates and destroys the feed itself.
+> To keep the parent read-only for those actors, give them RBAC denies on the parent
+> (`!feed:*:update:always`, `!feed:*:destroy:always`), which leave the children writable.
+> An instance deny (`!feed:<id>:update:`) would also cancel the children's `update`.
 
 ### Instance Permission Read Example
 
