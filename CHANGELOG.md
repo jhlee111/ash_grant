@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A `write:` expression that references a relationship is checked against the persisted row.** `AshGrant.Check` runs it as a DB query, as it already did for an inline scope without `write:`. A `write:` expression without relationship references is still evaluated in memory.
+- **A relationship-bearing write filter that reaches in-memory evaluation fails closed.** This applies, for example, to a resource without a data layer. `AshGrant.Check` logs a warning and denies the write instead of treating `exists()` as `true`.
 - **`mix ash_grant.verify` output** ([#143](https://github.com/jhlee111/ash_grant/issues/143)). Failing tests are now listed without `--verbose` (`--verbose` adds the passing ones), and the progress lines `--verbose` printed during discovery are gone. Like `mix ash_grant.check_permissions` and `mix ash_grant.explain`, the report goes to stdout when the exit code is 0 and to stderr otherwise — **this includes `--format json`**, which previously always went to stdout; redirect stderr if you capture the JSON of a failing run. The JSON gains an `errors` list (`path`, `message`) for files that could not be run. Unknown options and an unknown `--format` are now rejected with exit code 2 instead of being ignored.
 
 ### Fixed
