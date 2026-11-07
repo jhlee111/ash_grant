@@ -50,10 +50,12 @@ defmodule AshGrant.ResolveArgumentPropertyTest do
 
   defp expr_gen(depth) do
     sub = expr_gen(depth - 1)
+    # Ash.Expr warns at runtime when a direct `==` operand is nil.
+    comparable = filter(sub, &(not is_nil(&1)))
 
     one_of([
       leaf_gen(),
-      bind({sub, sub}, fn {l, r} -> constant(expr(^l == ^r)) end),
+      bind({comparable, comparable}, fn {l, r} -> constant(expr(^l == ^r)) end),
       bind({sub, sub}, fn {l, r} -> constant(expr(^l and ^r)) end),
       bind({sub, sub}, fn {l, r} -> constant(expr(^l or ^r)) end),
       bind(sub, fn e -> constant(expr(not (^e))) end)

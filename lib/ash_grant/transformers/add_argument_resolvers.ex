@@ -28,6 +28,15 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
 
   @write_action_types [:create, :update, :destroy]
 
+  # `defaults [create: :*, update: :*, ...]` actions only exist as entities once
+  # `SetPrimaryActions` has run. Without this edge Spark's sort leaves the two
+  # unordered and breaks the tie by `:digraph` vertex order, which shifts
+  # whenever Ash adds a transformer (Ash 3.36 did): this transformer then ran
+  # first, found no default actions, and `resolve_argument` silently did nothing.
+  @impl true
+  def after?(Ash.Resource.Transformers.SetPrimaryActions), do: true
+  def after?(_), do: false
+
   @impl true
   def before?(Ash.Policy.Authorizer), do: true
   def before?(AshGrant.Transformers.AddDefaultPolicies), do: true

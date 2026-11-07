@@ -32,11 +32,16 @@ defmodule AshGrant.Transformers.AddCanPerformCalculations do
 
   alias Spark.Dsl.Transformer
 
+  # AddFieldPolicies must see the generated calculations, or its catch-all
+  # field policy and cache skip them and they read back as %Ash.ForbiddenField{}.
+  # Both transformers otherwise claim after?(_), which Spark treats as no edge.
   @impl true
+  def after?(AshGrant.Transformers.AddFieldPolicies), do: false
   def after?(_), do: true
 
   @impl true
   def before?(Ash.Policy.Authorizer), do: true
+  def before?(AshGrant.Transformers.AddFieldPolicies), do: true
   def before?(_), do: false
 
   @impl true

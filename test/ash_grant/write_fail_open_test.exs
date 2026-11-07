@@ -41,86 +41,20 @@ defmodule AshGrant.WriteFailOpenContextDomain do
   end
 end
 
-defmodule AshGrant.WriteFailOpenOrgTenant do
-  @moduledoc false
-  use Ash.Resource,
-    domain: nil,
-    validate_domain_inclusion?: false,
-    data_layer: Ash.DataLayer.Ets
-
-  multitenancy do
-    strategy(:attribute)
-    attribute(:organization_id)
-  end
-
-  attributes do
-    uuid_primary_key(:id)
-    attribute(:organization_id, :string, public?: true)
-  end
-
-  actions do
-    defaults([:read])
-  end
-end
-
 defmodule AshGrant.WriteFailOpenTest do
   @moduledoc """
   Regression tests for the write-path fail-open fixes (#136).
 
-  Four paths in `AshGrant.Check` authorized a write when they should fail
-  closed. Each fix is covered below:
+  Covers #3: `^context(:key)` was silently dropped on the write path. It is
+  now resolved from the changeset/query context.
 
-  - #2: a filter referencing neither tenant nor actor fell through to
-    `true` — now fails closed (fragment scope).
-  - #3: `^context(:key)` was silently dropped on the write path — now
-    resolved from the changeset/query context.
-  - #4: the tenant check hardcoded `:tenant_id` and assumed OK when the field
-    was absent — now uses the multitenancy attribute and fails closed.
+  #2 and #4 were fixes to `AshGrant.Check.fallback_evaluation/3`, which has
+  since been removed. A scope `Ash.Expr.eval` cannot evaluate now denies the
+  write (see `write_eval_error_fail_open_test.exs`).
   """
   use AshGrant.DataCase, async: true
 
-  require Ash.Expr
-
-  alias AshGrant.Test.Post
   alias AshGrant.WriteFailOpenContextPost
-  alias AshGrant.WriteFailOpenOrgTenant
-
-  # === #4: tenant attribute ===
-
-  describe "check_tenant_match/3 uses the multitenancy attribute (#136 #4)" do
-    test "matches the configured attribute, not a hardcoded :tenant_id" do
-      record = %{organization_id: "org-a"}
-
-      assert AshGrant.Check.check_tenant_match(record, "org-a", WriteFailOpenOrgTenant)
-      refute AshGrant.Check.check_tenant_match(record, "org-b", WriteFailOpenOrgTenant)
-    end
-
-    test "fails closed when the record has no tenant value" do
-      refute AshGrant.Check.check_tenant_match(%{}, "org-a", WriteFailOpenOrgTenant)
-    end
-  end
-
-  # === #2: fallback default ===
-
-  describe "fallback fails closed when neither tenant nor actor is referenced (#136 #2)" do
-    test "a filter with no tenant/actor refs fails closed" do
-      filter = Ash.Expr.expr(status == :published)
-      context = %{resource: Post, tenant: nil, actor: nil}
-
-      refute AshGrant.Check.fallback_evaluation(%{status: :published}, filter, context)
-    end
-
-    test "a composite filter with a partial in-list fails closed (#175)" do
-      filter = Ash.Expr.expr(org_id in ["a", "b"] and status == :draft)
-      context = %{resource: nil, tenant: nil, actor: nil}
-
-      refute AshGrant.Check.fallback_evaluation(
-               %{org_id: "a", status: :published},
-               filter,
-               context
-             )
-    end
-  end
 
   # === #3: ^context on write ===
 

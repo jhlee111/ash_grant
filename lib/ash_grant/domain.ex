@@ -35,6 +35,11 @@ defmodule AshGrant.Domain do
   | resolver | No | Yes | Domain's resolver used |
   | scope (same name) | Yes | Yes | Resource wins (override) |
   | scope | No | Yes | Domain scope inherited |
+
+  When neither the resource nor the domain declares a resolver, the
+  app-wide fallback `config :ash_grant, resolver: MyApp.PermissionResolver`
+  supplies one. Precedence is `resource > domain > app config`; see the
+  "App-wide resolver fallback" section of `guides/getting-started.md`.
   """
 
   use Spark.Dsl.Extension,

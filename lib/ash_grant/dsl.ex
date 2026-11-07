@@ -9,7 +9,7 @@ defmodule AshGrant.Dsl do
 
   | Option | Type | Required | Description |
   |--------|------|----------|-------------|
-  | `resolver` | module or function | **Yes** | Resolves permissions for actors |
+  | `resolver` | module or function | **Yes** (unless supplied by the resource's domain via `AshGrant.Domain` or app-wide via `config :ash_grant, resolver:` — precedence: resource > domain > app config) | Resolves permissions for actors |
   | `resource_name` | string | No | Resource name for permission matching |
   | `default_policies` | boolean or atom | No | Auto-generate policies (`true`, `:all`, `:read`, `:write`) |
   | `default_field_policies` | boolean | No | Auto-generate `field_policies` from `field_group` definitions |
