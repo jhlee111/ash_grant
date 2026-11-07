@@ -45,7 +45,7 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
 
   This transformer:
   - Runs **before** `Ash.Policy.Authorizer` to inject policies
-  - Uses `Spark.Dsl.Transformer.add_entity/3` to add policy entities
+  - Appends the generated policies after the ones declared in `policies do`, so a user `bypass` takes precedence
   - Sets appropriate `access_type` (`:filter` for read, `:strict` for write)
 
   ## See Also
@@ -76,21 +76,28 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
         {:ok, dsl_state}
 
       value when value in [true, :all] ->
-        with {:ok, dsl_state} <- add_read_policy(dsl_state),
-             {:ok, dsl_state} <- add_write_policy(dsl_state) do
-          add_generic_action_policy(dsl_state)
-        end
+        {:ok,
+         insert_generated(dsl_state, [read_policy(), write_policy(), generic_action_policy()])}
 
       :read ->
-        add_read_policy(dsl_state)
+        {:ok, insert_generated(dsl_state, [read_policy()])}
 
       :write ->
-        add_write_policy(dsl_state)
+        {:ok, insert_generated(dsl_state, [write_policy()])}
     end
   end
 
-  defp add_read_policy(dsl_state) do
-    read_policy = %Ash.Policy.Policy{
+  # Ash only lets a `bypass` short-circuit the policies after it, so the generated
+  # policies go after every user entry. A bypass such as
+  # `AshAuthentication.Checks.AshAuthenticationInteraction` then runs before the
+  # generated strict write policy can deny a sign-in with no actor. Appending keeps
+  # the user's own order and leaves `policy_group` entries alone.
+  defp insert_generated(dsl_state, generated) do
+    Enum.reduce(generated, dsl_state, &Transformer.add_entity(&2, [:policies], &1, type: :append))
+  end
+
+  defp read_policy do
+    %Ash.Policy.Policy{
       bypass?: false,
       access_type: :filter,
       condition: [{Ash.Policy.Check.ActionType, type: [:read]}],
@@ -103,12 +110,10 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
         }
       ]
     }
-
-    {:ok, Transformer.add_entity(dsl_state, [:policies], read_policy)}
   end
 
-  defp add_write_policy(dsl_state) do
-    write_policy = %Ash.Policy.Policy{
+  defp write_policy do
+    %Ash.Policy.Policy{
       bypass?: false,
       access_type: :strict,
       condition: [{Ash.Policy.Check.ActionType, type: [:create, :update, :destroy]}],
@@ -121,12 +126,10 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
         }
       ]
     }
-
-    {:ok, Transformer.add_entity(dsl_state, [:policies], write_policy)}
   end
 
-  defp add_generic_action_policy(dsl_state) do
-    generic_policy = %Ash.Policy.Policy{
+  defp generic_action_policy do
+    %Ash.Policy.Policy{
       bypass?: false,
       access_type: :strict,
       condition: [{Ash.Policy.Check.ActionType, type: [:action]}],
@@ -139,7 +142,5 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
         }
       ]
     }
-
-    {:ok, Transformer.add_entity(dsl_state, [:policies], generic_policy)}
   end
 end

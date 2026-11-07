@@ -140,19 +140,26 @@ defmodule AshGrant.PolicyTest do
     end
   end
 
+  # `body` is the test's quoted block, kept so `YamlExporter` can read the
+  # assertions back out; the compiled `__run_test__/2` clause is what runs.
   defp build_test_entries(tests) do
     for {test, index} <- Enum.with_index(tests) do
-      %{name: test.name, describe: test.describe, index: index}
+      %{name: test.name, describe: test.describe, index: index, body: test.body}
     end
   end
 
   @doc """
   Converts a policy test module to YAML format.
 
+  The YAML tests exactly what the module tests, or this raises `ArgumentError`
+  naming every test it cannot express: test bodies must be assertion calls with
+  literal arguments, and a test with several assertions becomes several YAML
+  tests. See `AshGrant.PolicyTest.YamlExporter` for the rules.
+
   ## Examples
 
       AshGrant.PolicyTest.to_yaml(MyApp.PolicyTests.DocumentTest)
-      # => "resource: MyApp.Document\\nactors:\\n  reader:\\n    role: reader\\n..."
+      # => "resource: \\"MyApp.Document\\"\\nactors:\\n  reader:\\n    role: \\"reader\\"\\n..."
   """
   @spec to_yaml(module()) :: String.t()
   def to_yaml(module) do

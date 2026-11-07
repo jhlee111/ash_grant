@@ -124,8 +124,10 @@ defmodule AshGrant.Calculation.CanPerform do
       instance_key = AshGrant.Info.instance_key(resource)
 
       permissions = resolve_permissions(resolver, actor, resolver_context)
-      scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action)
+      scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action, action_type)
 
+      # Left untyped on purpose: whether instance type wildcards (`doc:abc:@read:`)
+      # match is undecided (issue #131).
       instance_ids =
         AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
 
@@ -222,7 +224,8 @@ defmodule AshGrant.Calculation.CanPerform do
         AshGrant.Evaluator.get_matching_instance_ids(
           permissions,
           parent_resource_name,
-          action_name
+          action_name,
+          action_type
         )
 
       if parent_ids != [] do

@@ -335,9 +335,10 @@ end
 
 **Evaluation order:**
 
-1. Bypass policies (if any)
-2. Custom policies defined in `policies do`
-3. Default policies from `default_policies: true`
+1. Policies defined in `policies do`, bypasses included, in the order they are declared
+2. Default policies from `default_policies: true`
+
+A `bypass` only short-circuits the policies after it, so every bypass you declare runs before the default policies. Every applicable non-bypass policy must pass, so a custom policy cannot widen what a default policy denies.
 
 ### Legacy ScopeResolver
 
