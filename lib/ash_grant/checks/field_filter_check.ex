@@ -85,14 +85,19 @@ defmodule AshGrant.FieldFilterCheck do
       )
 
     {scopes, instance_ids} = partition_grants(grants)
+    instance_key = Info.instance_key(resource)
 
-    build_filter(
-      scopes,
-      instance_ids,
-      Info.instance_key(resource),
-      Info.scope_resolver(resource),
-      resource
-    )
+    deny_summary =
+      Evaluator.deny_summary(
+        permissions,
+        Info.resource_name(resource),
+        action_name,
+        action_type
+      )
+
+    scopes
+    |> build_filter(instance_ids, instance_key, Info.scope_resolver(resource), resource)
+    |> Evaluator.restrict_filter(deny_summary, resource)
   end
 
   # RBAC grants (instance_id "*") contribute their scope; instance grants

@@ -60,6 +60,7 @@ defmodule AshGrant.PermissionValidation do
   | `:unknown_action_type` | `:action` | error | from `AshGrant.Permission.diagnostics/1` |
   | `:deprecated_type_wildcard` | `:action` | warning | from `AshGrant.Permission.diagnostics/1` |
   | `:dead_instance_type_wildcard` | `:action` | warning | from `AshGrant.Permission.diagnostics/1` |
+  | `:scoped_deny` | `:scope` | warning | from `AshGrant.Permission.diagnostics/1`: a deny ignores its scope |
   | `:undeclared_scope` | `:scope` | error¹ | no resource the grant applies to declares the scope |
   | `:scope_missing_on` | `:scope` | error¹ | some of the resources the grant applies to lack the scope — listed in `:resources` |
   | `:unverifiable_scope` | `:scope` | warning | undeclared, but a `scope_resolver` is configured and may know it |
@@ -141,8 +142,12 @@ defmodule AshGrant.PermissionValidation do
     # A warning, not an error: the read-filter path does match these (#131), so
     # "never matches" is not yet true everywhere.
     dead_instance_type_wildcard: :warning,
-    unknown_action_type: :error
+    unknown_action_type: :error,
+    # A warning: the deny still applies, just more broadly than written.
+    scoped_deny: :warning
   }
+
+  @diagnostic_segments %{scoped_deny: :scope}
 
   @doc """
   Validates `permissions` and signals any invalid deny+field_group entries per `mode`.
@@ -310,7 +315,8 @@ defmodule AshGrant.PermissionValidation do
   defp action_syntax_issues(perm, string) do
     for diagnostic <- Permission.diagnostics(perm) do
       severity = Map.fetch!(@diagnostic_severities, diagnostic.code)
-      issue(diagnostic.code, severity, :action, string, diagnostic.message)
+      segment = Map.get(@diagnostic_segments, diagnostic.code, :action)
+      issue(diagnostic.code, severity, segment, string, diagnostic.message)
     end
   end
 

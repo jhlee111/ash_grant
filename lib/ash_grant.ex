@@ -244,6 +244,12 @@ defmodule AshGrant do
 
       # Result: read/update allowed, delete DENIED
 
+  Denies apply across both tiers. A type deny (`!blog:*:read:always`) also
+  removes instance grants (`blog:<id>:read:`) and `scope_through` parent grants
+  for that action. An instance deny (`!blog:<id>:read:`) removes that record from
+  every allow, type grants included. A deny ignores its scope, so
+  `!blog:*:update:own` denies every update.
+
   ## Check Types
 
   - `filter_check/1` - For read actions (returns filter expression)

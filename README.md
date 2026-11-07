@@ -13,7 +13,7 @@ Permissions resolve to native Ash filters and policy checks, with deny-wins sema
 - **Argument-based scopes** with `resolve_argument` — multi-hop authorization via action arguments populated from the resource's own relationships, with lazy loading
 - **Field groups** — column-level read access with inheritance and masking
 - **Instance permissions** — per-record sharing with optional scope conditions
-- **Deny-wins evaluation** — deny rules always override allows
+- **Deny-wins evaluation** — deny rules always override allows, across type (`post:*:...`) and instance (`post:<id>:...`) grants
 
 **UI Integration:**
 - **`CanPerform` calculation** — per-record boolean for UI visibility (compiles to SQL), with DSL sugar (`can_perform_actions`, `can_perform`)

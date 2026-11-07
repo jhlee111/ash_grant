@@ -129,7 +129,11 @@ defmodule AshGrant.Permission do
   `suggestion` is a corrected permission string when one can be inferred, otherwise `nil`.
   """
   @type diagnostic :: %{
-          code: :deprecated_type_wildcard | :dead_instance_type_wildcard | :unknown_action_type,
+          code:
+            :deprecated_type_wildcard
+            | :dead_instance_type_wildcard
+            | :unknown_action_type
+            | :scoped_deny,
           permission: String.t(),
           message: String.t(),
           suggestion: String.t() | nil
@@ -483,12 +487,16 @@ defmodule AshGrant.Permission do
 
     * `:deprecated_type_wildcard` — the `"read*"` spelling. Prefer `"@read"`; the
       trailing-`*` form is slated for removal in v1.0.0.
-    * `:dead_instance_type_wildcard` — a type wildcard on an instance permission.
+    * `:dead_instance_type_wildcard` — a type wildcard on an instance allow.
       Instance matching has no action type available, so the grant never matches
-      anything. See `matches_instance?/3`.
+      anything. See `matches_instance?/3`. Instance denies are not reported: they
+      are matched with the action type, so `"!blog:post_abc123:@read:"` takes effect.
     * `:unknown_action_type` — a type wildcard naming something that is not an Ash
       action type (`:action`, `:read`, `:create`, `:update`, `:destroy`), so it never
       matches. `"delete*"` is the common case — Ash calls that type `:destroy`.
+    * `:scoped_deny` — a deny carrying a scope other than `always`/`all`/`global`.
+      Deny rules match on resource and action only, so the scope is ignored and
+      `"!blog:*:update:own"` denies every update.
 
   ## Examples
 
@@ -532,10 +540,47 @@ defmodule AshGrant.Permission do
   end
 
   def diagnostics(%__MODULE__{} = perm) do
-    case type_wildcard(perm.action) do
-      nil -> []
-      {form, type_name} -> type_wildcard_diagnostics(perm, form, type_name)
+    type_diagnostics =
+      case type_wildcard(perm.action) do
+        nil -> []
+        {form, type_name} -> type_wildcard_diagnostics(perm, form, type_name)
+      end
+
+    type_diagnostics ++ scoped_deny_diagnostic(perm)
+  end
+
+  defp scoped_deny_diagnostic(perm) do
+    if scoped_deny?(perm) do
+      [
+        %{
+          code: :scoped_deny,
+          permission: __MODULE__.to_string(perm),
+          message:
+            "The scope `#{perm.scope}` is ignored on a deny rule, so this denies " <>
+              "`#{perm.action}` on every record, not only `#{perm.scope}` records. Write " <>
+              "`always` to say so, or narrow the allow grants instead.",
+          # A type wildcard's own diagnostic already suggests the `always` rewrite.
+          suggestion:
+            if(type_wildcard?(perm),
+              do: nil,
+              else: __MODULE__.to_string(without_scoped_deny(perm))
+            )
+        }
+      ]
+    else
+      []
     end
+  end
+
+  defp scoped_deny?(%__MODULE__{deny: true, scope: scope}) when is_binary(scope),
+    do: not AshGrant.Scope.universal?(scope)
+
+  defp scoped_deny?(_perm), do: false
+
+  # A deny ignores its scope, so `always` is an equivalent spelling. Suggestions use
+  # it so that following one never lands on a `:scoped_deny`.
+  defp without_scoped_deny(perm) do
+    if scoped_deny?(perm), do: %{perm | scope: "always"}, else: perm
   end
 
   @doc """
@@ -717,7 +762,7 @@ defmodule AshGrant.Permission do
     # at a grant that still never matches.
     suggestion =
       if type_name in @valid_action_types and not instance_permission?(perm) do
-        __MODULE__.to_string(%{perm | action: "@" <> type_name})
+        __MODULE__.to_string(%{without_scoped_deny(perm) | action: "@" <> type_name})
       end
 
     [
@@ -734,8 +779,10 @@ defmodule AshGrant.Permission do
     ]
   end
 
+  # Instance denies are matched with the action type by `AshGrant.Evaluator.deny_summary/4`,
+  # so a type wildcard there takes effect.
   defp dead_instance_diagnostic(perm, string) do
-    if instance_permission?(perm) do
+    if instance_permission?(perm) and not perm.deny do
       [
         %{
           code: :dead_instance_type_wildcard,
@@ -766,7 +813,9 @@ defmodule AshGrant.Permission do
             "`#{type_name}` is not an Ash action type " <>
               "(#{Enum.join(@valid_action_types, ", ")}), so `#{perm.action}` never " <>
               "matches." <> if(corrected, do: " Did you mean `@#{corrected}`?", else: ""),
-          suggestion: corrected && __MODULE__.to_string(%{perm | action: "@" <> corrected})
+          suggestion:
+            corrected &&
+              __MODULE__.to_string(%{without_scoped_deny(perm) | action: "@" <> corrected})
         }
       ]
     end

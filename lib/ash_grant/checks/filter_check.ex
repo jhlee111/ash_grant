@@ -273,15 +273,18 @@ defmodule AshGrant.FilterCheck do
     parent_filters =
       build_parent_instance_filters(resource_module, permissions, action_name, action_type)
 
-    # Build combined filter from RBAC scopes + instance IDs + parent filters
-    build_filter_with_instances(
-      scopes,
+    deny_summary =
+      AshGrant.Evaluator.deny_summary(permissions, resource_name, action_name, action_type)
+
+    scopes
+    |> build_filter_with_instances(
       instance_ids,
       instance_key,
       parent_filters,
       scope_resolver,
       context
     )
+    |> AshGrant.Evaluator.restrict_filter(deny_summary, resource_module)
   end
 
   defp action_type_from(%{type: type}), do: type
