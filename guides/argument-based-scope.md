@@ -160,7 +160,7 @@ For each write action's execution:
 #### Actor holds only `"refund:*:update:by_own_author"`
 
 `:by_own_author` does not reference `^arg(:center_id)`. The change skips the
-DB load and returns the changeset unchanged. Authorization evaluates
+DB load and leaves `:center_id` unset. Authorization evaluates
 `author_id == ^actor(:id)` in-memory. Zero overhead.
 
 #### Actor holds only `"refund:*:update:at_own_unit"`
@@ -176,11 +176,20 @@ A common worry about argument-based checks is: **"what if the caller tampers
 with the argument?"** — e.g., passing a `center_id` they have access to while
 actually updating a record from a different center.
 
-This pattern avoids that entirely: **the resource itself computes the argument
-from its own authoritative FK relationships.** The caller doesn't supply
-`:center_id`; the change does. The only way an attacker could influence the
-argument is to influence the actual `order_id` — which would change what
-record is updated in the first place.
+The resource computes the argument from its own FK relationships, and two
+rules keep the caller out of it:
+
+- The injected argument is `public?: false`, so AshJsonApi and AshGraphql do
+  not accept it as input. If an action declares the argument itself, it must
+  declare it `public?: false` or the resource fails to compile.
+- `AshGrant.Changes.ResolveArgument` deletes any value already on the
+  changeset before it resolves. When the path does not resolve (the actor is
+  missing, no permission uses a scope that needs the argument, or the parent
+  record does not exist), the argument stays unset and the scope evaluates
+  against `nil`.
+
+The only way to influence the argument is to change the actual `order_id`,
+which also changes which order the record belongs to.
 
 ## When to use this pattern
 
@@ -205,8 +214,9 @@ Prefer relational scopes (`expr(order.center_id in ...)`) when:
 
 The change runs during `for_<action>/4`. It needs the actor to introspect
 permissions. If your caller builds the changeset without the actor and only
-passes it to `Ash.update/2`, the change sees `nil` and skips the load — and
-the authorization fails with nil arguments.
+passes it to `Ash.update/2`, the change sees `nil`, skips the load and clears
+any caller-supplied value. Authorization then evaluates the scope against a
+`nil` argument and denies.
 
 **Always pass `actor:` to `for_*/4` when using this pattern.**
 

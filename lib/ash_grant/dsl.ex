@@ -355,8 +355,9 @@ defmodule AshGrant.Dsl do
     own relationships before scope evaluation, enabling argument-based scopes
     like `expr(^arg(:center_id) in ^actor(:own_org_unit_ids))`.
 
-    The transformer generates an `argument` declaration and a lazy `change` on
-    each write action (create, update, destroy) on the resource. At runtime the
+    The transformer generates a `public?: false` `argument` declaration and a
+    lazy `change` on each write action (create, update, destroy) on the
+    resource. The change discards any value the caller supplied. At runtime the
     change only performs the DB load if one of the actor's in-play permissions
     uses a scope that actually references `^arg(<name>)` — so scopes that do
     not need the value pay nothing.
