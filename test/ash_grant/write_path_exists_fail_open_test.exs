@@ -114,8 +114,6 @@ defmodule AshGrant.WritePathExistsFailOpenTest do
   """
   use AshGrant.DataCase, async: true
 
-  import Ash.Expr
-
   alias AshGrant.Test.BulkMembership
   alias AshGrant.Test.BulkTeam
   alias AshGrant.Test.WriteExistsItem
@@ -261,20 +259,6 @@ defmodule AshGrant.WritePathExistsFailOpenTest do
 
       assert {:error, %Ash.Error.Forbidden{}} =
                update_item(item, actor_with(perms("update", "team_member")))
-    end
-  end
-
-  describe "fallback_evaluation/3" do
-    test "denies a filter whose ^actor reference has no recognised shape" do
-      filter = expr(fragment("? = ?", author_id, ^actor(:id)))
-
-      context = %{resource: WriteExistsItem, tenant: nil, actor: %{id: Ash.UUID.generate()}}
-
-      refute AshGrant.Check.fallback_evaluation(
-               %{author_id: Ash.UUID.generate()},
-               filter,
-               context
-             )
     end
   end
 end

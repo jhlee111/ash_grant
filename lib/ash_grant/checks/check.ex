@@ -97,6 +97,10 @@ defmodule AshGrant.Check do
   - Context injection via `^context(:key)` for testable scopes
   - Handles nested actor paths
 
+  If `Ash.Expr.eval/2` cannot evaluate the scope against the record (it returns
+  `:unknown` or an error, such as a failed `type/2` cast or an unknown field),
+  the check denies the write and logs a warning.
+
   For **update/destroy** actions:
   - The scope filter is evaluated against the existing record (`changeset.data`)
 
@@ -915,180 +919,21 @@ defmodule AshGrant.Check do
         false
 
       :unknown ->
-        fallback_evaluation(record, filter, context)
+        deny_unevaluable(filter, resource, :unknown)
 
-      {:error, _} ->
-        fallback_evaluation(record, filter, context)
+      {:error, reason} ->
+        deny_unevaluable(filter, resource, reason)
     end
   end
 
-  # Fallback for cases where Ash.Expr.eval returns :unknown or errors
-  # This handles complex expressions that require data layer evaluation,
-  # including tenant-based scopes like `expr(tenant_id == ^tenant())`
-  #
-  # The fallback checks if the expression contains tenant or actor references
-  # and evaluates those specific checks.
-  @doc false
-  def fallback_evaluation(record, filter, context) do
-    tenant = context[:tenant]
+  defp deny_unevaluable(filter, resource, reason) do
+    Logger.warning(
+      "AshGrant: could not evaluate scope filter #{inspect(filter)} on #{inspect(resource)} " <>
+        "(#{inspect(reason)}); failing closed"
+    )
 
-    # First try to extract "field in [list]" pattern (from scope_resolver)
-    case extract_in_list_check(filter) do
-      {field, list} when is_list(list) ->
-        record_value = Map.get(record, field)
-        record_value in list
-
-      _ ->
-        # Analyze what the filter references
-        has_tenant_ref = filter_references_tenant?(filter)
-        has_actor_ref = filter_references_actor?(filter)
-
-        # Only check what the filter actually references. A filter that
-        # references neither tenant nor actor cannot be evaluated by this
-        # fallback, so fail closed rather than authorizing blindly (#136).
-        cond do
-          has_tenant_ref and has_actor_ref ->
-            check_tenant_match(record, tenant, context[:resource]) and
-              check_actor_match(record, filter, context)
-
-          has_tenant_ref ->
-            check_tenant_match(record, tenant, context[:resource])
-
-          has_actor_ref ->
-            check_actor_match(record, filter, context)
-
-          true ->
-            false
-        end
-    end
+    false
   end
-
-  # Extract "field in [list of strings]" from a filter expression (legacy
-  # scope_resolver shape). Structural matching replaces the brittle
-  # inspect()+regex version (#137). Returns {field, list} or nil.
-  # Only matches a bare `field in [list]` comparison — never recurses into a
-  # composite BooleanExpression, because the legacy anchored regex this replaces
-  # also only matched a bare expression. Recursing here would extract the `in`
-  # and ignore the sibling conditions, failing open on composite filters (#175).
-  defp extract_in_list_check(%Ash.Query.Call{
-         name: :in,
-         args: [%Ash.Query.Ref{attribute: field}, list]
-       })
-       when is_atom(field) and is_list(list) do
-    if Enum.all?(list, &is_binary/1), do: {field, list}, else: nil
-  end
-
-  defp extract_in_list_check(_), do: nil
-
-  # Check if the filter expression references ^tenant() — structural, replacing
-  # the old inspect()+String.contains?(":_tenant") (#137).
-  defp filter_references_tenant?(filter), do: :tenant in template_terms(filter)
-
-  # Check if the filter expression references ^actor(:field).
-  defp filter_references_actor?(filter) do
-    Enum.any?(template_terms(filter), &match?({:actor, _}, &1))
-  end
-
-  # Walk an expression collecting ^tenant() and ^actor(:field) template refs.
-  defp template_terms(filter), do: template_terms(filter, [])
-
-  defp template_terms(:_tenant, acc), do: [:tenant | acc]
-  defp template_terms({:_actor, field}, acc) when is_atom(field), do: [{:actor, field} | acc]
-
-  defp template_terms(%{__struct__: _, left: left, right: right}, acc),
-    do: template_terms(right, template_terms(left, acc))
-
-  defp template_terms(%{__struct__: _, expression: expression}, acc),
-    do: template_terms(expression, acc)
-
-  defp template_terms(%{__struct__: _, args: args}, acc) when is_list(args),
-    do: Enum.reduce(args, acc, &template_terms/2)
-
-  defp template_terms(%{__struct__: _, arguments: args}, acc) when is_list(args),
-    do: Enum.reduce(args, acc, &template_terms/2)
-
-  defp template_terms(list, acc) when is_list(list),
-    do: Enum.reduce(list, acc, &template_terms/2)
-
-  defp template_terms(tuple, acc) when is_tuple(tuple),
-    do: tuple |> Tuple.to_list() |> Enum.reduce(acc, &template_terms/2)
-
-  defp template_terms(_, acc), do: acc
-
-  @doc false
-  def check_tenant_match(_record, nil, _resource), do: false
-
-  @doc false
-  def check_tenant_match(record, tenant, resource) do
-    # Resolve the actual multitenancy attribute instead of hardcoding :tenant_id,
-    # and fail closed when the record has no value for it (#136).
-    tenant_attr = Ash.Resource.Info.multitenancy_attribute(resource)
-    record_tenant = tenant_attr && Map.get(record, tenant_attr)
-
-    if record_tenant != nil do
-      to_string(record_tenant) == to_string(tenant)
-    else
-      false
-    end
-  end
-
-  defp check_actor_match(_record, _filter, %{actor: nil}), do: false
-
-  defp check_actor_match(record, filter, context) do
-    actor = context[:actor]
-
-    case extract_actor_in_list_check(filter) do
-      {record_field, actor_field} ->
-        evaluate_actor_in_list(record, actor, record_field, actor_field)
-
-      nil ->
-        evaluate_actor_equality_or_default(record, filter, actor)
-    end
-  end
-
-  defp evaluate_actor_in_list(record, actor, record_field, actor_field) do
-    record_value = Map.get(record, record_field)
-    actor_list = Map.get(actor, actor_field) || []
-    record_value in actor_list
-  end
-
-  defp evaluate_actor_equality_or_default(record, filter, actor) do
-    case extract_actor_equality_check(filter) do
-      {record_field, actor_field} ->
-        Map.get(record, record_field) == Map.get(actor, actor_field)
-
-      nil ->
-        false
-    end
-  end
-
-  # Extract "field in ^actor(:list_field)" — returns {record_field, actor_field} or nil.
-  defp extract_actor_in_list_check(%Ash.Query.Call{
-         name: :in,
-         args: [%Ash.Query.Ref{attribute: field}, {:_actor, actor_field}]
-       })
-       when is_atom(field) and is_atom(actor_field),
-       do: {field, actor_field}
-
-  defp extract_actor_in_list_check(%{__struct__: _, left: left, right: right}) do
-    extract_actor_in_list_check(left) || extract_actor_in_list_check(right)
-  end
-
-  defp extract_actor_in_list_check(_), do: nil
-
-  # Extract "field == ^actor(:actor_field)" — returns {record_field, actor_field} or nil.
-  defp extract_actor_equality_check(%Ash.Query.Call{
-         name: :==,
-         args: [%Ash.Query.Ref{attribute: field}, {:_actor, actor_field}]
-       })
-       when is_atom(field) and is_atom(actor_field),
-       do: {field, actor_field}
-
-  defp extract_actor_equality_check(%{__struct__: _, left: left, right: right}) do
-    extract_actor_equality_check(left) || extract_actor_equality_check(right)
-  end
-
-  defp extract_actor_equality_check(_), do: nil
 
   # Helper functions to extract data from authorizer
 
