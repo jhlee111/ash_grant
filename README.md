@@ -8,6 +8,7 @@ Permissions resolve to native Ash filters and policy checks, with deny-wins sema
 
 **Authorization:**
 - **Domain-level DSL** — shared resolver and scopes inherited by all resources in a domain
+- **Global scope registry** — declare `:own` / `:same_tenant` once with `use AshGrant.ScopeRegistry`, override per-resource or per-domain
 - **Scope DSL** with `expr()` — row-level filters, scope inheritance, `^tenant()` support
 - **Argument-based scopes** with `resolve_argument` — multi-hop authorization via action arguments populated from the resource's own relationships, with lazy loading
 - **Field groups** — column-level read access with inheritance and masking

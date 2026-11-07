@@ -188,6 +188,20 @@ defmodule AshGrant.FilterCheck do
 
   defp normalize_ref(other), do: other
 
+  # Ash's policy breakdown builds an authorizer with the subject but no action.
+  @impl true
+  def expand_description(actor, %{action: nil} = authorizer, opts) do
+    case authorizer.subject do
+      %{action: %{name: _} = action} ->
+        super(actor, %{authorizer | action: action}, opts)
+
+      _no_action ->
+        {:ok, describe(opts)}
+    end
+  end
+
+  def expand_description(actor, authorizer, opts), do: super(actor, authorizer, opts)
+
   @impl true
   def filter(actor, authorizer, opts) do
     if actor == nil do
