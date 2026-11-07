@@ -394,3 +394,10 @@ defimpl Jason.Encoder, for: AshGrant.Explanation do
 
   defp field_group_to_map(other), do: other
 end
+
+# Plain text, no ANSI colors: `"#{explanation}"` usually ends up in a log or an
+# assertion message, not a terminal. Call `AshGrant.Explanation.to_string/2` for
+# colored output.
+defimpl String.Chars, for: AshGrant.Explanation do
+  def to_string(explanation), do: AshGrant.Explanation.to_string(explanation, color: false)
+end

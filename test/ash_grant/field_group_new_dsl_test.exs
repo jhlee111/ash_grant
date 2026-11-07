@@ -281,7 +281,8 @@ defmodule AshGrant.FieldGroupNewDslTest do
         end)
 
       assert warning =~ "deprecated"
-      assert warning =~ ":always"
+      assert warning =~ "Replace [:*] with :all:"
+      refute warning =~ ":always"
 
       # Still resolves correctly
       assert :id in result.fields
@@ -325,7 +326,8 @@ defmodule AshGrant.FieldGroupNewDslTest do
         end)
 
       assert warning =~ "deprecated"
-      assert warning =~ ":always"
+      assert warning =~ "Replace [:*] with :all:"
+      refute warning =~ ":always"
 
       assert :name in result.fields
       refute :salary in result.fields

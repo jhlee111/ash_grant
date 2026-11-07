@@ -3,11 +3,16 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
   Auto-generates Ash `field_policies` from `field_group` definitions.
 
   When `default_field_policies: true` is set, generates field policy entries
-  for each field group's direct fields using `AshGrant.FieldCheck`.
+  for each field group's direct fields using `AshGrant.FieldFilterCheck`.
 
   Each field group's **direct fields** (not inherited) get a `field_policy` with
-  the corresponding `AshGrant.FieldCheck`. A catch-all policy ensures fields
-  not in any group remain accessible.
+  the corresponding `AshGrant.FieldFilterCheck`, a per-record check: a field can
+  be visible on the rows a grant's scope or instance ids reach and
+  `%Ash.ForbiddenField{}` on the others. A catch-all policy ensures fields not in
+  any group remain accessible.
+
+  The action-wide `AshGrant.FieldCheck` (`AshGrant.field_check/1`) is no longer
+  generated. It remains available for hand-written `field_policies`.
 
   ## Generated Structure
 
@@ -21,15 +26,15 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
 
       field_policies do
         field_policy [:name, :department] do
-          authorize_if AshGrant.field_check(:public)
+          authorize_if AshGrant.FieldFilterCheck.field_filter_check(:public)
         end
 
         field_policy [:phone, :address] do
-          authorize_if AshGrant.field_check(:sensitive)
+          authorize_if AshGrant.FieldFilterCheck.field_filter_check(:sensitive)
         end
 
         field_policy [:salary, :email] do
-          authorize_if AshGrant.field_check(:confidential)
+          authorize_if AshGrant.FieldFilterCheck.field_filter_check(:confidential)
         end
 
         field_policy :* do
