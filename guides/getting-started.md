@@ -172,7 +172,28 @@ ash_grant do
 end
 ```
 
-A compile error is raised if no resolver is found from either the resource or the domain.
+A compile warning is emitted if no resolver is found from either the resource or the domain. The warning does not fire when `config :ash_grant, resolver: MyApp.PermissionResolver` provides an app-wide fallback (see below).
+
+## App-wide resolver fallback
+
+When every resource in an app uses the same `PermissionResolver`, declare it once in config and let every resource pick it up automatically.
+
+```elixir
+# config/config.exs
+config :ash_grant, resolver: MyApp.PermissionResolver
+```
+
+Every resource that uses `AshGrant` now reads this resolver when neither the resource nor its domain declares one.
+
+### Precedence
+
+A resolver declared closer to the resource wins:
+
+    resource > domain > app config
+
+A resource that declares its own `resolver MyApp.OtherResolver` overrides the app-config fallback, and a domain that declares a resolver overrides the app-config fallback for every resource in that domain.
+
+`AshGrant.Verifiers.ValidateResolverPresent` treats the app-config fallback as present, so no compile warning is emitted for resources that rely on it.
 
 ## Resolver Patterns
 
