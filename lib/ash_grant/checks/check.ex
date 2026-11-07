@@ -97,6 +97,10 @@ defmodule AshGrant.Check do
   - Context injection via `^context(:key)` for testable scopes
   - Handles nested actor paths
 
+  If `Ash.Expr.eval/2` cannot evaluate the scope against the record (it returns
+  `:unknown` or an error, such as a failed `type/2` cast or an unknown field),
+  the check denies the write and logs a warning.
+
   For **update/destroy** actions:
   - The scope filter is evaluated against the existing record (`changeset.data`)
 
@@ -132,16 +136,22 @@ defmodule AshGrant.Check do
   ## Relational Scopes and DB Query Fallback
 
   Scopes using `exists()` or dot-path references cannot be evaluated in-memory.
-  When such a scope has no explicit `write:` option and the resource has a data layer,
-  the check automatically uses a **DB query** to verify the scope instead:
+  Any write filter with such a reference is verified with a **DB query** instead,
+  whether it comes from an inline scope, a `write:` expression, or a legacy
+  `scope_resolver`:
 
   | `write:` value | Strategy | Behavior |
   |---|---|---|
   | `write: false` | Deny | Returns false immediately |
   | `write: true` | Allow | Returns true immediately |
-  | `write: expr(...)` | In-memory | Evaluate custom expression |
-  | _(omitted, no relationships)_ | In-memory | Current behavior |
+  | `write: expr(...)`, no relationships | In-memory | Evaluate custom expression |
+  | `write: expr(...)`, has relationships | **DB query** | Query DB with the `write:` expression |
+  | _(omitted, no relationships)_ | In-memory | Evaluate the scope filter |
   | _(omitted, has relationships)_ | **DB query** | Query DB with read scope |
+  | legacy `scope_resolver`, has relationships | **DB query** | Query DB with the resolved filter |
+
+  A relationship-bearing filter is never evaluated in memory. If one reaches the
+  in-memory path, the check logs a warning and returns false.
 
   **For update/destroy**: Queries the DB to check if the existing record matches
   the read scope expression.
@@ -449,8 +459,9 @@ defmodule AshGrant.Check do
   defp resolve_permissions(nil, _actor, %{resource: resource}) do
     raise ArgumentError,
           "AshGrant: no resolver configured for #{inspect(resource)}. " <>
-            "Set `resolver` in the resource's `ash_grant` block, or on the " <>
-            "domain via `AshGrant.Domain`."
+            "Set `resolver` in the resource's `ash_grant` block, on the " <>
+            "domain via `AshGrant.Domain`, or app-wide via " <>
+            "`config :ash_grant, resolver: MyApp.PermissionResolver`."
   end
 
   defp resolve_permissions(resolver, actor, context) when is_function(resolver, 2) do
@@ -492,15 +503,20 @@ defmodule AshGrant.Check do
 
   # Decide between DB query and in-memory evaluation, then execute.
   defp check_scope_with_strategy(scope, filter, resource, action_type, context, authorizer, opts) do
-    scope_def = get_scope_def(resource, scope)
-
-    if should_use_db_query?(scope_def, filter, resource) do
-      read_filter = resolve_read_scope(resource, scope, context)
-      db_query_scope_check(resource, action_type, authorizer, read_filter, context)
+    if should_use_db_query?(filter, resource) do
+      db_filter = db_query_filter(get_scope_def(resource, scope), scope, filter, context)
+      db_query_scope_check(resource, action_type, authorizer, db_filter, context)
     else
       check_scope_in_memory(action_type, filter, context, authorizer, opts)
     end
   end
+
+  # An inline scope without `write:` checks its read filter, as it always has.
+  # A `write:` expression or a legacy scope_resolver filter is checked as given.
+  defp db_query_filter(%{write: nil}, scope, _filter, context),
+    do: resolve_read_scope(context.resource, scope, context)
+
+  defp db_query_filter(_scope_def, _scope, filter, _context), do: filter
 
   defp check_scope_in_memory(:create, filter, context, _authorizer, opts) do
     check_create_scope_in_memory(context, filter, opts)
@@ -532,14 +548,10 @@ defmodule AshGrant.Check do
   # DB Query Strategy
   # ============================================================
 
-  # Determine if we should use a DB query instead of in-memory evaluation.
-  # Used when: scope has relationship references, no explicit write: option, and resource has a data layer.
-  defp should_use_db_query?(nil, _filter, _resource), do: false
-
-  defp should_use_db_query?(scope_def, filter, resource) do
-    is_nil(scope_def.write) and
-      has_data_layer?(resource) and
-      contains_relationship_reference?(filter)
+  # Any write filter with relationship references goes to the DB, whether it
+  # came from an inline scope, its `write:` expression, or a legacy scope_resolver.
+  defp should_use_db_query?(filter, resource) do
+    contains_relationship_reference?(filter) and has_data_layer?(resource)
   end
 
   defp has_data_layer?(resource) do
@@ -860,19 +872,28 @@ defmodule AshGrant.Check do
   defp record_matches_filter?(_record, true, _context, _opts), do: true
   defp record_matches_filter?(_record, false, _context, _opts), do: false
 
-  defp record_matches_filter?(record, filter, context, _opts) do
+  defp record_matches_filter?(record, filter, context, opts) do
+    if contains_relationship_reference?(filter) do
+      Logger.warning(
+        "AshGrant: scope filter #{inspect(filter)} references a relationship and " <>
+          "cannot be evaluated in memory on #{inspect(context[:resource])}; failing closed"
+      )
+
+      false
+    else
+      eval_record_filter(record, filter, context, opts)
+    end
+  end
+
+  defp eval_record_filter(record, filter, context, _opts) do
     actor = context[:actor]
     tenant = context[:tenant]
     resource = context[:resource]
 
-    # Replace exists() nodes with true before in-memory evaluation.
-    # Ash.Expr.eval cannot resolve exists() in-memory (requires DB queries).
-    simplified = simplify_exists_for_eval(filter)
-
     # Resolve actor/tenant/context/arguments templates to concrete values before
     # eval, then pass resource: so Ash can hydrate attribute references.
     filled =
-      Ash.Expr.fill_template(simplified,
+      Ash.Expr.fill_template(filter,
         actor: actor,
         tenant: tenant,
         context: context[:query_context] || %{},
@@ -898,192 +919,21 @@ defmodule AshGrant.Check do
         false
 
       :unknown ->
-        fallback_evaluation(record, filter, context)
+        deny_unevaluable(filter, resource, :unknown)
 
-      {:error, _} ->
-        fallback_evaluation(record, filter, context)
+      {:error, reason} ->
+        deny_unevaluable(filter, resource, reason)
     end
   end
 
-  # Replace exists() nodes with true for in-memory evaluation.
-  # Ash.Expr.eval cannot resolve exists() without DB queries, causing a crash:
-  # `nil.persisted(:relationships_by_name)` (ArgumentError)
-  # `filter` is never a bare boolean here: record_matches_filter?/4 matches
-  # `true` and `false` in its own earlier clauses.
-  defp simplify_exists_for_eval(filter) do
-    Ash.Filter.map(filter, fn
-      %Ash.Query.Exists{} -> true
-      other -> other
-    end)
+  defp deny_unevaluable(filter, resource, reason) do
+    Logger.warning(
+      "AshGrant: could not evaluate scope filter #{inspect(filter)} on #{inspect(resource)} " <>
+        "(#{inspect(reason)}); failing closed"
+    )
+
+    false
   end
-
-  # Fallback for cases where Ash.Expr.eval returns :unknown or errors
-  # This handles complex expressions that require data layer evaluation,
-  # including tenant-based scopes like `expr(tenant_id == ^tenant())`
-  #
-  # The fallback checks if the expression contains tenant or actor references
-  # and evaluates those specific checks.
-  @doc false
-  def fallback_evaluation(record, filter, context) do
-    tenant = context[:tenant]
-
-    # First try to extract "field in [list]" pattern (from scope_resolver)
-    case extract_in_list_check(filter) do
-      {field, list} when is_list(list) ->
-        record_value = Map.get(record, field)
-        record_value in list
-
-      _ ->
-        # Analyze what the filter references
-        has_tenant_ref = filter_references_tenant?(filter)
-        has_actor_ref = filter_references_actor?(filter)
-
-        # Only check what the filter actually references. A filter that
-        # references neither tenant nor actor cannot be evaluated by this
-        # fallback, so fail closed rather than authorizing blindly (#136).
-        cond do
-          has_tenant_ref and has_actor_ref ->
-            check_tenant_match(record, tenant, context[:resource]) and
-              check_actor_match(record, filter, context)
-
-          has_tenant_ref ->
-            check_tenant_match(record, tenant, context[:resource])
-
-          has_actor_ref ->
-            check_actor_match(record, filter, context)
-
-          true ->
-            false
-        end
-    end
-  end
-
-  # Extract "field in [list of strings]" from a filter expression (legacy
-  # scope_resolver shape). Structural matching replaces the brittle
-  # inspect()+regex version (#137). Returns {field, list} or nil.
-  # Only matches a bare `field in [list]` comparison — never recurses into a
-  # composite BooleanExpression, because the legacy anchored regex this replaces
-  # also only matched a bare expression. Recursing here would extract the `in`
-  # and ignore the sibling conditions, failing open on composite filters (#175).
-  defp extract_in_list_check(%Ash.Query.Call{
-         name: :in,
-         args: [%Ash.Query.Ref{attribute: field}, list]
-       })
-       when is_atom(field) and is_list(list) do
-    if Enum.all?(list, &is_binary/1), do: {field, list}, else: nil
-  end
-
-  defp extract_in_list_check(_), do: nil
-
-  # Check if the filter expression references ^tenant() — structural, replacing
-  # the old inspect()+String.contains?(":_tenant") (#137).
-  defp filter_references_tenant?(filter), do: :tenant in template_terms(filter)
-
-  # Check if the filter expression references ^actor(:field).
-  defp filter_references_actor?(filter) do
-    Enum.any?(template_terms(filter), &match?({:actor, _}, &1))
-  end
-
-  # Walk an expression collecting ^tenant() and ^actor(:field) template refs.
-  defp template_terms(filter), do: template_terms(filter, [])
-
-  defp template_terms(:_tenant, acc), do: [:tenant | acc]
-  defp template_terms({:_actor, field}, acc) when is_atom(field), do: [{:actor, field} | acc]
-
-  defp template_terms(%{__struct__: _, left: left, right: right}, acc),
-    do: template_terms(right, template_terms(left, acc))
-
-  defp template_terms(%{__struct__: _, expression: expression}, acc),
-    do: template_terms(expression, acc)
-
-  defp template_terms(%{__struct__: _, args: args}, acc) when is_list(args),
-    do: Enum.reduce(args, acc, &template_terms/2)
-
-  defp template_terms(%{__struct__: _, arguments: args}, acc) when is_list(args),
-    do: Enum.reduce(args, acc, &template_terms/2)
-
-  defp template_terms(list, acc) when is_list(list),
-    do: Enum.reduce(list, acc, &template_terms/2)
-
-  defp template_terms(tuple, acc) when is_tuple(tuple),
-    do: tuple |> Tuple.to_list() |> Enum.reduce(acc, &template_terms/2)
-
-  defp template_terms(_, acc), do: acc
-
-  @doc false
-  def check_tenant_match(_record, nil, _resource), do: false
-
-  @doc false
-  def check_tenant_match(record, tenant, resource) do
-    # Resolve the actual multitenancy attribute instead of hardcoding :tenant_id,
-    # and fail closed when the record has no value for it (#136).
-    tenant_attr = Ash.Resource.Info.multitenancy_attribute(resource)
-    record_tenant = tenant_attr && Map.get(record, tenant_attr)
-
-    if record_tenant != nil do
-      to_string(record_tenant) == to_string(tenant)
-    else
-      false
-    end
-  end
-
-  defp check_actor_match(_record, _filter, %{actor: nil}), do: false
-
-  defp check_actor_match(record, filter, context) do
-    actor = context[:actor]
-
-    case extract_actor_in_list_check(filter) do
-      {record_field, actor_field} ->
-        evaluate_actor_in_list(record, actor, record_field, actor_field)
-
-      nil ->
-        evaluate_actor_equality_or_default(record, filter, actor)
-    end
-  end
-
-  defp evaluate_actor_in_list(record, actor, record_field, actor_field) do
-    record_value = Map.get(record, record_field)
-    actor_list = Map.get(actor, actor_field) || []
-    record_value in actor_list
-  end
-
-  defp evaluate_actor_equality_or_default(record, filter, actor) do
-    case extract_actor_equality_check(filter) do
-      {record_field, actor_field} ->
-        Map.get(record, record_field) == Map.get(actor, actor_field)
-
-      nil ->
-        true
-    end
-  end
-
-  # Extract "field in ^actor(:list_field)" — returns {record_field, actor_field} or nil.
-  defp extract_actor_in_list_check(%Ash.Query.Call{
-         name: :in,
-         args: [%Ash.Query.Ref{attribute: field}, {:_actor, actor_field}]
-       })
-       when is_atom(field) and is_atom(actor_field),
-       do: {field, actor_field}
-
-  defp extract_actor_in_list_check(%{__struct__: _, left: left, right: right}) do
-    extract_actor_in_list_check(left) || extract_actor_in_list_check(right)
-  end
-
-  defp extract_actor_in_list_check(_), do: nil
-
-  # Extract "field == ^actor(:actor_field)" — returns {record_field, actor_field} or nil.
-  defp extract_actor_equality_check(%Ash.Query.Call{
-         name: :==,
-         args: [%Ash.Query.Ref{attribute: field}, {:_actor, actor_field}]
-       })
-       when is_atom(field) and is_atom(actor_field),
-       do: {field, actor_field}
-
-  defp extract_actor_equality_check(%{__struct__: _, left: left, right: right}) do
-    extract_actor_equality_check(left) || extract_actor_equality_check(right)
-  end
-
-  defp extract_actor_equality_check(_), do: nil
 
   # Helper functions to extract data from authorizer
 

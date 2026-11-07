@@ -10,8 +10,11 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
        resolved filter (rejecting dead declarations).
     3. For every targeted write action (`:create`, `:update`, `:destroy`, or
        the explicit `:for_actions` list), injects:
-        * an `argument :name, <type>, allow_nil?: true` with the type inferred
-          from the leaf attribute (if the action does not already declare it)
+        * an `argument :name, <type>, allow_nil?: true, public?: false` with the
+          type inferred from the leaf attribute. An action that already declares
+          the argument must declare it `public?: false`, otherwise compilation
+          fails: a public argument lets API callers submit the value the scope
+          is checked against
         * a `change {AshGrant.Changes.ResolveArgument, [name:, path:,
           scopes_needing:]}` with `scopes_needing` computed at compile time
   """
@@ -24,6 +27,15 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
   alias AshGrant.ArgumentAnalyzer
 
   @write_action_types [:create, :update, :destroy]
+
+  # `defaults [create: :*, update: :*, ...]` actions only exist as entities once
+  # `SetPrimaryActions` has run. Without this edge Spark's sort leaves the two
+  # unordered and breaks the tie by `:digraph` vertex order, which shifts
+  # whenever Ash adds a transformer (Ash 3.36 did): this transformer then ran
+  # first, found no default actions, and `resolve_argument` silently did nothing.
+  @impl true
+  def after?(Ash.Resource.Transformers.SetPrimaryActions), do: true
+  def after?(_), do: false
 
   @impl true
   def before?(Ash.Policy.Authorizer), do: true
@@ -301,7 +313,9 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
 
     result =
       Enum.reduce(target_actions, dsl_state, fn action, state ->
-        {:ok, new_state} = install_on_action(state, action, decl, leaf_type, scopes_needing)
+        {:ok, new_state} =
+          install_on_action(state, action, decl, leaf_type, scopes_needing, resource)
+
         new_state
       end)
 
@@ -339,10 +353,10 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
     end
   end
 
-  defp install_on_action(dsl_state, action, decl, leaf_type, scopes_needing) do
+  defp install_on_action(dsl_state, action, decl, leaf_type, scopes_needing, resource) do
     new_action =
       action
-      |> ensure_argument(decl.name, leaf_type)
+      |> ensure_argument(decl.name, leaf_type, resource)
       |> append_change(decl, scopes_needing)
 
     matcher = fn existing ->
@@ -352,14 +366,30 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
     {:ok, Transformer.replace_entity(dsl_state, [:actions], new_action, matcher)}
   end
 
-  defp ensure_argument(action, arg_name, leaf_type) do
-    if Enum.any?(action.arguments, &(&1.name == arg_name)) do
-      action
-    else
-      {:ok, argument} =
-        Ash.Resource.Builder.build_action_argument(arg_name, leaf_type, allow_nil?: true)
+  defp ensure_argument(action, arg_name, leaf_type, resource) do
+    case Enum.find(action.arguments, &(&1.name == arg_name)) do
+      nil ->
+        {:ok, argument} =
+          Ash.Resource.Builder.build_action_argument(arg_name, leaf_type,
+            allow_nil?: true,
+            public?: false
+          )
 
-      %{action | arguments: action.arguments ++ [argument]}
+        %{action | arguments: action.arguments ++ [argument]}
+
+      %{public?: false} ->
+        action
+
+      _public ->
+        raise Spark.Error.DslError,
+          module: resource,
+          path: [:actions, action.name, :argument, arg_name],
+          message: """
+          argument :#{arg_name} on action :#{action.name} is public, but resolve_argument
+          :#{arg_name} feeds it to authorization. A public argument lets callers submit
+          the value the scope is checked against. Declare it with `public?: false` or
+          remove it and let resolve_argument add it.
+          """
     end
   end
 

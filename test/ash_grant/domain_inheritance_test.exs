@@ -277,7 +277,7 @@ defmodule AshGrant.DomainInheritanceTest do
 
       assert warnings =~ "No resolver configured"
 
-      # The verifier still surfaces the misconfiguration, but because the
+      # The verifier still reports the misconfiguration, but because the
       # module is compiled inside the test it no longer breaks CI's global
       # warnings-as-errors compile step. Attempting to authorize an action on
       # it must raise our runtime guard message. Ash wraps the ArgumentError in
