@@ -323,11 +323,18 @@ defmodule AshGrant.Check do
       resource: resource_module
     )
 
+    deny_summary =
+      AshGrant.Evaluator.deny_summary(permissions, resource_name, action_name, action_type)
+
     # OR-compose ALL matching grants' scopes (#123): grants are additive, so
     # the action is authorized when ANY grant's scope passes — a narrow grant
     # must never shadow a broader one. `!` deny is the only subtractive device.
     write_scopes =
-      AshGrant.Evaluator.get_write_scopes(permissions, resource_name, action_name, action_type)
+      if instance_denied?(deny_summary, resource_module, action_type, authorizer) do
+        :denied
+      else
+        AshGrant.Evaluator.get_write_scopes(permissions, resource_name, action_name, action_type)
+      end
 
     case write_scopes do
       :unrestricted ->
@@ -350,6 +357,36 @@ defmodule AshGrant.Check do
           action_type,
           authorizer
         )
+    end
+  end
+
+  # Creates and generic actions have no existing record an instance deny could name.
+  defp instance_denied?(%{denied_instance_ids: []}, _resource_module, _action_type, _authorizer),
+    do: false
+
+  defp instance_denied?(_summary, _resource_module, action_type, _authorizer)
+       when action_type in [:create, :action],
+       do: false
+
+  defp instance_denied?(%{denied_instance_ids: ids}, resource_module, _action_type, authorizer) do
+    case get_target_record(authorizer) do
+      # Without the record the deny cannot be ruled out, so fail closed.
+      nil ->
+        true
+
+      record ->
+        record_id = Map.get(record, AshGrant.Info.instance_key(resource_module))
+
+        ids
+        |> AshGrant.Evaluator.cast_instance_ids(resource_module)
+        |> Enum.any?(&instance_id_equal?(resource_module, &1, record_id))
+    end
+  end
+
+  defp instance_id_equal?(resource_module, denied_id, record_id) do
+    case Ash.Resource.Info.attribute(resource_module, AshGrant.Info.instance_key(resource_module)) do
+      nil -> to_string(denied_id) == to_string(record_id)
+      %{type: type} -> Ash.Type.equal?(type, denied_id, record_id)
     end
   end
 

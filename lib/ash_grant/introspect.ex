@@ -511,7 +511,9 @@ defmodule AshGrant.Introspect do
   @doc """
   Simple permission check returning `:allow` or `:deny` with details.
 
-  Useful for debugging authorization issues.
+  Useful for debugging authorization issues. An `:allow` result carries
+  `:denied_instance_ids` when instance denies (`!post:<id>:read:`) exclude
+  specific records from the grant.
 
   ## Options
 
@@ -648,12 +650,23 @@ defmodule AshGrant.Introspect do
     action_name = to_string(action)
     action_type = resolve_action_type(resource, action)
 
-    if has_deny_permission?(permissions, resource_name, action_name, action_type) do
+    deny_summary = Evaluator.deny_summary(permissions, resource_name, action_name, action_type)
+
+    if deny_summary.denied_all? do
       {:deny, %{reason: :denied_by_rule}}
     else
-      evaluate_allow(resource, permissions, resource_name, action_name, action_type)
+      resource
+      |> evaluate_allow(permissions, resource_name, action_name, action_type)
+      |> put_denied_instance_ids(deny_summary.denied_instance_ids)
     end
   end
+
+  defp put_denied_instance_ids(result, []), do: result
+
+  defp put_denied_instance_ids({:allow, details}, ids),
+    do: {:allow, Map.put(details, :denied_instance_ids, ids)}
+
+  defp put_denied_instance_ids(result, _ids), do: result
 
   @doc false
   @spec resolve_action_type(module(), atom()) :: atom() | nil

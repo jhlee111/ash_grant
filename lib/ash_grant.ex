@@ -244,6 +244,12 @@ defmodule AshGrant do
 
       # Result: read/update allowed, delete DENIED
 
+  Denies apply across both tiers. A type deny (`!blog:*:read:always`) also
+  removes instance grants (`blog:<id>:read:`) and `scope_through` parent grants
+  for that action. An instance deny (`!blog:<id>:read:`) removes that record from
+  every allow, type grants included. A deny ignores its scope, so
+  `!blog:*:update:own` denies every update.
+
   ## Check Types
 
   - `filter_check/1` - For read actions (returns filter expression)
@@ -299,7 +305,8 @@ defmodule AshGrant do
   - `AshGrant.PermissionResolver` - Behaviour for resolving permissions
   - `AshGrant.Check` - SimpleCheck for write actions
   - `AshGrant.FilterCheck` - FilterCheck for read actions
-  - `AshGrant.FieldCheck` - SimpleCheck for field-level authorization in `field_policies`
+  - `AshGrant.FieldFilterCheck` - per-record FilterCheck for field groups; what `default_field_policies` generates
+  - `AshGrant.FieldCheck` - action-wide SimpleCheck for hand-written `field_policies` (`field_check/1`)
   - `AshGrant.Info` - DSL introspection helpers (scopes, field groups, configuration)
   - `AshGrant.Introspect` - Runtime permission introspection for UIs and APIs
   - `AshGrant.Explanation` - Authorization decision explanation struct
