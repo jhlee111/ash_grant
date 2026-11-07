@@ -161,7 +161,7 @@ defmodule AshGrant.Explainer do
     reason =
       explain_mismatch_reason(perm, matched, is_deny, resource_name, action_str, action_type)
 
-    scope_name = if perm.scope, do: String.to_atom(perm.scope), else: nil
+    scope_name = if perm.scope, do: scope_name(perm.scope), else: nil
 
     %{
       permission: PermissionInput.to_string(input),
@@ -174,6 +174,16 @@ defmodule AshGrant.Explainer do
       scope_description: if(scope_name, do: Info.scope_description(resource, scope_name)),
       field_group: perm.field_group
     }
+  end
+
+  # A scope name comes from permission data, so it converts only to an atom that
+  # exists (#143). Every declared scope is one; an undeclared name stays a
+  # string, which `Info.resolve_scope_filter/3` treats as an unknown scope (or
+  # hands to a legacy `scope_resolver`) exactly as it did the atom.
+  defp scope_name(scope) do
+    String.to_existing_atom(scope)
+  rescue
+    ArgumentError -> scope
   end
 
   defp explain_mismatch_reason(_perm, true, true, _resource_name, _action_str, _action_type),

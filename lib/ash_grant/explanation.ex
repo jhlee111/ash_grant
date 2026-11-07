@@ -63,7 +63,7 @@ defmodule AshGrant.Explanation do
           reason: String.t() | nil,
           description: String.t() | nil,
           source: String.t() | nil,
-          scope_name: atom() | nil,
+          scope_name: atom() | String.t() | nil,
           scope_description: String.t() | nil,
           field_group: String.t() | nil
         }

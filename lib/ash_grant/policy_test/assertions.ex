@@ -326,12 +326,27 @@ defmodule AshGrant.PolicyTest.Assertions do
   end
 
   defp resolve_single_field_group(resource, group_name) do
-    group_atom = if is_binary(group_name), do: String.to_atom(group_name), else: group_name
+    # A field group name comes from permission data: an undeclared one has no
+    # atom, and no fields (#143).
+    case existing_group_atom(group_name) do
+      nil -> []
+      group_atom -> resolved_fields(resource, group_atom)
+    end
+  end
 
+  defp resolved_fields(resource, group_atom) do
     case AshGrant.Info.resolve_field_group(resource, group_atom) do
       nil -> []
       resolved -> resolved.fields
     end
+  end
+
+  defp existing_group_atom(name) when is_atom(name), do: name
+
+  defp existing_group_atom(name) when is_binary(name) do
+    String.to_existing_atom(name)
+  rescue
+    ArgumentError -> nil
   end
 
   # Private functions

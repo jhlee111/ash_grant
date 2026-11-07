@@ -79,9 +79,11 @@ defmodule AshGrant.Transformers.AddCanPerformCalculations do
       |> MapSet.new(& &1.name)
 
     for {_name, action_str, _public?} <- all_calcs do
-      action_atom = String.to_atom(action_str)
+      # Every defined action name is an atom already; a name that is not one
+      # cannot be defined (#143).
+      action_atom = existing_atom(action_str)
 
-      unless MapSet.member?(defined_actions, action_atom) do
+      unless action_atom && MapSet.member?(defined_actions, action_atom) do
         available =
           defined_actions |> Enum.sort() |> Enum.map_join(", ", &":#{&1}")
 
@@ -89,7 +91,7 @@ defmodule AshGrant.Transformers.AddCanPerformCalculations do
           module: resource,
           path: [:ash_grant, :can_perform_actions],
           message: """
-          Action :#{action_atom} does not exist on #{inspect(resource)}.
+          Action :#{action_str} does not exist on #{inspect(resource)}.
 
           Available actions: #{available}
           """
@@ -109,5 +111,11 @@ defmodule AshGrant.Transformers.AddCanPerformCalculations do
         {:error, error} -> {:halt, {:error, error}}
       end
     end)
+  end
+
+  defp existing_atom(string) do
+    String.to_existing_atom(string)
+  rescue
+    ArgumentError -> nil
   end
 end
