@@ -252,6 +252,31 @@ defmodule MyApp.PermissionResolver do
 end
 ```
 
+### Capping Grants with a Ceiling (API Keys)
+
+A resolver can return a second permission list from the optional `ceiling/2` callback. Every AshGrant check evaluates the actor's grants and the ceiling separately, and authorizes only what both authorize. A deny in either list wins. A ceiling narrows the grants and never widens them.
+
+The typical ceiling is an API key's permissions. `AshAuthentication`'s API key strategy signs the user in and puts the key on `user.__metadata__[:api_key]` (and `user.__metadata__[:using_api_key?]`). The key's permission strings become the ceiling:
+
+```elixir
+defmodule MyApp.PermissionResolver do
+  @behaviour AshGrant.PermissionResolver
+
+  @impl true
+  def resolve(user, _context), do: MyApp.Accounts.permissions_for(user)
+
+  @impl true
+  def ceiling(%{__metadata__: %{api_key: %{permissions: permissions}}}, _context),
+    do: permissions
+
+  def ceiling(_user, _context), do: nil
+end
+```
+
+A user who holds `post:*:*:own` and signs in with a key holding `post:*:read:always` can read their own posts and nothing else. The key cannot create, update or destroy, and it cannot read other users' posts. When the user later loses a role, the key loses the access that role gave, because the intersection is taken on every request rather than when the key is created.
+
+Return `nil` for no ceiling and `[]` to deny everything. A function resolver has no ceiling. `AshGrant.explain/4` reports the ceiling's decision in the explanation's `:ceiling` field, and `AshGrant.Introspect.ceiling_for/3` returns the ceiling's permission strings.
+
 ## Tip: Relational Scopes
 
 Once you're comfortable with the basics, AshGrant supports relationship-based scopes

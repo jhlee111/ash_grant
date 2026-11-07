@@ -299,8 +299,23 @@ defmodule AshGrant.Check do
     # Build context
     context = build_context(actor, resource_module, action, authorizer)
 
-    # Resolve permissions
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
+
+    # A ceiling is evaluated as its own permission list; both must authorize.
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.all?(fn permissions ->
+      authorized_by?(permissions, resource_module, resource_name, action_name, action_type, %{
+        scope_resolver: scope_resolver,
+        context: context,
+        authorizer: authorizer,
+        opts: opts
+      })
+    end)
+  end
+
+  defp authorized_by?(permissions, resource_module, resource_name, action_name, action_type, env) do
+    %{scope_resolver: scope_resolver, context: context, authorizer: authorizer, opts: opts} = env
 
     AshGrant.PermissionValidation.validate(
       permissions,

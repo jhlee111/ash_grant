@@ -244,9 +244,34 @@ defmodule AshGrant.FilterCheck do
       tenant: get_tenant(authorizer)
     }
 
-    # Resolve permissions
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
 
+    # A ceiling is evaluated as its own permission list and the filters are ANDed.
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.map(
+      &filter_for(
+        &1,
+        resource_module,
+        resource_name,
+        action_name,
+        action_type,
+        scope_resolver,
+        context
+      )
+    )
+    |> AshGrant.Ceiling.intersect_filters()
+  end
+
+  defp filter_for(
+         permissions,
+         resource_module,
+         resource_name,
+         action_name,
+         action_type,
+         scope_resolver,
+         context
+       ) do
     AshGrant.PermissionValidation.validate(
       permissions,
       AshGrant.Info.field_group_permissions(resource_module),
