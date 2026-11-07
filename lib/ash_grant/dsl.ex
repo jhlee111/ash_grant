@@ -552,11 +552,13 @@ defmodule AshGrant.Dsl do
         doc: """
         Automatically generate Ash `field_policies` from `field_group` definitions.
 
-        When `true`, AshGrant generates field policies that use `AshGrant.FieldCheck`
-        to authorize field access based on the 5th part of permission strings.
+        When `true`, AshGrant generates field policies that use
+        `AshGrant.FieldFilterCheck` to authorize field access per record, based on
+        the 5th part of permission strings.
 
         When `false` (default), you can manually write `field_policies` using
-        `AshGrant.field_check/1` (Mode A).
+        `AshGrant.FieldFilterCheck.field_filter_check/1` (per record) or
+        `AshGrant.field_check/1` (action-wide, Mode A).
         """
       ],
       can_perform_actions: [
