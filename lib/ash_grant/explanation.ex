@@ -14,7 +14,10 @@ defmodule AshGrant.Explanation do
   - `:decision` - The final decision (`:allow` or `:deny`)
   - `:reason` - Reason for denial (`:no_matching_permissions`, `:denied_by_rule`, etc.)
   - `:matching_permissions` - List of permissions that matched and granted access
-  - `:evaluated_permissions` - All permissions that were evaluated with match status
+  - `:evaluated_permissions` - All permissions that were evaluated with match status. `matched: true`
+    means the runtime counts the grant for this action: an RBAC grant with a scope, a deny rule, an
+    instance grant on the resource itself, or a parent's instance grant reached through
+    `scope_through`. Instance entries carry a `:reason` naming which, and `:instance_id`
   - `:scope_filter` - The resolved scope filter expression (for reads)
   - `:field_groups` - List of field group names the actor has access to (from 5-part permissions)
   - `:field_group_defs` - Field group definitions from the resource DSL
@@ -63,6 +66,7 @@ defmodule AshGrant.Explanation do
           reason: String.t() | nil,
           description: String.t() | nil,
           source: String.t() | nil,
+          instance_id: String.t(),
           scope_name: atom() | nil,
           scope_description: String.t() | nil,
           field_group: String.t() | nil
