@@ -170,19 +170,16 @@ defmodule AshGrant.CeilingPropertyTest do
           ) do
       actor = %{id: actor_id, permissions: grants, ceiling: ceiling}
 
-      # authorize?: false skips field policies, which on Elixir 1.18 forbid the
-      # generated can_*? calculations (fixed separately).
       loaded =
         CeilingPost
         |> Ash.Query.filter(id == ^post.id)
-        |> Ash.read_one!(
-          actor: actor,
-          authorize?: false,
-          load: [:can_update?, :can_destroy?]
-        )
+        |> Ash.read_one(actor: actor, load: [:can_update?, :can_destroy?])
 
-      assert loaded.can_update? == Ash.can?({post, :update}, actor)
-      assert loaded.can_destroy? == Ash.can?({post, :destroy}, actor)
+      # The calculations are only visible on rows the actor can read.
+      with {:ok, %CeilingPost{} = loaded} <- loaded do
+        assert loaded.can_update? == Ash.can?({post, :update}, actor)
+        assert loaded.can_destroy? == Ash.can?({post, :destroy}, actor)
+      end
     end
   end
 

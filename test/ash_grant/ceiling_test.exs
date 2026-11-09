@@ -84,16 +84,10 @@ defmodule AshGrant.CeilingTest do
     end
 
     test "CanPerform agrees with the write check", %{key_actor: key_actor, own: own} do
-      # authorize?: false skips field policies, which on Elixir 1.18 forbid the
-      # generated can_*? calculations on a resource with default_field_policies.
       post =
         CeilingPost
         |> Ash.Query.filter(id == ^own.id)
-        |> Ash.read_one!(
-          actor: key_actor,
-          authorize?: false,
-          load: [:can_update?, :can_destroy?]
-        )
+        |> Ash.read_one!(actor: key_actor, load: [:can_update?, :can_destroy?])
 
       refute post.can_update?
       refute post.can_destroy?
@@ -103,7 +97,7 @@ defmodule AshGrant.CeilingTest do
       post =
         CeilingPost
         |> Ash.Query.filter(id == ^own.id)
-        |> Ash.read_one!(actor: owner, authorize?: false, load: [:can_update?, :can_destroy?])
+        |> Ash.read_one!(actor: owner, load: [:can_update?, :can_destroy?])
 
       assert post.can_update?
       assert post.can_destroy?
@@ -466,6 +460,16 @@ defmodule AshGrant.CeilingTest do
     test "is nil for a module without ceiling/2" do
       assert AshGrant.Ceiling.resolve(AshGrant.Test.NoLoadActorResolver, %{ceiling: []}, %{}) ==
                nil
+    end
+  end
+
+  describe "explain/4 with an instance ceiling" do
+    test "allows the read the runtime allows" do
+      post = create!(%{title: "t", body: "b", notes: "n", author_id: Ash.UUID.generate()})
+      actor = actor(["ceiling_post:*:*:always"], ceiling: ["ceiling_post:#{post.id}:*:"])
+
+      assert read(actor) == MapSet.new([post.id])
+      assert AshGrant.explain(CeilingPost, :read, actor).decision == :allow
     end
   end
 end
