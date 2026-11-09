@@ -36,7 +36,15 @@ permission strings in your resolver.
 
 ## Installation
 
-Add `ash_grant` to your list of dependencies in `mix.exs`:
+With [Igniter](https://hexdocs.pm/igniter):
+
+```bash
+mix igniter.install ash_grant
+```
+
+The installer adds the dependency, imports the `ash_grant` formatter rules into `.formatter.exs`, and puts the `ash_grant` section first in the Spark section order for resources and domains.
+
+Without Igniter, add `ash_grant` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
