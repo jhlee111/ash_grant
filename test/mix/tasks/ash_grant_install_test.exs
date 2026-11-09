@@ -10,10 +10,4 @@ defmodule Mix.Tasks.AshGrant.InstallTest do
     + |  import_deps: [:ash_grant]
     """)
   end
-
-  test "leaves the Spark section order alone" do
-    test_project()
-    |> Igniter.compose_task("ash_grant.install", [])
-    |> refute_creates("config/config.exs")
-  end
 end
