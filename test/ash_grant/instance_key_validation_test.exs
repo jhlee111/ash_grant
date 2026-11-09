@@ -7,7 +7,9 @@ defmodule AshGrant.InstanceKeyValidationTest do
   as an attribute — including the literal `:id`, which the old validation
   silently skipped.
   """
-  use ExUnit.Case, async: true
+  # Not async: capture_io(:stderr, ...) swaps the VM-wide :standard_error device,
+  # so a concurrent test writing to stderr could fail (#209).
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
 

@@ -112,12 +112,21 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ### Transformers
 
-- **`AshGrant.Transformers.MergeDomainConfig`** - Merges domain-level resolver/scopes into resources (runs first)
-- **`AshGrant.Transformers.ValidateResolverPresent`** - Validates resolver exists after domain merge
+Domain resolver/scope inheritance is resolved at runtime by `AshGrant.Info` (resolver falls back to the domain, then `config :ash_grant, resolver:`; scopes merge resource > domain > registry). There is no merge transformer since v0.20.0.
+
+- **`AshGrant.Transformers.ResolveFieldGroupFields`** / **`ValidateFieldGroups`** - Expand `:all` / `except:` field groups and validate them
 - **`AshGrant.Transformers.AddDefaultPolicies`** - Auto-generates policies when `default_policies: true`
+- **`AshGrant.Transformers.AddFieldPolicies`** - Generates `field_policies` with `FieldFilterCheck` when `default_field_policies: true`
+- **`AshGrant.Transformers.AddMaskingPreparation`** - Adds the `ApplyMasking` preparation when a field group masks fields
 - **`AshGrant.Transformers.AddCanPerformCalculations`** - Generates CanPerform calculations from `can_perform` entities and `can_perform_actions` option
 - **`AshGrant.Transformers.AddArgumentResolvers`** - For each `resolve_argument` declaration: validates path, checks at least one scope references the arg, injects `argument :name` + `change AshGrant.Changes.ResolveArgument` on every targeted write action
 - **`AshGrant.Transformers.ValidateScopeThroughs`** - Validates scope_through entities reference valid belongs_to relationships
+
+### Verifiers (post-compile; an error surfaces as a compile warning)
+
+- **`AshGrant.Verifiers.ValidateResolverPresent`** - Warns when no resolver is configured at resource, domain or app level (the request then raises)
+- **`AshGrant.Verifiers.ValidateScopes`** - Warns on deprecated `owner_field`/`scope_resolver`; reports a `DslError` if `instance_key` isn't an attribute
+- **`AshGrant.Verifiers.ValidateArgumentResolvers`** - Checks, domain-aware, that some scope references each `resolve_argument`
 
 ## Permission Format
 

@@ -381,7 +381,11 @@ defmodule AshGrant.FilterCheck do
     Ash.Expr.expr(^ref(instance_key) in ^instance_ids)
   end
 
-  defp build_parent_instance_filters(resource_module, permissions, action_name, action_type) do
+  @doc false
+  # The `scope_through` part of the read filter: one expression per parent whose
+  # instance grants reach this resource. Public so `AshGrant.Explainer` reports
+  # the filter this check applies instead of rebuilding it.
+  def build_parent_instance_filters(resource_module, permissions, action_name, action_type) do
     AshGrant.Info.scope_throughs(resource_module)
     |> Enum.filter(&AshGrant.Info.scope_through_allows_action?(&1, action_name, action_type))
     |> Enum.flat_map(fn scope_through ->

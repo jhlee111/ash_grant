@@ -305,7 +305,8 @@ defmodule AshGrant do
   - `AshGrant.PermissionResolver` - Behaviour for resolving permissions
   - `AshGrant.Check` - SimpleCheck for write actions
   - `AshGrant.FilterCheck` - FilterCheck for read actions
-  - `AshGrant.FieldCheck` - SimpleCheck for field-level authorization in `field_policies`
+  - `AshGrant.FieldFilterCheck` - per-record FilterCheck for field groups; what `default_field_policies` generates
+  - `AshGrant.FieldCheck` - action-wide SimpleCheck for hand-written `field_policies` (`field_check/1`)
   - `AshGrant.Info` - DSL introspection helpers (scopes, field groups, configuration)
   - `AshGrant.Introspect` - Runtime permission introspection for UIs and APIs
   - `AshGrant.Explanation` - Authorization decision explanation struct
