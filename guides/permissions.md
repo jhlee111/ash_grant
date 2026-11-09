@@ -379,6 +379,13 @@ permissions = [
 # - blog:delete -> DENIED (deny wins)
 ```
 
+Denies apply across both tiers. A type deny (`!blog:*:read:always`) also
+removes instance grants (`blog:<id>:read:`) and `scope_through` parent grants
+for that action. An instance deny (`!blog:<id>:read:`) removes that record from
+every allow, type grants included. A deny ignores its scope, so
+`!blog:*:update:own` denies every update; `AshGrant.Permission.diagnostics/1`
+reports such a deny as `:scoped_deny`.
+
 This pattern is useful for:
 
 - Revoking specific permissions from broad grants

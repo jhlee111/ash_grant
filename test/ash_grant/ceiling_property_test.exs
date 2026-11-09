@@ -115,13 +115,12 @@ defmodule AshGrant.CeilingPropertyTest do
     end
   end
 
-  # RBAC grants on named actions only. `CanPerform` disagrees with the write
-  # check without any ceiling for an `@update` grant and for an instance-only
-  # grant, bugs that predate the ceiling and are tracked separately.
+  # RBAC grants only. `CanPerform` disagrees with the write check for an
+  # instance-only grant without any ceiling, a bug that predates the ceiling.
   defp rbac_permission_gen do
     gen all(
           deny? <- boolean(),
-          action <- member_of(["*", "read", "update", "destroy"]),
+          action <- member_of(["*", "read", "update", "destroy", "@update", "@destroy"]),
           scope <- member_of(["always", "own", "published"])
         ) do
       prefix = if deny?, do: "!", else: ""
