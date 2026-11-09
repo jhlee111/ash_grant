@@ -11,17 +11,9 @@ defmodule Mix.Tasks.AshGrant.InstallTest do
     """)
   end
 
-  test "puts ash_grant first in the resource and domain section order" do
+  test "leaves the Spark section order alone" do
     test_project()
     |> Igniter.compose_task("ash_grant.install", [])
-    |> assert_creates("config/config.exs", """
-    import Config
-
-    config :spark,
-      formatter: [
-        "Ash.Resource": [section_order: [:ash_grant]],
-        "Ash.Domain": [section_order: [:ash_grant]]
-      ]
-    """)
+    |> refute_creates("config/config.exs")
   end
 end

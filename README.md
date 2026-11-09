@@ -42,7 +42,7 @@ With [Igniter](https://hexdocs.pm/igniter):
 mix igniter.install ash_grant
 ```
 
-The installer adds the dependency, imports the `ash_grant` formatter rules into `.formatter.exs`, and puts the `ash_grant` section first in the Spark section order for resources and domains.
+The installer adds the dependency and imports the `ash_grant` formatter rules into `.formatter.exs`.
 
 Without Igniter, add `ash_grant` to your list of dependencies in `mix.exs`:
 

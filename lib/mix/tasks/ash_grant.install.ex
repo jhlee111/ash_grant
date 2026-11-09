@@ -5,8 +5,7 @@ if Code.ensure_loaded?(Igniter) do
     @moduledoc """
     #{@shortdoc}
 
-    Imports the `ash_grant` formatter rules and puts the `ash_grant` section first in
-    the Spark section order for resources and domains.
+    Imports the `ash_grant` formatter rules, so `mix format` leaves the DSL unparenthesised.
     """
 
     use Igniter.Mix.Task
@@ -24,8 +23,6 @@ if Code.ensure_loaded?(Igniter) do
     def igniter(igniter) do
       igniter
       |> Igniter.Project.Formatter.import_dep(:ash_grant)
-      |> Spark.Igniter.prepend_to_section_order(:"Ash.Resource", [:ash_grant])
-      |> Spark.Igniter.prepend_to_section_order(:"Ash.Domain", [:ash_grant])
       |> Igniter.add_notice("""
       AshGrant installed.
 
