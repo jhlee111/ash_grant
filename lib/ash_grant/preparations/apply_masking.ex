@@ -54,8 +54,16 @@ defmodule AshGrant.Preparations.ApplyMasking do
       tenant: query.tenant
     }
 
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
 
+    # A field masked by either the grants or the ceiling stays masked.
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.map(&masked_fields_for(&1, resource, resource_name, action_name, query.action.type))
+    |> Enum.reduce(%{}, &Map.merge(&2, &1))
+  end
+
+  defp masked_fields_for(permissions, resource, resource_name, action_name, action_type) do
     # Pass the action type: without it a type wildcard (`@read`) grant is
     # skipped, and the fields its group masks come back unmasked.
     actor_field_groups =
@@ -63,7 +71,7 @@ defmodule AshGrant.Preparations.ApplyMasking do
         permissions,
         resource_name,
         action_name,
-        query.action.type
+        action_type
       )
 
     if actor_field_groups == [] do

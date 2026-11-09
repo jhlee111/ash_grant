@@ -41,6 +41,7 @@ Actor-oriented queries (already-loaded actor):
 - `allowed_actions/3` → `[atom()]` or `[map()]` with `detailed: true`
 - `can?/4` → `{:allow, map()} | {:deny, map()}`
 - `permissions_for/3` → `[String.t()]`
+- `ceiling_for/3` → `[String.t()] | nil` *(Provisional)*
 - `available_permissions/1` → `[available_permission()]`
 - `summarize_actor/2` → `[resource_summary()]` *(Provisional)*
 
@@ -76,13 +77,14 @@ Stable fields:
 | `:actor` | `term()` | The actor passed in |
 | `:decision` | `:allow \| :deny` | The final decision |
 | `:reason` | atom | Low-level reason (internal-shaped) |
-| `:reason_code` | `:allow_matched \| :deny_rule_matched \| :no_matching_permission \| nil` | Stable branching code |
+| `:reason_code` | `:allow_matched \| :deny_rule_matched \| :no_matching_permission \| :ceiling_denied \| nil` | Stable branching code |
 | `:summary` | `String.t()` | Human/LLM-readable one-liner |
 | `:matching_permissions` | `[map()]` | Permissions that contributed to the decision |
 | `:evaluated_permissions` | `[map()]` | All evaluated permissions with per-permission reasons |
 | `:deny_rule` | `map() \| nil` | The deny rule that won, if any |
 | `:scope_filter` | `Ash.Expr.t() \| nil` | Raw scope filter expression |
 | `:scope_filter_string` | `String.t() \| nil` | Human/LLM-readable stringification of `scope_filter` |
+| `:ceiling` | `AshGrant.Explanation.t() \| nil` | The same action explained against the resolver's ceiling *(Provisional)* |
 
 **`reason_code` and `summary` and `scope_filter_string` are Provisional** —
 added in v0.15. Other fields are Stable.
@@ -133,6 +135,17 @@ Not implementing `load_actor/1` is fine; identifier-based functions
 return `{:error, :actor_loader_not_implemented}` in that case. Existing
 resolvers (including anonymous-function resolvers) keep working
 unchanged.
+
+Optional callback (Provisional):
+
+```elixir
+@callback ceiling(actor(), context()) :: [permission()] | nil
+```
+
+`ceiling/2` returns a second permission list that caps `resolve/2`.
+Every check authorizes only what both lists authorize. `nil`, or not
+implementing the callback, means no ceiling. Function resolvers have no
+ceiling.
 
 ### `AshGrant.Permissionable` protocol
 
