@@ -165,6 +165,18 @@ tests:
         author_id: "other_user"
 ```
 
+YAML has no atom type, so the parser decides which strings become atoms. Apart from
+the `resource:` module name it never creates one: the atom table is never
+garbage-collected. A key or an identifier-like
+value (`status: draft`, `role: reader`) becomes an atom only when that atom already
+exists. Anything a scope can compare against is one: an attribute, an `^actor(...)`
+field, an enum value the resource declares. Any other string stays a string, on both
+sides of a comparison, so an actor name or an id like `user_1` still matches itself.
+`resource:`, `action:` and `action_type:` must name something real: a resource that is
+not a loaded Ash resource, an action the resource does not define, or an action type
+other than `read`/`create`/`update`/`destroy`/`action` stops the file with an error
+naming it.
+
 ### YAML — `arguments:` field for argument-based scopes
 
 YAML tests can provide action arguments for scopes that use `^arg(:name)`:
@@ -258,7 +270,7 @@ literal arguments — no variables, helper calls or loops. A YAML test holds one
 assertion, so a test with several becomes `name (1/3)`, `name (2/3)`, … YAML has no
 atom type, so values that would not read back unchanged (a struct, a nested map, an
 atom such as `:Draft`, a string such as `"draft"` or `"user_1"` that the YAML parser
-reads back as an atom) are refused too.
+may read back as an atom) are refused too.
 
 ## Running Policy Tests Programmatically
 

@@ -365,7 +365,7 @@ defmodule AshGrant.Introspect do
     allowed_actions =
       permissions
       |> Enum.filter(& &1.allowed)
-      |> Enum.map(&String.to_atom(&1.action))
+      |> Enum.map(&String.to_existing_atom(&1.action))
 
     %{
       resource: resource,
@@ -787,7 +787,7 @@ defmodule AshGrant.Introspect do
   defp format_allowed_actions(allowed, true) do
     Enum.map(allowed, fn p ->
       %{
-        action: String.to_atom(p.action),
+        action: String.to_existing_atom(p.action),
         scope: p.scope,
         instance_ids: p.instance_ids,
         field_groups: p.field_groups
@@ -796,7 +796,7 @@ defmodule AshGrant.Introspect do
   end
 
   defp format_allowed_actions(allowed, false) do
-    Enum.map(allowed, &String.to_atom(&1.action))
+    Enum.map(allowed, &String.to_existing_atom(&1.action))
   end
 
   @doc """
