@@ -123,28 +123,43 @@ defmodule AshGrant.Calculation.CanPerform do
 
       instance_key = AshGrant.Info.instance_key(resource)
 
-      permissions = resolve_permissions(resolver, actor, resolver_context)
-      scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action, action_type)
+      grants = resolve_permissions(resolver, actor, resolver_context)
 
-      # Left untyped on purpose: whether instance type wildcards (`doc:abc:@read:`)
-      # match is undecided (issue #131).
-      instance_ids =
-        AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
-
-      parent_filters =
-        build_parent_instance_filters(resource, permissions, action, action_type)
-
-      deny_summary =
-        AshGrant.Evaluator.deny_summary(permissions, resource_name, action, action_type)
-
-      scopes
-      |> build_expression(instance_ids, instance_key, parent_filters, scope_resolver, resource)
-      |> AshGrant.Evaluator.restrict_filter(deny_summary, resource)
+      resolver
+      |> AshGrant.Ceiling.permission_sets(actor, resolver_context, grants)
+      |> Enum.map(fn permissions ->
+        permission_expression(permissions, resource, resource_name, action, action_type, %{
+          scope_resolver: scope_resolver,
+          instance_key: instance_key
+        })
+      end)
+      |> AshGrant.Ceiling.intersect_filters()
       |> case do
         false -> expr(false)
         expression -> expression
       end
     end
+  end
+
+  defp permission_expression(permissions, resource, resource_name, action, action_type, env) do
+    %{scope_resolver: scope_resolver, instance_key: instance_key} = env
+
+    scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action, action_type)
+
+    # Left untyped on purpose: whether instance type wildcards (`doc:abc:@read:`)
+    # match is undecided (issue #131).
+    instance_ids =
+      AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
+
+    parent_filters =
+      build_parent_instance_filters(resource, permissions, action, action_type)
+
+    deny_summary =
+      AshGrant.Evaluator.deny_summary(permissions, resource_name, action, action_type)
+
+    scopes
+    |> build_expression(instance_ids, instance_key, parent_filters, scope_resolver, resource)
+    |> AshGrant.Evaluator.restrict_filter(deny_summary, resource)
   end
 
   # Permission resolution (mirrors FilterCheck)

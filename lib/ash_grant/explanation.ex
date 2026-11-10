@@ -14,14 +14,18 @@ defmodule AshGrant.Explanation do
   - `:decision` - The final decision (`:allow` or `:deny`)
   - `:reason` - Reason for denial (`:no_matching_permissions`, `:denied_by_rule`, etc.)
   - `:matching_permissions` - List of permissions that matched and granted access
-  - `:evaluated_permissions` - All permissions that were evaluated with match status
+  - `:evaluated_permissions` - All permissions that were evaluated with match status. `matched: true`
+    means the runtime counts the grant for this action: an RBAC grant with a scope, a deny rule, an
+    instance grant on the resource itself, or a parent's instance grant reached through
+    `scope_through`. Instance entries carry a `:reason` naming which, and `:instance_id`
   - `:scope_filter` - The resolved scope filter expression (for reads)
   - `:field_groups` - List of field group names the actor has access to (from 5-part permissions)
   - `:field_group_defs` - Field group definitions from the resource DSL
   - `:resolve_arguments` - `resolve_argument` declarations active for this action, each annotated with the scope atoms that trigger the resolver at runtime (see `guides/argument-based-scope.md`)
   - `:summary` - Human-readable one-line summary of the decision, suitable for UIs and LLM responses
-  - `:reason_code` - Structured reason code (`:allow_matched`, `:deny_rule_matched`, `:no_matching_permission`)
+  - `:reason_code` - Structured reason code (`:allow_matched`, `:deny_rule_matched`, `:no_matching_permission`, `:ceiling_denied`)
   - `:scope_filter_string` - Stringified form of `:scope_filter` using `AshGrant.ExprStringify` (nil when no filter)
+  - `:ceiling` - The explanation of the same action against the resolver's ceiling (`c:AshGrant.PermissionResolver.ceiling/2`), or `nil` when the resolver sets none. The top-level `:decision` is `:allow` only when both the grants and the ceiling allow, and `:scope_filter` is the two filters ANDed
 
   ## Example
 
@@ -63,6 +67,7 @@ defmodule AshGrant.Explanation do
           reason: String.t() | nil,
           description: String.t() | nil,
           source: String.t() | nil,
+          instance_id: String.t(),
           scope_name: atom() | nil,
           scope_description: String.t() | nil,
           field_group: String.t() | nil
@@ -76,7 +81,7 @@ defmodule AshGrant.Explanation do
         }
 
   @type reason_code ::
-          :allow_matched | :deny_rule_matched | :no_matching_permission | nil
+          :allow_matched | :deny_rule_matched | :no_matching_permission | :ceiling_denied | nil
 
   @type t :: %__MODULE__{
           resource: module(),
@@ -93,7 +98,8 @@ defmodule AshGrant.Explanation do
           scope_filter_string: String.t() | nil,
           field_groups: [String.t()],
           field_group_defs: [AshGrant.Dsl.FieldGroup.t()],
-          resolve_arguments: [resolve_argument_entry()]
+          resolve_arguments: [resolve_argument_entry()],
+          ceiling: t() | nil
         }
 
   defstruct [
@@ -107,6 +113,7 @@ defmodule AshGrant.Explanation do
     :summary,
     :scope_filter,
     :scope_filter_string,
+    :ceiling,
     matching_permissions: [],
     evaluated_permissions: [],
     field_groups: [],
@@ -147,6 +154,7 @@ defmodule AshGrant.Explanation do
       scope_section(explanation, color),
       resolve_arguments_section(explanation, color),
       field_group_section(explanation, color),
+      ceiling_section(explanation),
       footer(color)
     ]
     |> Enum.reject(&is_nil/1)
@@ -174,6 +182,14 @@ defmodule AshGrant.Explanation do
     Action:   #{explanation.action}
     Decision: #{decision_str}#{reason_str}
     Actor:    #{inspect(explanation.actor)}
+    """
+  end
+
+  defp ceiling_section(%{ceiling: nil}), do: nil
+
+  defp ceiling_section(%{ceiling: ceiling}) do
+    """
+    Ceiling: #{ceiling.decision} (#{ceiling.summary})
     """
   end
 
@@ -380,7 +396,8 @@ defimpl Jason.Encoder, for: AshGrant.Explanation do
       scope_filter_string: exp.scope_filter_string,
       field_groups: exp.field_groups,
       field_group_defs: Enum.map(exp.field_group_defs, &field_group_to_map/1),
-      resolve_arguments: exp.resolve_arguments
+      resolve_arguments: exp.resolve_arguments,
+      ceiling: exp.ceiling && to_json_safe(exp.ceiling)
     }
   end
 
@@ -393,4 +410,11 @@ defimpl Jason.Encoder, for: AshGrant.Explanation do
   end
 
   defp field_group_to_map(other), do: other
+end
+
+# Plain text, no ANSI colors: `"#{explanation}"` usually ends up in a log or an
+# assertion message, not a terminal. Call `AshGrant.Explanation.to_string/2` for
+# colored output.
+defimpl String.Chars, for: AshGrant.Explanation do
+  def to_string(explanation), do: AshGrant.Explanation.to_string(explanation, color: false)
 end

@@ -56,9 +56,12 @@ defmodule AshGrant.FieldFilterCheck do
       tenant: get_tenant(authorizer)
     }
 
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
 
-    field_visibility_filter(permissions, resource, action_name, required_group, action_type)
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.map(&field_visibility_filter(&1, resource, action_name, required_group, action_type))
+    |> AshGrant.Ceiling.intersect_filters()
   end
 
   @doc """

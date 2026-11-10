@@ -21,6 +21,10 @@ result.matching_permissions
 # See why permissions didn't match
 result.evaluated_permissions
 # => [%{permission: "post:*:update:own", matched: false, reason: "Action mismatch"}, ...]
+#
+# Instance grants are explained too, the way the runtime applies them:
+# %{permission: "post:abc:read:", matched: true, reason: "Grants instance abc"}
+# %{permission: "!post:abc:read:", matched: true, reason: "Excludes instance abc (instance deny)"}
 
 # Print human-readable output
 result |> AshGrant.Explanation.to_string() |> IO.puts()
