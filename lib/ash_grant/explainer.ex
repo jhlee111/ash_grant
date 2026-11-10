@@ -41,11 +41,86 @@ defmodule AshGrant.Explainer do
   """
   @spec explain(module(), atom(), term(), map()) :: Explanation.t()
   def explain(resource, action, actor, context \\ %{}) do
+    grants =
+      explain_permissions(
+        resource,
+        action,
+        actor,
+        context,
+        get_permissions(resource, actor, context)
+      )
+
+    case get_ceiling(resource, actor, context) do
+      nil ->
+        grants
+
+      ceiling ->
+        within_ceiling(
+          grants,
+          explain_permissions(resource, action, actor, context, ceiling),
+          resource
+        )
+    end
+  end
+
+  # The grants and the ceiling are explained as separate permission lists; the
+  # action is allowed only when both allow, and their read filters are ANDed.
+  defp within_ceiling(
+         %Explanation{decision: :allow} = grants,
+         %Explanation{decision: :allow} = ceiling,
+         resource
+       ) do
+    scope_filter =
+      AshGrant.Ceiling.intersect_filters([
+        grants.scope_filter || true,
+        ceiling.scope_filter || true
+      ])
+
+    scope_filter_string = stringify_scope_filter(scope_filter)
+
+    %{
+      grants
+      | ceiling: ceiling,
+        field_groups:
+          AshGrant.Introspect.intersect_field_groups(
+            resource,
+            grants.field_groups,
+            ceiling.field_groups
+          ),
+        scope_filter: scope_filter,
+        scope_filter_string: scope_filter_string,
+        summary:
+          build_summary(
+            :allow,
+            :allow_matched,
+            grants.matching_permissions,
+            [],
+            grants.action,
+            scope_filter_string
+          )
+    }
+  end
+
+  defp within_ceiling(%Explanation{decision: :allow} = grants, ceiling, _resource) do
+    %{
+      grants
+      | ceiling: ceiling,
+        decision: :deny,
+        reason: :denied_by_ceiling,
+        reason_code: :ceiling_denied,
+        scope_filter: nil,
+        scope_filter_string: nil,
+        summary: "Allowed by the actor's grants but not by the ceiling: #{ceiling.summary}"
+    }
+  end
+
+  defp within_ceiling(grants, ceiling, _resource), do: %{grants | ceiling: ceiling}
+
+  defp explain_permissions(resource, action, actor, context, raw_permissions) do
     resource_name = Info.resource_name(resource)
     action_str = to_string(action)
     action_type = resolve_action_type(resource, action)
 
-    raw_permissions = get_permissions(resource, actor, context)
     permission_inputs = Enum.map(raw_permissions, &Permissionable.to_permission_input/1)
     permissions = Enum.map(permission_inputs, &Permission.from_input/1)
 
@@ -375,6 +450,12 @@ defmodule AshGrant.Explainer do
       resolver when is_atom(resolver) ->
         resolver.resolve(actor, context) || []
     end
+  end
+
+  defp get_ceiling(_resource, nil, _context), do: nil
+
+  defp get_ceiling(resource, actor, context) do
+    AshGrant.Ceiling.resolve(Info.resolver(resource), actor, context)
   end
 
   defp matches_resource?(%Permission{resource: perm_resource}, resource_name) do
