@@ -638,8 +638,8 @@ defmodule AshGrant.Evaluator do
   Returns a list of instance IDs from all matching instance permissions
   (where instance_id != "*") for the given resource and action.
 
-  This is used by FilterCheck to build a `WHERE id IN (...)` filter
-  for instance-based access control.
+  Each grant's scope is dropped. Use `get_matching_instance_grants/4` when the
+  scope matters, as it does for the read filter.
 
   ## Examples
 
@@ -659,6 +659,34 @@ defmodule AshGrant.Evaluator do
   @spec get_matching_instance_ids(permissions(), String.t(), String.t(), atom() | nil) ::
           [String.t()]
   def get_matching_instance_ids(permissions, resource, action, action_type \\ nil) do
+    permissions
+    |> get_matching_instance_grants(resource, action, action_type)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.uniq()
+  end
+
+  @doc """
+  Gets the `{instance_id, scope}` pair of every instance permission that grants access.
+
+  Like `get_matching_instance_ids/4`, but keeps each grant's scope. `scope` is
+  `nil` for an empty scope (`doc:doc_abc:read:`), which is unconditional. A named
+  scope is a condition the record must also meet. An instance deny removes every
+  grant on its id, whatever the scope.
+
+  ## Examples
+
+      iex> permissions = ["shareddoc:doc_abc:read:", "shareddoc:doc_xyz:read:draft"]
+      iex> AshGrant.Evaluator.get_matching_instance_grants(permissions, "shareddoc", "read")
+      [{"doc_abc", nil}, {"doc_xyz", "draft"}]
+
+      iex> permissions = ["shareddoc:doc_abc:read:draft", "!shareddoc:doc_abc:read:"]
+      iex> AshGrant.Evaluator.get_matching_instance_grants(permissions, "shareddoc", "read")
+      []
+
+  """
+  @spec get_matching_instance_grants(permissions(), String.t(), String.t(), atom() | nil) ::
+          [{String.t(), String.t() | nil}]
+  def get_matching_instance_grants(permissions, resource, action, action_type \\ nil) do
     # No IndeterminateMatch guard: this considers only instance permissions
     # (instance_id != "*"), and a type wildcard on an instance permission is dead, not
     # indeterminate — `AshGrant.Permission.diagnostics/1` reports it. RBAC wildcards
@@ -681,13 +709,15 @@ defmodule AshGrant.Evaluator do
       |> Enum.map(& &1.instance_id)
       |> MapSet.new()
 
-    # Get allowed instance IDs (excluding denied ones)
+    # Every deny's own id is in denied_ids, so this also drops the denies.
     instance_perms
-    |> Enum.reject(&Permission.deny?/1)
-    |> Enum.map(& &1.instance_id)
-    |> Enum.reject(&MapSet.member?(denied_ids, &1))
+    |> Enum.reject(&MapSet.member?(denied_ids, &1.instance_id))
+    |> Enum.map(&{&1.instance_id, blank_to_nil(&1.scope)})
     |> Enum.uniq()
   end
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(scope), do: scope
 
   @doc """
   Summarises the deny rules that apply to a resource and action, across both tiers.

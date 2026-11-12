@@ -68,10 +68,10 @@ defmodule AshGrant.PermissionValidation do
   | `:field_group_missing_on` | `:field_group` | error | some of the resources the grant applies to lack the field group — listed in `:resources` |
   | `:deny_with_field_group` | `:field_group` | error | the rule `validate/3` enforces at request time |
 
-  ¹ A warning on a **deny** or an **instance** permission: the framework never
-  resolves those scopes (a deny applies whatever its scope; an instance scope is
-  the application's to read via `AshGrant.Evaluator.get_instance_scope/3`), so an
-  undeclared one cannot raise.
+  ¹ A warning on a **deny** or an **instance** permission, because an undeclared
+  one cannot raise. A deny applies whatever its scope. An instance grant with an
+  undeclared scope authorizes nothing, so a stored grant naming a removed scope
+  cannot break reads of the resource.
 
   ### What "the resources the grant applies to" means
 
@@ -419,8 +419,7 @@ defmodule AshGrant.PermissionValidation do
         "A deny applies whatever its scope, so the scope is never read."
 
       Permission.instance_permission?(perm) ->
-        "The framework never resolves an instance permission's scope, so nothing raises — " <>
-          "but `AshGrant.Evaluator.get_instance_scope/3` will hand back a name with no definition."
+        "An instance grant with an undeclared scope authorizes nothing. It does not raise."
 
       true ->
         "The check raises when it resolves this scope."

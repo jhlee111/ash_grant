@@ -424,7 +424,7 @@ defmodule AshGrant.PermissionCheckTest do
   end
 
   describe "deny and instance permissions" do
-    test "an undeclared scope is a warning: the framework never reads it" do
+    test "an undeclared scope is a warning: it cannot raise" do
       deny_issues = issues_for("!note:*:read:owm")
       assert Enum.map(deny_issues, & &1.code) |> Enum.sort() == [:scoped_deny, :undeclared_scope]
       deny = Enum.find(deny_issues, &(&1.code == :undeclared_scope))
@@ -435,7 +435,7 @@ defmodule AshGrant.PermissionCheckTest do
       assert [%{code: :undeclared_scope, severity: :warning} = instance] =
                issues_for("note:9f1c:read:business_hours")
 
-      assert instance.message =~ "get_instance_scope"
+      assert instance.message =~ "authorizes nothing"
     end
 
     test "deny + field_group is the #117 rule, as a code" do

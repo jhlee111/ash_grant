@@ -151,7 +151,7 @@ defmodule AshGrant.PolicyTest.Checker do
           {:indeterminate, reason} -> {:indeterminate, "scope `#{scope}` #{reason}"}
           verdict -> verdict
         end
-      end) ++ instance_verdicts(resource, action, permissions, record)
+      end) ++ instance_verdicts(resource, action, context, permissions, record, arguments)
 
     undecided = for {:indeterminate, reason} <- verdicts, do: reason
 
@@ -204,7 +204,7 @@ defmodule AshGrant.PolicyTest.Checker do
   defp scope_filter(resource, scope, context),
     do: Info.resolve_write_scope_filter(resource, scope, context)
 
-  defp instance_verdicts(resource, action, permissions, record) do
+  defp instance_verdicts(resource, action, context, permissions, record, arguments) do
     action_name = to_string(action)
     action_type = Introspect.resolve_action_type(resource, action)
 
@@ -217,10 +217,28 @@ defmodule AshGrant.PolicyTest.Checker do
           Info.scope_through_allows_action?(scope_through, action_name, action_type),
           do: parent_admits?(resource, scope_through, record, ids_for)
 
-    [
-      id_in?(record, Info.instance_key(resource), ids_for.(Info.resource_name(resource)))
-      | parents
-    ]
+    own =
+      permissions
+      |> Evaluator.get_matching_instance_grants(
+        Info.resource_name(resource),
+        action_name,
+        action_type
+      )
+      |> Enum.filter(fn {id, _scope} -> id_in?(record, Info.instance_key(resource), [id]) end)
+      |> Enum.map(&instance_grant_admits?(&1, resource, context, record, arguments))
+
+    own ++ parents
+  end
+
+  # A named scope on an instance grant must also hold for the record, as on the
+  # runtime read filter; an undeclared one admits nothing (#207).
+  defp instance_grant_admits?({_id, nil}, _resource, _context, _record, _arguments), do: true
+
+  defp instance_grant_admits?({id, scope}, resource, context, record, arguments) do
+    case scope_admits?(resource, context, record, scope, arguments) do
+      {:indeterminate, reason} -> {:indeterminate, "scope `#{scope}` on instance #{id} #{reason}"}
+      verdict -> verdict
+    end
   end
 
   # Decidable from the record only when the foreign key points at the parent's

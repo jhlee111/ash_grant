@@ -87,8 +87,7 @@ defmodule AshGrant.FieldFilterCheck do
         action_type
       )
 
-    {scopes, instance_ids} = partition_grants(grants)
-    instance_key = Info.instance_key(resource)
+    {scopes, instance_grants} = partition_grants(grants)
 
     deny_summary =
       Evaluator.deny_summary(
@@ -99,33 +98,36 @@ defmodule AshGrant.FieldFilterCheck do
       )
 
     scopes
-    |> build_filter(instance_ids, instance_key, Info.scope_resolver(resource), resource)
+    |> build_filter(instance_grants, Info.scope_resolver(resource), resource)
     |> Evaluator.restrict_filter(deny_summary, resource)
   end
 
   # RBAC grants (instance_id "*") contribute their scope; instance grants
-  # contribute their instance_id. A group-less grant keeps its scope/instance and
-  # is already included by field_group_grants/5 for every group.
+  # contribute their {instance_id, scope} pair. A group-less grant keeps its
+  # scope/instance and is already included by field_group_grants/5 for every group.
   defp partition_grants(grants) do
     {rbac, instance} = Enum.split_with(grants, &(&1.instance_id == "*"))
 
     scopes = rbac |> Enum.map(& &1.scope) |> Enum.reject(&is_nil/1) |> Enum.uniq()
-    instance_ids = instance |> Enum.map(& &1.instance_id) |> Enum.uniq()
 
-    {scopes, instance_ids}
+    instance_grants =
+      instance |> Enum.map(&{&1.instance_id, blank_to_nil(&1.scope)}) |> Enum.uniq()
+
+    {scopes, instance_grants}
   end
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(scope), do: scope
 
   # Mirrors AshGrant.FilterCheck.build_filter_with_instances (raw true/false/expr)
   # but with CanPerform's empty-context scope resolution, because this predicate
   # becomes a per-row field-policy calculation that Ash fills templates on.
-  defp build_filter(scopes, instance_ids, instance_key, scope_resolver, resource) do
+  defp build_filter(scopes, instance_grants, scope_resolver, resource) do
     if global_access?(scopes) do
       true
     else
       rbac_filter = if scopes != [], do: build_rbac_filter(scopes, scope_resolver, resource)
-
-      instance_filter =
-        if instance_ids != [], do: build_instance_filter(instance_ids, instance_key)
+      instance_filter = AshGrant.InstanceFilter.build(instance_grants, resource, %{})
 
       [rbac_filter, instance_filter]
       |> Enum.reject(&(is_nil(&1) or &1 == false))
@@ -153,14 +155,6 @@ defmodule AshGrant.FieldFilterCheck do
 
   defp or_combine([first | rest], _empty),
     do: Enum.reduce(rest, first, &Ash.Expr.expr(^&2 or ^&1))
-
-  defp build_instance_filter(instance_ids, :id) do
-    Ash.Expr.expr(id in ^instance_ids)
-  end
-
-  defp build_instance_filter(instance_ids, instance_key) do
-    Ash.Expr.expr(^ref(instance_key) in ^instance_ids)
-  end
 
   # Mirrors CanPerform.resolve_scope — empty context; template refs (^actor,
   # ^tenant, ^context) are filled by Ash after the field policy compiles.

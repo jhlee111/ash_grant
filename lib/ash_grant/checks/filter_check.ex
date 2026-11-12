@@ -282,17 +282,10 @@ defmodule AshGrant.FilterCheck do
     scopes =
       AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action_name, action_type)
 
-    # Get instance permission IDs
-    instance_ids =
-      AshGrant.Evaluator.get_matching_instance_ids(
-        permissions,
-        resource_name,
-        action_name,
-        action_type
-      )
-
-    # Get the instance key field (defaults to :id)
-    instance_key = AshGrant.Info.instance_key(resource_module)
+    instance_filter =
+      permissions
+      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action_name, action_type)
+      |> AshGrant.InstanceFilter.build(resource_module, context)
 
     # Get parent instance filters from scope_through entities
     parent_filters =
@@ -302,13 +295,7 @@ defmodule AshGrant.FilterCheck do
       AshGrant.Evaluator.deny_summary(permissions, resource_name, action_name, action_type)
 
     scopes
-    |> build_filter_with_instances(
-      instance_ids,
-      instance_key,
-      parent_filters,
-      scope_resolver,
-      context
-    )
+    |> build_filter_with_instances(instance_filter, parent_filters, scope_resolver, context)
     |> AshGrant.Evaluator.restrict_filter(deny_summary, resource_module)
   end
 
@@ -317,8 +304,7 @@ defmodule AshGrant.FilterCheck do
 
   defp build_filter_with_instances(
          scopes,
-         instance_ids,
-         instance_key,
+         instance_filter,
          parent_filters,
          scope_resolver,
          context
@@ -331,8 +317,7 @@ defmodule AshGrant.FilterCheck do
     else
       combine_filter_components(
         scopes,
-        instance_ids,
-        instance_key,
+        instance_filter,
         parent_filters,
         scope_resolver,
         context
@@ -342,21 +327,14 @@ defmodule AshGrant.FilterCheck do
 
   defp combine_filter_components(
          scopes,
-         instance_ids,
-         instance_key,
+         instance_filter,
          parent_filters,
          scope_resolver,
          context
        ) do
-    # Collect all OR-able filter components
     rbac_filter =
       if scopes != [] do
         build_combined_filter(scopes, scope_resolver, context)
-      end
-
-    instance_filter =
-      if instance_ids != [] do
-        build_instance_filter(instance_ids, instance_key)
       end
 
     # Combine all filters with OR
@@ -369,16 +347,6 @@ defmodule AshGrant.FilterCheck do
       [single] -> single
       [first | rest] -> Enum.reduce(rest, first, &Ash.Expr.expr(^&2 or ^&1))
     end
-  end
-
-  defp build_instance_filter(instance_ids, :id) do
-    # Default: match against primary key
-    Ash.Expr.expr(id in ^instance_ids)
-  end
-
-  defp build_instance_filter(instance_ids, instance_key) do
-    # Custom instance key: match against specified field
-    Ash.Expr.expr(^ref(instance_key) in ^instance_ids)
   end
 
   @doc false

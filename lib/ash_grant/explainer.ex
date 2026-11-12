@@ -380,7 +380,7 @@ defmodule AshGrant.Explainer do
 
   # The filter `AshGrant.FilterCheck` applies: the RBAC scopes ORed (a filter
   # resolving to `true` absorbs the union whatever the scope is named, #149/#151),
-  # ORed with the resource's own instance ids and the scope_through parents, then
+  # ORed with the resource's own instance grants and the scope_through parents, then
   # narrowed by the deny rules.
   defp resolve_explain_scope_filter(:allow, matching_allows, permissions, match, context) do
     %{resource: resource, action: action, action_type: action_type} = match
@@ -389,13 +389,10 @@ defmodule AshGrant.Explainer do
       for %{instance_id: "*"} = allow <- matching_allows,
           do: resolve_allow_filter(allow, resource, context)
 
-    instance_ids =
-      Evaluator.get_matching_instance_ids(permissions, match.resource_name, action, action_type)
-
     instance_filter =
-      if instance_ids != [] do
-        Ash.Expr.expr(^Ash.Expr.ref(Info.instance_key(resource)) in ^instance_ids)
-      end
+      permissions
+      |> Evaluator.get_matching_instance_grants(match.resource_name, action, action_type)
+      |> AshGrant.InstanceFilter.build(resource, context)
 
     parent_filters =
       AshGrant.FilterCheck.build_parent_instance_filters(

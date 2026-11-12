@@ -60,14 +60,15 @@ defmodule AshGrant.Calculation.CanPerform do
 
   1. Resolves actor's permissions via the configured `PermissionResolver`
   2. Gets RBAC scopes via `AshGrant.Evaluator.get_all_scopes/4`
-  3. Gets instance IDs via `AshGrant.Evaluator.get_matching_instance_ids/4`
+  3. Gets instance grants via `AshGrant.Evaluator.get_matching_instance_grants/4`
   4. Builds a combined boolean expression:
      - "always"/"all"/"global" in scopes -> `true` (by-name fast path)
      - any scope whose expression resolves to `true` -> `true`, absorbing the
        OR union whatever that scope is named (#149)
      - No scopes AND no instances -> `false`
      - RBAC scopes -> scope filters combined with OR
-     - Instance IDs -> `id in ^instance_ids`
+     - Instance grants -> `id in ^ids`, ANDed with the grant's scope filter when
+       it names one (an undeclared scope matches nothing)
      - Both -> RBAC filter OR instance filter
 
   ## See Also
@@ -121,17 +122,19 @@ defmodule AshGrant.Calculation.CanPerform do
         tenant: context.tenant
       }
 
-      instance_key = AshGrant.Info.instance_key(resource)
-
       grants = resolve_permissions(resolver, actor, resolver_context)
 
       resolver
       |> AshGrant.Ceiling.permission_sets(actor, resolver_context, grants)
       |> Enum.map(fn permissions ->
-        permission_expression(permissions, resource, resource_name, action, action_type, %{
-          scope_resolver: scope_resolver,
-          instance_key: instance_key
-        })
+        permission_expression(
+          permissions,
+          resource,
+          resource_name,
+          action,
+          action_type,
+          scope_resolver
+        )
       end)
       |> AshGrant.Ceiling.intersect_filters()
       |> case do
@@ -141,15 +144,23 @@ defmodule AshGrant.Calculation.CanPerform do
     end
   end
 
-  defp permission_expression(permissions, resource, resource_name, action, action_type, env) do
-    %{scope_resolver: scope_resolver, instance_key: instance_key} = env
-
+  defp permission_expression(
+         permissions,
+         resource,
+         resource_name,
+         action,
+         action_type,
+         scope_resolver
+       ) do
     scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action, action_type)
 
     # Left untyped on purpose: whether instance type wildcards (`doc:abc:@read:`)
-    # match is undecided (issue #131).
-    instance_ids =
-      AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
+    # match is undecided (issue #131). The empty context leaves template refs
+    # (^actor, ^tenant) for Ash to fill after expression/2 returns.
+    instance_filter =
+      permissions
+      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action)
+      |> AshGrant.InstanceFilter.build(resource, %{})
 
     parent_filters =
       build_parent_instance_filters(resource, permissions, action, action_type)
@@ -158,7 +169,7 @@ defmodule AshGrant.Calculation.CanPerform do
       AshGrant.Evaluator.deny_summary(permissions, resource_name, action, action_type)
 
     scopes
-    |> build_expression(instance_ids, instance_key, parent_filters, scope_resolver, resource)
+    |> build_expression(instance_filter, parent_filters, scope_resolver, resource)
     |> AshGrant.Evaluator.restrict_filter(deny_summary, resource)
   end
 
@@ -174,16 +185,8 @@ defmodule AshGrant.Calculation.CanPerform do
 
   # Expression building (mirrors FilterCheck's build_filter_with_instances)
 
-  defp build_expression(
-         scopes,
-         instance_ids,
-         instance_key,
-         parent_filters,
-         scope_resolver,
-         resource
-       ) do
+  defp build_expression(scopes, instance_filter, parent_filters, scope_resolver, resource) do
     rbac_filter = build_rbac_expression(scopes, scope_resolver, resource)
-    instance_filter = build_instance_expression(instance_ids, instance_key)
 
     # Combine all filters with OR (same logic as FilterCheck)
     all_filters =
@@ -204,19 +207,6 @@ defmodule AshGrant.Calculation.CanPerform do
     else
       build_rbac_filter(scopes, scope_resolver, resource)
     end
-  end
-
-  defp build_instance_expression([], _instance_key), do: nil
-
-  defp build_instance_expression(instance_ids, instance_key),
-    do: build_instance_filter(instance_ids, instance_key)
-
-  defp build_instance_filter(instance_ids, :id) do
-    expr(id in ^instance_ids)
-  end
-
-  defp build_instance_filter(instance_ids, instance_key) do
-    expr(^ref(instance_key) in ^instance_ids)
   end
 
   # Parent instance filter building (mirrors FilterCheck's build_parent_instance_filters)
