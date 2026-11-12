@@ -140,8 +140,15 @@ defmodule AshGrant.Explainer do
 
     # The verdict is the one `AshGrant.Introspect.can?/4` gives, so explain agrees
     # with the runtime on instance grants, scope_through and deny rules.
-    {decision, reason} = decide(resource, action, permissions)
     matching_allows = Enum.filter(evaluated, &(&1.matched and not &1.is_deny))
+
+    # `Introspect` answers per action and counts an instance grant whatever its
+    # scope, so an allow with no grant that reaches a record is a refusal at runtime.
+    {decision, reason} =
+      case decide(resource, action, permissions) do
+        {:allow, _} when matching_allows == [] -> {:deny, :no_matching_permissions}
+        verdict -> verdict
+      end
 
     scope_filter =
       resolve_explain_scope_filter(decision, matching_allows, permissions, match, context)
@@ -304,7 +311,9 @@ defmodule AshGrant.Explainer do
         {false, mismatch_reason(perm, match)}
 
       Permission.matches_resource?(perm.resource, match.resource_name) ->
-        instance_verdict(perm, is_deny, match.resource_name, "instance", match)
+        perm
+        |> instance_verdict(is_deny, match.resource_name, "instance", match)
+        |> with_instance_scope(perm, is_deny, match.resource)
 
       relationship = parent_relationship(perm, match.parents) ->
         instance_verdict(
@@ -330,6 +339,25 @@ defmodule AshGrant.Explainer do
       {true, "Grants #{label} #{perm.instance_id}"}
     end
   end
+
+  # The resource's own instance grant reaches the record only while its scope
+  # holds, and not at all when the scope is undeclared (#207), as in
+  # `AshGrant.InstanceFilter`.
+  defp with_instance_scope({true, reason}, %Permission{scope: scope}, false, resource)
+       when scope not in [nil, ""] do
+    cond do
+      AshGrant.Scope.universal?(scope) ->
+        {true, reason}
+
+      Info.get_scope(resource, scope_name(scope)) || Info.scope_resolver(resource) ->
+        {true, "#{reason} while scope `#{scope}` holds"}
+
+      true ->
+        {false, "Scope `#{scope}` is not declared: this instance grant authorizes nothing"}
+    end
+  end
+
+  defp with_instance_scope(verdict, _perm, _is_deny, _resource), do: verdict
 
   defp instance_denied?(match, resource_name, instance_id) do
     Enum.any?(match.permissions, fn perm ->

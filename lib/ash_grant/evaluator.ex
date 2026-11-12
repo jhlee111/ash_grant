@@ -106,9 +106,9 @@ defmodule AshGrant.Evaluator do
       Evaluator.has_instance_access?(permissions, "doc_123", "update")
       # => true
 
-      # Get the scope condition for further evaluation
+      # Get the scope condition; the read filter requires it to hold for the record
       Evaluator.get_instance_scope(permissions, "doc_123", "update")
-      # => "draft" (the application can then verify if the document is in draft status)
+      # => "draft"
 
       # Get all scopes for an action
       Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
@@ -125,8 +125,9 @@ defmodule AshGrant.Evaluator do
   | `get_write_scopes/4` | Union of matching grant scopes (for Check) |
   | `get_field_group/3` | Get first matching field group from 5-part permissions |
   | `get_all_field_groups/3` | Get all matching field groups (union for field access) |
-  | `get_instance_scope/3` | Get scope from instance permission (for ABAC conditions) |
+  | `get_instance_scope/3` | Get scope from the first matching instance permission |
   | `get_all_instance_scopes/3` | Get all scopes from instance permissions |
+  | `get_matching_instance_grants/4` | Get `{instance_id, scope}` for each instance grant (for read filters) |
   | `get_matching_instance_ids/3` | Get all instance IDs for a resource/action |
   | `deny_summary/4` | RBAC and instance denies for a resource/action (for every check) |
   | `find_matching/3` | Get all matching permissions (debug/introspection) |
@@ -234,8 +235,9 @@ defmodule AshGrant.Evaluator do
   Returns the scope from the first matching allow permission for the given instance.
   Returns nil if no matching permission is found, if denied, or if the scope is empty.
 
-  This enables ABAC-style conditions on instance permissions, where the scope
-  represents an authorization condition (e.g., "draft", "business_hours", "small_amount").
+  The scope is an authorization condition on the instance (e.g., "draft",
+  "business_hours", "small_amount"). Read filters apply it through
+  `get_matching_instance_grants/4`.
 
   ## Examples
 

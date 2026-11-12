@@ -14,7 +14,8 @@ defmodule AshGrant.InstanceFilter do
   An empty or universal scope matches the record by `instance_key` alone. A named
   scope also requires its filter (`instance_key in ^ids and <scope>`). An
   undeclared scope authorizes nothing and does not raise, so a stored grant that
-  names a removed scope cannot break reads of the resource. `context` is passed to
+  names a removed scope cannot break reads of the resource. The same holds when a
+  legacy `scope_resolver` raises on the scope. `context` is passed to
   `AshGrant.Info.resolve_scope_filter/3`.
   """
   @spec build([{String.t(), String.t() | nil}], Ash.Resource.t(), map()) :: term() | nil
@@ -51,11 +52,22 @@ defmodule AshGrant.InstanceFilter do
   defp scope_condition(nil, _resource, _context), do: true
 
   defp scope_condition(scope, resource, context) do
-    if AshGrant.Scope.universal?(scope) do
-      true
-    else
-      Info.resolve_scope_filter(resource, scope_name(scope), context)
+    name = scope_name(scope)
+
+    cond do
+      AshGrant.Scope.universal?(scope) -> true
+      Info.get_scope(resource, name) -> Info.resolve_scope_filter(resource, name, context)
+      true -> legacy_scope_condition(resource, name, context)
     end
+  end
+
+  # A legacy `scope_resolver` written for RBAC scopes may have no clause for a
+  # stale instance grant's scope, or may need context that `CanPerform` does not
+  # pass. Its raise authorizes nothing rather than failing every read of the resource.
+  defp legacy_scope_condition(resource, name, context) do
+    Info.resolve_scope_filter(resource, name, context)
+  rescue
+    _ -> false
   end
 
   # Scope names come from permission data, so only an existing atom is used (#143).

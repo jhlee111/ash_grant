@@ -15,8 +15,8 @@ defmodule AshGrant.PolicyTest.Checker do
 
   Without a record this is `AshGrant.Introspect.can?/3`. With one, the action
   must be allowed and the record must be admitted by the union the runtime
-  builds: any matching grant's scope, a matching instance ID, or a scope_through
-  parent's instance ID. A scope is evaluated as the runtime check for that
+  builds: any matching grant's scope, a matching instance ID whose own scope holds,
+  or a scope_through parent's instance ID. A scope is evaluated as the runtime check for that
   action evaluates it — the read filter for a read, and for any other action the
   scope's `write:` override when it has one (`AshGrant.Check`).
 

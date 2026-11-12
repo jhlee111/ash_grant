@@ -244,7 +244,7 @@ Ash.update!(published_doc, %{title: "New"}, actor: user)
 
 Instance permissions work with both:
 - **Read actions** (`filter_check/1`) - Adds `WHERE id IN (instance_ids)` for
-  empty-scope grants, and `WHERE id IN (ids) AND <scope filter>` for each named scope
+  grants with an empty or universal (`always`, `all`, `global`) scope, and `WHERE id IN (ids) AND <scope filter>` for each named scope
 - **Write actions** (`check/1`) - Validates access to specific instance
 
 An instance grant whose scope the resource does not declare authorizes nothing.

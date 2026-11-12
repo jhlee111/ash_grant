@@ -6,7 +6,7 @@ defmodule AshGrant.FieldFilterCheck do
   field group, `filter/3` returns a per-row predicate — `false` (the group's
   fields are `%Ash.ForbiddenField{}` on every row), `true` (visible on every
   row), or an Ash expression (visible only on rows matching the contributing
-  grants' scope / instance ids). Ash compiles the predicate into a per-row
+  grants' scopes and scoped instance ids). Ash compiles the predicate into a per-row
   calculation, so a field can be visible on some records and forbidden on others
   in the same result set.
 
@@ -68,8 +68,8 @@ defmodule AshGrant.FieldFilterCheck do
   Builds the per-row visibility predicate for `required_group` from `permissions`.
 
   Returns `false` (forbidden on every row), `true` (visible on every row), or an
-  Ash expression (visible only on rows matching the contributing grants' scope /
-  instance ids). Exposed for testing.
+  Ash expression (visible only on rows matching the contributing grants' scopes
+  and scoped instance ids). Exposed for testing.
   """
   def field_visibility_filter(
         permissions,
