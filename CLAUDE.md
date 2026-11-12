@@ -17,12 +17,17 @@ AshGrant is a permission-based authorization extension for Ash Framework. It pro
 ## Toolchain
 
 `.tool-versions` pins **Elixir 1.20.4 / OTP 28** (asdf). 1.20's type checker reports
-dead and unreachable clauses as compiler warnings, which is why the pin is ahead of
-CI: `mix compile --warnings-as-errors` must pass on 1.20, and per-PR CI (`ci.yml`,
-Elixir 1.18.4 / OTP 27) cannot see a clause that only 1.20 can. The weekly
-`Compatibility` workflow runs 1.20 in its Latest Deps matrix, so a dead clause is
-caught eventually — but weekly, against unlocked deps, and after merge. Develop on
-the pin; treat 1.18.4 as the supported floor, not as the reference build.
+dead and unreachable clauses as compiler warnings, so `mix compile --warnings-as-errors`
+must pass on 1.20. Per-PR CI (`ci.yml`) runs a matrix of the 1.18.4 / OTP 27 floor and
+the 1.20.4 / OTP 28 pin, both on the committed lock; format and credo run on the pin
+leg only. Keep the pin leg in step with `.tool-versions`. Develop on the pin; treat
+1.18.4 as the supported floor, not as the reference build.
+
+`ci.yml` also runs an **exact Ash floor** job (`ASH_VERSION="=3.33.4"`, see
+`ash_version/1` in `mix.exs`; a bare version means `~>`). Branch protection requires a
+single check named `Test`, which is an aggregate job in `ci.yml`: a job is required
+when it is in that job's `needs`. The floor job is not in `needs` yet (the Ash floor
+still has the ETS TableManager race, fixed in Ash 3.37.1).
 
 ## Common Commands
 
@@ -86,7 +91,7 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ### Policy Testing
 
-- **`AshGrant.PolicyTest.Checker`** (`lib/ash_grant/policy_test/checker.ex`) - The one permission check behind both policy test runners (DSL `assert_can`/`assert_cannot` in `Assertions`, and `YamlParser`). With a record it mirrors the runtime's read union: any grant's scope, an instance ID, a scope_through parent ID. The union is three-valued: a scope `Assertions.evaluate_filter_against_record/5` cannot evaluate in memory (`fragment()`, `exists()`, an eval error, a non-boolean) is `{:indeterminate, reason}`, and an undecided assertion fails in BOTH directions — never guess `true` or `false` there. Keep record evaluation here only — each runner used to carry a copy, and the copies drifted (#143)
+- **`AshGrant.PolicyTest.Checker`** (`lib/ash_grant/policy_test/checker.ex`) - The one permission check behind both policy test runners (DSL `assert_can`/`assert_cannot` in `Assertions`, and `YamlParser`). With a record it mirrors the runtime's read union: any grant's scope, an instance ID, a scope_through parent ID — minus any record an instance deny names (ids cast to the instance key's type, as `Evaluator.cast_instance_ids/2` does at runtime). The union is three-valued: a scope `Assertions.evaluate_filter_against_record/5` cannot evaluate in memory (`fragment()`, `exists()`, an eval error, a non-boolean) is `{:indeterminate, reason}`, and an undecided assertion fails in BOTH directions — never guess `true` or `false` there. Keep record evaluation here only — each runner used to carry a copy, and the copies drifted (#143)
 
 ### Argument-Based Scope Support
 
@@ -95,7 +100,8 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ### Behaviours
 
-- **`AshGrant.PermissionResolver`** - Behaviour for fetching actor permissions
+- **`AshGrant.PermissionResolver`** - Behaviour for fetching actor permissions. Optional `ceiling/2` returns a second list (e.g. an API key's permissions) that caps the grants
+- **`AshGrant.Ceiling`** (`lib/ash_grant/ceiling.ex`) - Reads `ceiling/2` from a resolver (`nil` = none; function resolvers have none) and AND-combines filters. Every call site that resolves permissions (`Check`, `FilterCheck`, `FieldFilterCheck`, `FieldCheck`, `CanPerform`, `ApplyMasking`, `ResolveArgument`, `Explainer`, `Introspect`, `PolicyTest.Checker`) evaluates the grants and the ceiling as **separate** permission lists and intersects the results, so a deny in either wins. Never merge the two lists into one: a concatenation is a union. `ceiling_property_test.exs` pins reads, `Introspect.can?/4` and the write check to the intersection
 - **`AshGrant.ScopeResolver`** - Legacy behaviour for custom scope resolution
 
 ### Domain-Level Extension
@@ -106,12 +112,21 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ### Transformers
 
-- **`AshGrant.Transformers.MergeDomainConfig`** - Merges domain-level resolver/scopes into resources (runs first)
-- **`AshGrant.Transformers.ValidateResolverPresent`** - Validates resolver exists after domain merge
+Domain resolver/scope inheritance is resolved at runtime by `AshGrant.Info` (resolver falls back to the domain, then `config :ash_grant, resolver:`; scopes merge resource > domain > registry). There is no merge transformer since v0.20.0.
+
+- **`AshGrant.Transformers.ResolveFieldGroupFields`** / **`ValidateFieldGroups`** - Expand `:all` / `except:` field groups and validate them
 - **`AshGrant.Transformers.AddDefaultPolicies`** - Auto-generates policies when `default_policies: true`
+- **`AshGrant.Transformers.AddFieldPolicies`** - Generates `field_policies` with `FieldFilterCheck` when `default_field_policies: true`
+- **`AshGrant.Transformers.AddMaskingPreparation`** - Adds the `ApplyMasking` preparation when a field group masks fields
 - **`AshGrant.Transformers.AddCanPerformCalculations`** - Generates CanPerform calculations from `can_perform` entities and `can_perform_actions` option
 - **`AshGrant.Transformers.AddArgumentResolvers`** - For each `resolve_argument` declaration: validates path, checks at least one scope references the arg, injects `argument :name` + `change AshGrant.Changes.ResolveArgument` on every targeted write action
 - **`AshGrant.Transformers.ValidateScopeThroughs`** - Validates scope_through entities reference valid belongs_to relationships
+
+### Verifiers (post-compile; an error surfaces as a compile warning)
+
+- **`AshGrant.Verifiers.ValidateResolverPresent`** - Warns when no resolver is configured at resource, domain or app level (the request then raises)
+- **`AshGrant.Verifiers.ValidateScopes`** - Warns on deprecated `owner_field`/`scope_resolver`; reports a `DslError` if `instance_key` isn't an attribute
+- **`AshGrant.Verifiers.ValidateArgumentResolvers`** - Checks, domain-aware, that some scope references each `resolve_argument`
 
 ## Permission Format
 

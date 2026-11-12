@@ -68,7 +68,7 @@ defmodule AshGrant.PolicyTest.YamlParser do
   @type parsed_test :: %{
           name: String.t(),
           type: :assert_can | :assert_cannot | :assert_fields_visible | :assert_fields_hidden,
-          actor: atom(),
+          actor: atom() | String.t(),
           action: atom() | nil,
           action_type: atom() | nil,
           record: map() | nil,
@@ -78,7 +78,7 @@ defmodule AshGrant.PolicyTest.YamlParser do
 
   @type parsed :: %{
           resource: module(),
-          actors: %{atom() => map()},
+          actors: %{(atom() | String.t()) => map()},
           tests: [parsed_test()]
         }
 
@@ -131,18 +131,30 @@ defmodule AshGrant.PolicyTest.YamlParser do
     end
   end
 
+  # The resource first: once it is loaded, the names it declares (actions,
+  # attributes, scopes, the enum values its scopes compare against) exist as
+  # atoms, so the rest of the file converts to existing atoms only (#143).
   defp transform(yaml) when is_map(yaml) do
+    resource = parse_resource(yaml["resource"])
+
     %{
-      resource: parse_resource(yaml["resource"]),
+      resource: resource,
       actors: parse_actors(yaml["actors"]),
-      tests: parse_tests(yaml["tests"])
+      tests: parse_tests(yaml["tests"], resource)
     }
   end
 
+  # The one atom a policy test file may create: a module that is not loaded yet
+  # has no atom, and loading it needs one. A policy test file is checked-in
+  # source, and this is one atom per file.
   defp parse_resource(resource_str) when is_binary(resource_str) do
-    String.to_existing_atom("Elixir." <> resource_str)
-  rescue
-    ArgumentError -> String.to_atom("Elixir." <> resource_str)
+    module = Module.concat([resource_str])
+
+    if Code.ensure_loaded?(module) and Ash.Resource.Info.resource?(module) do
+      module
+    else
+      raise ArgumentError, "resource: #{resource_str} is not a loaded Ash resource"
+    end
   end
 
   defp parse_actors(nil), do: %{}
@@ -155,40 +167,45 @@ defmodule AshGrant.PolicyTest.YamlParser do
     |> Enum.into(%{})
   end
 
-  defp parse_tests(nil), do: []
+  defp parse_tests(nil, _resource), do: []
 
-  defp parse_tests(tests) when is_list(tests) do
-    Enum.map(tests, &parse_test/1)
+  defp parse_tests(tests, resource) when is_list(tests) do
+    Enum.map(tests, &parse_test(&1, resource))
   end
 
-  defp parse_test(test) do
+  defp parse_test(test, resource) do
     name = test["name"]
 
     cond do
       Map.has_key?(test, "assert_can") ->
-        parse_assertion(:assert_can, name, test["assert_can"])
+        parse_assertion(:assert_can, name, test["assert_can"], resource)
 
       Map.has_key?(test, "assert_cannot") ->
-        parse_assertion(:assert_cannot, name, test["assert_cannot"])
+        parse_assertion(:assert_cannot, name, test["assert_cannot"], resource)
 
       Map.has_key?(test, "assert_fields_visible") ->
-        parse_field_assertion(:assert_fields_visible, name, test["assert_fields_visible"])
+        parse_field_assertion(
+          :assert_fields_visible,
+          name,
+          test["assert_fields_visible"],
+          resource
+        )
 
       Map.has_key?(test, "assert_fields_hidden") ->
-        parse_field_assertion(:assert_fields_hidden, name, test["assert_fields_hidden"])
+        parse_field_assertion(:assert_fields_hidden, name, test["assert_fields_hidden"], resource)
 
       true ->
         raise "Test must have assert_can, assert_cannot, assert_fields_visible, or assert_fields_hidden: #{inspect(test)}"
     end
   end
 
-  defp parse_assertion(type, name, assertion) do
+  defp parse_assertion(type, name, assertion, resource) do
     %{
       name: name,
       type: type,
       actor: atomize_key(assertion["actor"]),
-      action: parse_action(assertion["action"]),
-      action_type: parse_action(assertion["action_type"]),
+      action: parse_action(assertion["action"], resource),
+      action_type: parse_action_type(assertion["action_type"]),
       record: parse_record(assertion["record"]),
       arguments: parse_arguments(assertion["arguments"])
     }
@@ -197,7 +214,7 @@ defmodule AshGrant.PolicyTest.YamlParser do
   defp parse_arguments(nil), do: %{}
   defp parse_arguments(args) when is_map(args), do: atomize_map(args)
 
-  defp parse_field_assertion(type, name, assertion) do
+  defp parse_field_assertion(type, name, assertion, resource) do
     fields =
       assertion["fields"]
       |> List.wrap()
@@ -207,7 +224,7 @@ defmodule AshGrant.PolicyTest.YamlParser do
       name: name,
       type: type,
       actor: atomize_key(assertion["actor"]),
-      action: parse_action(assertion["action"]),
+      action: parse_action(assertion["action"], resource),
       action_type: nil,
       record: nil,
       arguments: %{},
@@ -215,9 +232,32 @@ defmodule AshGrant.PolicyTest.YamlParser do
     }
   end
 
-  defp parse_action(nil), do: nil
-  defp parse_action(action) when is_binary(action), do: String.to_atom(action)
-  defp parse_action(action) when is_atom(action), do: action
+  defp parse_action(nil, _resource), do: nil
+
+  defp parse_action(action, resource) when is_binary(action) do
+    with atom when is_atom(atom) <- existing_atom(action),
+         %{} <- Ash.Resource.Info.action(resource, atom) do
+      atom
+    else
+      _ -> raise ArgumentError, "unknown action #{inspect(action)} on #{inspect(resource)}"
+    end
+  end
+
+  defp parse_action(action, _resource) when is_atom(action), do: action
+
+  @action_types ~w(read create update destroy action)
+
+  defp parse_action_type(nil), do: nil
+  defp parse_action_type(type) when type in @action_types, do: String.to_existing_atom(type)
+
+  defp parse_action_type(type) when is_binary(type),
+    do:
+      raise(
+        ArgumentError,
+        "unknown action_type #{inspect(type)} (expected one of #{Enum.join(@action_types, ", ")})"
+      )
+
+  defp parse_action_type(type) when is_atom(type), do: type
 
   defp parse_record(nil), do: nil
 
@@ -225,7 +265,12 @@ defmodule AshGrant.PolicyTest.YamlParser do
     atomize_map(record)
   end
 
-  defp atomize_key(key) when is_binary(key), do: String.to_atom(key)
+  # A key or value converts only to an atom that already exists. Anything a
+  # scope can compare against is one (an attribute, an `^actor(...)` field, an
+  # enum value), so a string that is not an atom names nothing a scope reads and
+  # stays a string. Both sides of a lookup convert the same way, so an actor
+  # name that stays a string still finds its actor.
+  defp atomize_key(key) when is_binary(key), do: existing_atom(key) || key
   defp atomize_key(key) when is_atom(key), do: key
 
   defp atomize_map(map) when is_map(map) do
@@ -239,7 +284,7 @@ defmodule AshGrant.PolicyTest.YamlParser do
   defp atomize_value(value) when is_binary(value) do
     # Try to convert to atom if it looks like an atom (lowercase, no spaces)
     if Regex.match?(~r/^[a-z_][a-z0-9_]*$/, value) do
-      String.to_atom(value)
+      existing_atom(value) || value
     else
       value
     end
@@ -403,5 +448,11 @@ defmodule AshGrant.PolicyTest.YamlParser do
                 "Visible fields: #{inspect(field_set)}"
         end
     end
+  end
+
+  defp existing_atom(string) do
+    String.to_existing_atom(string)
+  rescue
+    ArgumentError -> nil
   end
 end

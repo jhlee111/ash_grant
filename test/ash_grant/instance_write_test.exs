@@ -147,14 +147,15 @@ defmodule AshGrant.InstanceWriteTest do
                |> Ash.create()
     end
 
-    test "a type wildcard on an instance permission stays dead" do
+    test "a type wildcard on an instance permission matches by action type" do
       post = generate(post())
+      actor = actor(["post:#{post.id}:@update:"])
 
-      assert {:error, %Ash.Error.Forbidden{}} =
-               update_as(post, actor(["post:#{post.id}:@update:"]))
+      assert {:ok, %{status: :published}} =
+               post |> Ash.Changeset.for_update(:publish, %{}, actor: actor) |> Ash.update()
 
-      assert [%{code: :dead_instance_type_wildcard}] =
-               AshGrant.Permission.diagnostics("post:#{post.id}:@update:")
+      assert {:ok, post} = update_as(post, actor)
+      assert {:error, %Ash.Error.Forbidden{}} = Ash.destroy(post, actor: actor)
     end
   end
 
@@ -171,6 +172,13 @@ defmodule AshGrant.InstanceWriteTest do
 
       assert {:error, %Ash.Error.Forbidden{}} =
                update_as(post, actor(["post:#{post.id}:*:", "!post:#{post.id}:update:"]))
+    end
+
+    test "an instance deny with a type wildcard cancels the instance allow" do
+      post = generate(post())
+
+      assert {:error, %Ash.Error.Forbidden{}} =
+               update_as(post, actor(["post:#{post.id}:update:", "!post:#{post.id}:@update:"]))
     end
   end
 
@@ -263,6 +271,7 @@ defmodule AshGrant.InstanceWriteTest do
 
       assert {:ok, _} = update_as(comment, actor, %{body: "changed"})
       assert {:error, %Ash.Error.Forbidden{}} = update_as(post, actor)
+      refute can_update?(Post, post, actor)
       assert {:error, %Ash.Error.Forbidden{}} = Ash.destroy(post, actor: actor)
     end
 

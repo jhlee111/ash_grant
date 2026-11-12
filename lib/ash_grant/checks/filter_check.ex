@@ -188,6 +188,20 @@ defmodule AshGrant.FilterCheck do
 
   defp normalize_ref(other), do: other
 
+  # Ash's policy breakdown builds an authorizer with the subject but no action.
+  @impl true
+  def expand_description(actor, %{action: nil} = authorizer, opts) do
+    case authorizer.subject do
+      %{action: %{name: _} = action} ->
+        super(actor, %{authorizer | action: action}, opts)
+
+      _no_action ->
+        {:ok, describe(opts)}
+    end
+  end
+
+  def expand_description(actor, authorizer, opts), do: super(actor, authorizer, opts)
+
   @impl true
   def filter(actor, authorizer, opts) do
     if actor == nil do
@@ -230,9 +244,34 @@ defmodule AshGrant.FilterCheck do
       tenant: get_tenant(authorizer)
     }
 
-    # Resolve permissions
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
 
+    # A ceiling is evaluated as its own permission list and the filters are ANDed.
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.map(
+      &filter_for(
+        &1,
+        resource_module,
+        resource_name,
+        action_name,
+        action_type,
+        scope_resolver,
+        context
+      )
+    )
+    |> AshGrant.Ceiling.intersect_filters()
+  end
+
+  defp filter_for(
+         permissions,
+         resource_module,
+         resource_name,
+         action_name,
+         action_type,
+         scope_resolver,
+         context
+       ) do
     AshGrant.PermissionValidation.validate(
       permissions,
       AshGrant.Info.field_group_permissions(resource_module),
@@ -259,15 +298,18 @@ defmodule AshGrant.FilterCheck do
     parent_filters =
       build_parent_instance_filters(resource_module, permissions, action_name, action_type)
 
-    # Build combined filter from RBAC scopes + instance IDs + parent filters
-    build_filter_with_instances(
-      scopes,
+    deny_summary =
+      AshGrant.Evaluator.deny_summary(permissions, resource_name, action_name, action_type)
+
+    scopes
+    |> build_filter_with_instances(
       instance_ids,
       instance_key,
       parent_filters,
       scope_resolver,
       context
     )
+    |> AshGrant.Evaluator.restrict_filter(deny_summary, resource_module)
   end
 
   defp action_type_from(%{type: type}), do: type
@@ -339,7 +381,11 @@ defmodule AshGrant.FilterCheck do
     Ash.Expr.expr(^ref(instance_key) in ^instance_ids)
   end
 
-  defp build_parent_instance_filters(resource_module, permissions, action_name, action_type) do
+  @doc false
+  # The `scope_through` part of the read filter: one expression per parent whose
+  # instance grants reach this resource. Public so `AshGrant.Explainer` reports
+  # the filter this check applies instead of rebuilding it.
+  def build_parent_instance_filters(resource_module, permissions, action_name, action_type) do
     AshGrant.Info.scope_throughs(resource_module)
     |> Enum.filter(&AshGrant.Info.scope_through_allows_action?(&1, action_name, action_type))
     |> Enum.flat_map(fn scope_through ->

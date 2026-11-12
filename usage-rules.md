@@ -598,6 +598,13 @@ Evaluation rules:
 2. If no deny matches and at least one allow matches → **allowed**
 3. If **no** rules match → **denied** (deny by default)
 
+Denies apply across both tiers. A type deny (`!blog:*:read:always`) also
+removes instance grants (`blog:<id>:read:`) and `scope_through` parent grants
+for that action. An instance deny (`!blog:<id>:read:`) removes that record from
+every allow, type grants included. A deny ignores its scope, so
+`!blog:*:update:own` denies every update; `AshGrant.Permission.diagnostics/1`
+reports such a deny as `:scoped_deny`.
+
 ### DO: Rely on grants OR-composing — never on one grant shadowing another
 
 When several allow permissions match the same resource and action (multiple

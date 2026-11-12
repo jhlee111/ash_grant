@@ -12,9 +12,9 @@ defmodule AshGrant.PolicyTest.YamlExporter do
       YAML tests, numbered `name (1/3)`, `name (2/3)`, … The suite passes only
       when all of them do, as the DSL test does.
     * YAML has no atom type. Atoms are written as strings, and the YAML parser
-      reads identifier-like strings (`draft`, `read_all`) back as atoms — so such a
-      string value (`"draft"`) cannot be exported, since it would come back as an
-      atom.
+      reads an identifier-like string (`draft`, `read_all`) back as an atom when
+      that atom exists — which an exported atom does. So such a string value
+      (`"draft"`) cannot be exported: it may come back as an atom.
 
   Anything else — a body that computes its arguments (a variable, a helper call,
   a loop), a test with no assertion, a value YAML cannot carry back unchanged (a
@@ -31,7 +31,8 @@ defmodule AshGrant.PolicyTest.YamlExporter do
 
   @assertions [:assert_can, :assert_cannot, :assert_fields_visible, :assert_fields_hidden]
 
-  # Mirrors YamlParser's atomize_value/1: only these strings are read back as atoms.
+  # Mirrors YamlParser's atomize_value/1: only these strings can be read back as
+  # atoms (when the atom exists, which the parser never creates).
   @atom_like ~r/^[a-z_][a-z0-9_]*$/
 
   @doc """

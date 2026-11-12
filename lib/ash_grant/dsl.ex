@@ -9,7 +9,7 @@ defmodule AshGrant.Dsl do
 
   | Option | Type | Required | Description |
   |--------|------|----------|-------------|
-  | `resolver` | module or function | **Yes** | Resolves permissions for actors |
+  | `resolver` | module or function | **Yes** (unless supplied by the resource's domain via `AshGrant.Domain` or app-wide via `config :ash_grant, resolver:` — precedence: resource > domain > app config) | Resolves permissions for actors |
   | `resource_name` | string | No | Resource name for permission matching |
   | `default_policies` | boolean or atom | No | Auto-generate policies (`true`, `:all`, `:read`, `:write`) |
   | `default_field_policies` | boolean | No | Auto-generate `field_policies` from `field_group` definitions |
@@ -355,8 +355,9 @@ defmodule AshGrant.Dsl do
     own relationships before scope evaluation, enabling argument-based scopes
     like `expr(^arg(:center_id) in ^actor(:own_org_unit_ids))`.
 
-    The transformer generates an `argument` declaration and a lazy `change` on
-    each write action (create, update, destroy) on the resource. At runtime the
+    The transformer generates a `public?: false` `argument` declaration and a
+    lazy `change` on each write action (create, update, destroy) on the
+    resource. The change discards any value the caller supplied. At runtime the
     change only performs the DB load if one of the actor's in-play permissions
     uses a scope that actually references `^arg(<name>)` — so scopes that do
     not need the value pay nothing.
@@ -551,11 +552,13 @@ defmodule AshGrant.Dsl do
         doc: """
         Automatically generate Ash `field_policies` from `field_group` definitions.
 
-        When `true`, AshGrant generates field policies that use `AshGrant.FieldCheck`
-        to authorize field access based on the 5th part of permission strings.
+        When `true`, AshGrant generates field policies that use
+        `AshGrant.FieldFilterCheck` to authorize field access per record, based on
+        the 5th part of permission strings.
 
         When `false` (default), you can manually write `field_policies` using
-        `AshGrant.field_check/1` (Mode A).
+        `AshGrant.FieldFilterCheck.field_filter_check/1` (per record) or
+        `AshGrant.field_check/1` (action-wide, Mode A).
         """
       ],
       can_perform_actions: [

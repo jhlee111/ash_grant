@@ -19,6 +19,10 @@ defmodule AshGrant.Introspect do
   | `can?/4` | Debugging | `:allow` or `:deny` with details |
   | `allowed_actions/3` | API response | List of allowed actions |
   | `permissions_for/3` | Raw access | Permission strings from resolver |
+  | `ceiling_for/3` | Raw access | Ceiling permission strings from resolver, or `nil` |
+
+  Every function that reports a decision intersects the actor's grants with the
+  resolver's ceiling (`c:AshGrant.PermissionResolver.ceiling/2`), as the runtime checks do.
 
   ## Examples
 
@@ -361,7 +365,7 @@ defmodule AshGrant.Introspect do
     allowed_actions =
       permissions
       |> Enum.filter(& &1.allowed)
-      |> Enum.map(&String.to_atom(&1.action))
+      |> Enum.map(&String.to_existing_atom(&1.action))
 
     %{
       resource: resource,
@@ -401,6 +405,7 @@ defmodule AshGrant.Introspect do
     context = Keyword.get(opts, :context, %{})
     resource_name = Info.resource_name(resource)
     permissions = permissions_for(resource, actor, context: context)
+    ceiling = ceiling_for(resource, actor, context: context)
     actions = get_resource_actions(resource)
 
     Enum.map(actions, fn action ->
@@ -421,8 +426,14 @@ defmodule AshGrant.Introspect do
       field_groups =
         Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
 
-      # Determine status
-      allowed = (scopes != [] or instance_ids != []) and not has_deny
+      grants_allow =
+        (scopes != [] or instance_ids != [] or
+           has_parent_instance_access?(resource, permissions, action_name, action_type)) and
+          not has_deny
+
+      {allowed, field_groups} =
+        apply_ceiling(resource, action.name, ceiling, grants_allow, field_groups)
+
       scope = if scopes != [], do: hd(scopes), else: nil
 
       %{
@@ -500,11 +511,17 @@ defmodule AshGrant.Introspect do
   @doc """
   Simple permission check returning `:allow` or `:deny` with details.
 
-  Useful for debugging authorization issues.
+  Useful for debugging authorization issues. An `:allow` result carries
+  `:denied_instance_ids` when instance denies (`!post:<id>:read:`) exclude
+  specific records from the grant.
 
   ## Options
 
   - `:context` - Additional context to pass to the resolver
+
+  When the grants allow the action and the resolver's ceiling does not, the
+  result is `{:deny, %{reason: :denied_by_ceiling, ceiling: details}}`, where
+  `details` is the ceiling's own deny.
 
   ## Examples
 
@@ -528,7 +545,100 @@ defmodule AshGrant.Introspect do
 
   def can?(resource, action, actor, opts) do
     context = Keyword.get(opts, :context, %{})
-    decide(resource, action, permissions_for(resource, actor, context: context))
+
+    grants_decision = decide(resource, action, permissions_for(resource, actor, context: context))
+
+    within_ceiling(
+      grants_decision,
+      ceiling_for(resource, actor, context: context),
+      &decide(resource, action, &1),
+      resource
+    )
+  end
+
+  @doc false
+  # Intersects a decision on the grants with the same decision on the ceiling,
+  # three-valued: a deny on either side is a deny, and an undecided side with an
+  # allow on the other stays undecided. `decide_ceiling` runs only when the
+  # grants do not deny and a ceiling exists.
+  @spec within_ceiling(result, list() | nil, (list() -> result), module()) :: result
+        when result: {:allow, map()} | {:deny, map()} | {:indeterminate, map()}
+  def within_ceiling(
+        {decision, grants_details} = grants_decision,
+        ceiling,
+        decide_ceiling,
+        resource
+      )
+      when decision in [:allow, :indeterminate] and is_list(ceiling) do
+    case {decision, decide_ceiling.(ceiling)} do
+      {_, {:deny, details}} ->
+        {:deny, %{reason: :denied_by_ceiling, ceiling: details}}
+
+      {:allow, {:allow, ceiling_details}} ->
+        {:allow,
+         Map.update(grants_details, :field_groups, [], fn grants_groups ->
+           intersect_field_groups(
+             resource,
+             grants_groups,
+             Map.get(ceiling_details, :field_groups, [])
+           )
+         end)}
+
+      {:allow, indeterminate} ->
+        indeterminate
+
+      {:indeterminate, _} ->
+        grants_decision
+    end
+  end
+
+  def within_ceiling(grants_decision, _ceiling, _decide_ceiling, _resource), do: grants_decision
+
+  @doc false
+  # The field groups two permission lists both show, where `[]` means every
+  # field. A group is kept when all of its fields are visible under both lists.
+  # When no group fits, the narrower list's groups are reported: `[]` would
+  # claim every field is visible.
+  @spec intersect_field_groups(module(), [String.t()], [String.t()]) :: [String.t()]
+  def intersect_field_groups(_resource, [], ceiling_groups), do: ceiling_groups
+  def intersect_field_groups(_resource, grants_groups, []), do: grants_groups
+
+  def intersect_field_groups(resource, grants_groups, ceiling_groups) do
+    grants_fields = field_group_fields(resource, grants_groups)
+    ceiling_fields = field_group_fields(resource, ceiling_groups)
+    both = MapSet.intersection(grants_fields, ceiling_fields)
+
+    fitting =
+      for group <- Enum.uniq(grants_groups ++ ceiling_groups),
+          MapSet.subset?(field_group_fields(resource, [group]), both),
+          do: group
+
+    cond do
+      fitting != [] -> fitting
+      MapSet.size(ceiling_fields) <= MapSet.size(grants_fields) -> ceiling_groups
+      true -> grants_groups
+    end
+  end
+
+  @doc false
+  # Every field the named groups show, inherited fields included.
+  @spec field_group_fields(module(), [String.t() | atom()]) :: MapSet.t(atom())
+  def field_group_fields(resource, groups) do
+    for group <- groups,
+        resolved = resolve_field_group(resource, group),
+        resolved != nil,
+        field <- resolved.fields,
+        into: MapSet.new(),
+        do: field
+  end
+
+  defp resolve_field_group(resource, group) when is_atom(group),
+    do: Info.resolve_field_group(resource, group)
+
+  defp resolve_field_group(resource, group) when is_binary(group) do
+    Info.resolve_field_group(resource, String.to_existing_atom(group))
+  rescue
+    ArgumentError -> nil
   end
 
   @doc false
@@ -540,12 +650,23 @@ defmodule AshGrant.Introspect do
     action_name = to_string(action)
     action_type = resolve_action_type(resource, action)
 
-    if has_deny_permission?(permissions, resource_name, action_name, action_type) do
+    deny_summary = Evaluator.deny_summary(permissions, resource_name, action_name, action_type)
+
+    if deny_summary.denied_all? do
       {:deny, %{reason: :denied_by_rule}}
     else
-      evaluate_allow(resource, permissions, resource_name, action_name, action_type)
+      resource
+      |> evaluate_allow(permissions, resource_name, action_name, action_type)
+      |> put_denied_instance_ids(deny_summary.denied_instance_ids)
     end
   end
+
+  defp put_denied_instance_ids(result, []), do: result
+
+  defp put_denied_instance_ids({:allow, details}, ids),
+    do: {:allow, Map.put(details, :denied_instance_ids, ids)}
+
+  defp put_denied_instance_ids(result, _ids), do: result
 
   @doc false
   @spec resolve_action_type(module(), atom()) :: atom() | nil
@@ -666,7 +787,7 @@ defmodule AshGrant.Introspect do
   defp format_allowed_actions(allowed, true) do
     Enum.map(allowed, fn p ->
       %{
-        action: String.to_atom(p.action),
+        action: String.to_existing_atom(p.action),
         scope: p.scope,
         instance_ids: p.instance_ids,
         field_groups: p.field_groups
@@ -675,7 +796,7 @@ defmodule AshGrant.Introspect do
   end
 
   defp format_allowed_actions(allowed, false) do
-    Enum.map(allowed, &String.to_atom(&1.action))
+    Enum.map(allowed, &String.to_existing_atom(&1.action))
   end
 
   @doc """
@@ -715,7 +836,41 @@ defmodule AshGrant.Introspect do
     end
   end
 
+  @doc """
+  Returns the ceiling permissions the resolver sets for an actor, or `nil` when it sets none.
+
+  See `c:AshGrant.PermissionResolver.ceiling/2`.
+
+  ## Options
+
+  - `:context` - Additional context to pass to the resolver
+  """
+  @spec ceiling_for(module(), term(), keyword()) :: [String.t()] | nil
+  def ceiling_for(resource, actor, opts \\ []) do
+    if actor != nil do
+      context = Keyword.get(opts, :context, %{})
+
+      case AshGrant.Ceiling.resolve(Info.resolver(resource), actor, context) do
+        nil -> nil
+        ceiling -> normalize_to_strings(ceiling)
+      end
+    end
+  end
+
   # Private functions
+
+  defp apply_ceiling(_resource, _action, nil, grants_allow, field_groups),
+    do: {grants_allow, field_groups}
+
+  defp apply_ceiling(resource, action, ceiling, grants_allow, field_groups) do
+    case decide(resource, action, ceiling) do
+      {:allow, %{field_groups: ceiling_groups}} ->
+        {grants_allow, intersect_field_groups(resource, field_groups, ceiling_groups)}
+
+      _deny ->
+        {false, field_groups}
+    end
+  end
 
   defp uses_ash_grant?(resource) do
     AshGrant in Spark.extensions(resource)

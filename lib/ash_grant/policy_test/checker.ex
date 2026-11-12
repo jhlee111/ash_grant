@@ -21,7 +21,8 @@ defmodule AshGrant.PolicyTest.Checker do
   scope's `write:` override when it has one (`AshGrant.Check`).
 
   The resolver gets the context `AshGrant.Check` gives it (`actor`, `resource`,
-  `action`), with no tenant: a policy test has none.
+  `action`), with no tenant: a policy test has none. A ceiling from the resolver
+  is checked the same way, and the record must be admitted by both lists.
 
   The union is three-valued. A scope that cannot be evaluated in memory does
   not stop another component from admitting the record, but when nothing
@@ -52,17 +53,80 @@ defmodule AshGrant.PolicyTest.Checker do
   def check(_resource, nil, _action, _record, _arguments), do: {:deny, %{reason: :no_actor}}
 
   # The grants are resolved once per check: the same ones decide the action and
-  # the instance IDs, as they do in one runtime authorization.
+  # the instance IDs, as they do in one runtime authorization. A ceiling is
+  # checked the same way as its own permission list, and both must admit.
   def check(resource, actor, action, record, arguments) do
-    permissions =
-      Introspect.permissions_for(resource, actor, context: context(resource, actor, action))
+    context = context(resource, actor, action)
+    grants = Introspect.permissions_for(resource, actor, context: context)
 
+    resource
+    |> check_permissions(actor, action, record, arguments, grants)
+    |> Introspect.within_ceiling(
+      Introspect.ceiling_for(resource, actor, context: context),
+      &check_permissions(resource, actor, action, record, arguments, &1),
+      resource
+    )
+  end
+
+  defp check_permissions(resource, actor, action, record, arguments, permissions) do
     case {Introspect.decide(resource, action, permissions), record} do
       {{:allow, details}, record} when is_map(record) ->
-        admit(resource, actor, action, permissions, record, details, arguments)
+        case instance_denied(resource, action, record, details) do
+          :not_denied -> admit(resource, actor, action, permissions, record, details, arguments)
+          denied -> denied
+        end
 
       {result, _record} ->
         result
+    end
+  end
+
+  # An instance deny (`!post:<id>:read:`) removes its record from every grant
+  # that would admit it, as `AshGrant.FilterCheck` and `AshGrant.Check` apply it
+  # (#188): the ids are cast to the instance key's type, so `"ABC…"` matches the
+  # UUID `"abc…"` and an id that cannot cast names no record. A create or a
+  # generic action has no existing record a deny could name.
+  defp instance_denied(resource, action, record, details) do
+    ids = Map.get(details, :denied_instance_ids, [])
+    action_type = Introspect.resolve_action_type(resource, action)
+    instance_key = Info.instance_key(resource)
+
+    cond do
+      ids == [] or action_type in [:create, :action] ->
+        :not_denied
+
+      is_nil(Map.get(record, instance_key)) ->
+        {:indeterminate,
+         %{
+           undecided: [
+             "an instance deny is in play and the record has no `#{instance_key}` to check it against"
+           ],
+           record: record
+         }}
+
+      record_denied?(resource, instance_key, Map.get(record, instance_key), ids) ->
+        {:deny, %{reason: :denied_by_instance_rule, record: record}}
+
+      true ->
+        :not_denied
+    end
+  end
+
+  defp record_denied?(resource, instance_key, value, ids) do
+    denied = Evaluator.cast_instance_ids(ids, resource)
+
+    case Ash.Resource.Info.attribute(resource, instance_key) do
+      nil ->
+        to_string(value) in Enum.map(denied, &to_string/1)
+
+      %{type: type, constraints: constraints} ->
+        # A YAML record holds an id as an atom; cast it from its string form.
+        value = if is_atom(value), do: to_string(value), else: value
+
+        case Ash.Type.cast_input(type, value, constraints) do
+          {:ok, cast} when not is_nil(cast) -> Enum.any?(denied, &Ash.Type.equal?(type, &1, cast))
+          _ -> false
+        end
     end
   end
 

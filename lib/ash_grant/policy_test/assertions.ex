@@ -294,15 +294,39 @@ defmodule AshGrant.PolicyTest.Assertions do
   end
 
   @doc false
+  # A ceiling is resolved as its own permission list; a field is visible only
+  # when both lists show it.
   def resolve_visible_fields(resource, actor, action) do
-    permissions = AshGrant.Introspect.permissions_for(resource, actor)
+    grants = AshGrant.Introspect.permissions_for(resource, actor)
+
+    case AshGrant.Introspect.ceiling_for(resource, actor) do
+      nil ->
+        visible_fields(resource, action, grants)
+
+      ceiling ->
+        intersect_visible(
+          visible_fields(resource, action, grants),
+          visible_fields(resource, action, ceiling)
+        )
+    end
+  end
+
+  defp visible_fields(resource, action, permissions) do
     resource_name = AshGrant.Info.resource_name(resource)
     action_name = normalize_action_to_string(action)
+    # Without the action type, a type wildcard (`@read`) grant is skipped.
+    action_type = action_type_of(resource, action_name)
 
     field_groups =
-      AshGrant.Evaluator.get_all_field_groups(permissions, resource_name, action_name)
+      AshGrant.Evaluator.get_all_field_groups(
+        permissions,
+        resource_name,
+        action_name,
+        action_type
+      )
 
-    has_any_permission = AshGrant.Evaluator.has_access?(permissions, resource_name, action_name)
+    has_any_permission =
+      AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type)
 
     cond do
       not has_any_permission -> :no_access
@@ -311,6 +335,12 @@ defmodule AshGrant.PolicyTest.Assertions do
     end
   end
 
+  defp intersect_visible(:no_access, _ceiling), do: :no_access
+  defp intersect_visible(_grants, :no_access), do: :no_access
+  defp intersect_visible(:all_fields, ceiling), do: ceiling
+  defp intersect_visible(grants, :all_fields), do: grants
+  defp intersect_visible(grants, ceiling), do: Enum.filter(grants, &(&1 in ceiling))
+
   defp resolve_field_groups_to_fields(resource, field_groups) do
     field_groups
     |> Enum.flat_map(&resolve_single_field_group(resource, &1))
@@ -318,12 +348,27 @@ defmodule AshGrant.PolicyTest.Assertions do
   end
 
   defp resolve_single_field_group(resource, group_name) do
-    group_atom = if is_binary(group_name), do: String.to_atom(group_name), else: group_name
+    # A field group name comes from permission data: an undeclared one has no
+    # atom, and no fields (#143).
+    case existing_group_atom(group_name) do
+      nil -> []
+      group_atom -> resolved_fields(resource, group_atom)
+    end
+  end
 
+  defp resolved_fields(resource, group_atom) do
     case AshGrant.Info.resolve_field_group(resource, group_atom) do
       nil -> []
       resolved -> resolved.fields
     end
+  end
+
+  defp existing_group_atom(name) when is_atom(name), do: name
+
+  defp existing_group_atom(name) when is_binary(name) do
+    String.to_existing_atom(name)
+  rescue
+    ArgumentError -> nil
   end
 
   # Private functions
@@ -405,6 +450,12 @@ defmodule AshGrant.PolicyTest.Assertions do
   defp format_action(action: action), do: "action: :#{action}"
   defp format_action(action_type: type), do: "action_type: :#{type}"
   defp format_action(other), do: inspect(other)
+
+  defp action_type_of(resource, action_name) do
+    resource
+    |> Ash.Resource.Info.actions()
+    |> Enum.find_value(fn action -> to_string(action.name) == action_name && action.type end)
+  end
 
   defp normalize_action_to_string(action) when is_atom(action), do: Atom.to_string(action)
 

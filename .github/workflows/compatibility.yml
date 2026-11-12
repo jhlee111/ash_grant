@@ -9,13 +9,16 @@ on:
   workflow_dispatch:
     inputs:
       ash_version:
-        description: "Ash version (blank=latest, 'main'=git main, '3.11'=specific)"
+        description: "Ash version (blank=latest, 'main'=git main, '3.11'=~> 3.11, '=3.33.4'=exact)"
         required: false
         default: ""
       spark_version:
-        description: "Spark version (blank=latest, 'main'=git main)"
+        description: "Spark version (blank=latest, 'main'=git main, '2.7'=~> 2.7, '=2.7.3'=exact)"
         required: false
         default: ""
+
+permissions:
+  contents: read
 
 env:
   MIX_ENV: test
@@ -26,15 +29,16 @@ jobs:
   # Test with latest compatible versions (deps unlock)
   latest:
     name: Latest Deps (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    timeout-minutes: 30
     if: github.event_name == 'schedule' || (github.event.inputs.ash_version == '' && github.event.inputs.spark_version == '')
     runs-on: ubuntu-latest
 
-    # 1.20 is here and nowhere else in CI. Its type checker reports unreachable
-    # clauses as warnings, which `--warnings-as-errors` then turns into a
-    # failure — the only automated guard against a dead clause reappearing.
-    # 1.18.4 stays so this job still answers "do the latest deps support the
-    # Elixir CI builds on?". The floor job is deliberately not in the matrix:
-    # on 1.20 it fails on a type warning in Ash's own generated code.
+    # Per-PR CI (ci.yml) runs 1.20 against the committed lock. This job runs it
+    # against the latest deps, so a type warning that only a newer dep version
+    # triggers on 1.20 shows up here. 1.18.4 stays so this job still answers "do
+    # the latest deps support the Elixir floor?". The floor job is deliberately
+    # not in the matrix: on 1.20 it fails on a type warning in Ash's own
+    # generated code.
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +85,7 @@ jobs:
   # Test with minimum supported Ash version (floor)
   floor:
     name: Ash Floor (3.33.4)
+    timeout-minutes: 30
     # Also runs on a blank workflow_dispatch. Schedule-only meant this job
     # could not be exercised on demand, which is how it stayed broken from
     # 2026-07 to 2026-09 — a fix could not be verified before merging it.
@@ -113,25 +118,29 @@ jobs:
       # deps.unlock is required: the committed mix.lock pins an ash_postgres
       # that depends on a much newer Ash, so resolving the floor against the
       # lock is unsatisfiable and `mix deps.get` fails before it starts.
+      # "=3.33.4" means exactly 3.33.4 (see ash_version/1 in mix.exs). A bare
+      # "3.33.4" becomes "~> 3.33.4", which resolves the newest 3.33.x patch:
+      # until this was fixed, the job tested 3.33.11 and never the floor.
       - name: Fetch deps with Ash floor version
         run: mix deps.unlock --all && mix deps.get
         env:
-          ASH_VERSION: "3.33.4"
+          ASH_VERSION: "=3.33.4"
 
       - name: Compile
         run: mix compile --warnings-as-errors
         env:
-          ASH_VERSION: "3.33.4"
+          ASH_VERSION: "=3.33.4"
 
       - name: Test
         run: mix test
         env:
-          ASH_VERSION: "3.33.4"
+          ASH_VERSION: "=3.33.4"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
 
   # Manual: test against specific Ash version or main branch
   custom:
     name: "Ash ${{ github.event.inputs.ash_version || 'custom' }}"
+    timeout-minutes: 30
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.ash_version != '' || github.event.inputs.spark_version != '')
     runs-on: ubuntu-latest
 
@@ -176,3 +185,32 @@ jobs:
           ASH_VERSION: ${{ github.event.inputs.ash_version }}
           SPARK_VERSION: ${{ github.event.inputs.spark_version }}
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ash_grant_test
+
+  # A scheduled run has no one watching it. GitHub emails a scheduled failure only
+  # to whoever last edited the cron line, and from 2026-10-19 this workflow was red
+  # for three weeks before anyone noticed. On failure, open an issue, or comment on
+  # the one already open, so the failure lands in the issue list.
+  notify-failure:
+    name: Report failure
+    needs: [latest, floor]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Weekly Compatibility workflow is failing"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          number=$(gh issue list -R "$GITHUB_REPOSITORY" --state open \
+            --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" -R "$GITHUB_REPOSITORY" --body "Still failing: $run_url"
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" \
+              --body "The scheduled Compatibility run failed: $run_url"
+          fi

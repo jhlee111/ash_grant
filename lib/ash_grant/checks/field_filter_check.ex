@@ -56,9 +56,12 @@ defmodule AshGrant.FieldFilterCheck do
       tenant: get_tenant(authorizer)
     }
 
-    permissions = resolve_permissions(resolver, actor, context)
+    grants = resolve_permissions(resolver, actor, context)
 
-    field_visibility_filter(permissions, resource, action_name, required_group, action_type)
+    resolver
+    |> AshGrant.Ceiling.permission_sets(actor, context, grants)
+    |> Enum.map(&field_visibility_filter(&1, resource, action_name, required_group, action_type))
+    |> AshGrant.Ceiling.intersect_filters()
   end
 
   @doc """
@@ -85,14 +88,19 @@ defmodule AshGrant.FieldFilterCheck do
       )
 
     {scopes, instance_ids} = partition_grants(grants)
+    instance_key = Info.instance_key(resource)
 
-    build_filter(
-      scopes,
-      instance_ids,
-      Info.instance_key(resource),
-      Info.scope_resolver(resource),
-      resource
-    )
+    deny_summary =
+      Evaluator.deny_summary(
+        permissions,
+        Info.resource_name(resource),
+        action_name,
+        action_type
+      )
+
+    scopes
+    |> build_filter(instance_ids, instance_key, Info.scope_resolver(resource), resource)
+    |> Evaluator.restrict_filter(deny_summary, resource)
   end
 
   # RBAC grants (instance_id "*") contribute their scope; instance grants

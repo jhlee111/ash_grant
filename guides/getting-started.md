@@ -172,7 +172,28 @@ ash_grant do
 end
 ```
 
-A compile error is raised if no resolver is found from either the resource or the domain.
+A compile warning is emitted if no resolver is found from either the resource or the domain. The warning does not fire when `config :ash_grant, resolver: MyApp.PermissionResolver` provides an app-wide fallback (see below).
+
+## App-wide resolver fallback
+
+When every resource in an app uses the same `PermissionResolver`, declare it once in config and let every resource pick it up automatically.
+
+```elixir
+# config/config.exs
+config :ash_grant, resolver: MyApp.PermissionResolver
+```
+
+Every resource that uses `AshGrant` now reads this resolver when neither the resource nor its domain declares one.
+
+### Precedence
+
+A resolver declared closer to the resource wins:
+
+    resource > domain > app config
+
+A resource that declares its own `resolver MyApp.OtherResolver` overrides the app-config fallback, and a domain that declares a resolver overrides the app-config fallback for every resource in that domain.
+
+`AshGrant.Verifiers.ValidateResolverPresent` treats the app-config fallback as present, so no compile warning is emitted for resources that rely on it.
 
 ## Resolver Patterns
 
@@ -230,6 +251,31 @@ defmodule MyApp.PermissionResolver do
   end
 end
 ```
+
+### Capping Grants with a Ceiling (API Keys)
+
+A resolver can return a second permission list from the optional `ceiling/2` callback. Every AshGrant check evaluates the actor's grants and the ceiling separately, and authorizes only what both authorize. A deny in either list wins. A ceiling narrows the grants and never widens them.
+
+The typical ceiling is an API key's permissions. `AshAuthentication`'s API key strategy signs the user in and puts the key on `user.__metadata__[:api_key]` (and `user.__metadata__[:using_api_key?]`). The key's permission strings become the ceiling:
+
+```elixir
+defmodule MyApp.PermissionResolver do
+  @behaviour AshGrant.PermissionResolver
+
+  @impl true
+  def resolve(user, _context), do: MyApp.Accounts.permissions_for(user)
+
+  @impl true
+  def ceiling(%{__metadata__: %{api_key: %{permissions: permissions}}}, _context),
+    do: permissions
+
+  def ceiling(_user, _context), do: nil
+end
+```
+
+A user who holds `post:*:*:own` and signs in with a key holding `post:*:read:always` can read their own posts and nothing else. The key cannot create, update or destroy, and it cannot read other users' posts. When the user later loses a role, the key loses the access that role gave, because the intersection is taken on every request rather than when the key is created.
+
+Return `nil` for no ceiling and `[]` to deny everything. A function resolver has no ceiling. `AshGrant.explain/4` reports the ceiling's decision in the explanation's `:ceiling` field, and `AshGrant.Introspect.ceiling_for/3` returns the ceiling's permission strings.
 
 ## Tip: Relational Scopes
 

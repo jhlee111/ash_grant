@@ -1,5 +1,11 @@
 # AshGrant
 
+[![CI](https://github.com/jhlee111/ash_grant/actions/workflows/ci.yml/badge.svg)](https://github.com/jhlee111/ash_grant/actions/workflows/ci.yml)
+[![Hex version](https://img.shields.io/hexpm/v/ash_grant.svg)](https://hex.pm/packages/ash_grant)
+[![Hex downloads](https://img.shields.io/hexpm/dt/ash_grant.svg)](https://hex.pm/packages/ash_grant)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/ash_grant)
+[![License: MIT](https://img.shields.io/hexpm/l/ash_grant.svg)](https://github.com/jhlee111/ash_grant/blob/main/LICENSE)
+
 Permission-based authorization extension for [Ash Framework](https://ash-hq.org/).
 
 AshGrant connects three Ash-native concepts — **resources**, **actions**, and
@@ -8,11 +14,12 @@ Permissions resolve to native Ash filters and policy checks, with deny-wins sema
 
 **Authorization:**
 - **Domain-level DSL** — shared resolver and scopes inherited by all resources in a domain
+- **Global scope registry** — declare `:own` / `:same_tenant` once with `use AshGrant.ScopeRegistry`, override per-resource or per-domain
 - **Scope DSL** with `expr()` — row-level filters, scope inheritance, `^tenant()` support
 - **Argument-based scopes** with `resolve_argument` — multi-hop authorization via action arguments populated from the resource's own relationships, with lazy loading
 - **Field groups** — column-level read access with inheritance and masking
 - **Instance permissions** — per-record sharing with optional scope conditions
-- **Deny-wins evaluation** — deny rules always override allows
+- **Deny-wins evaluation** — deny rules always override allows, across type (`post:*:...`) and instance (`post:<id>:...`) grants
 
 **UI Integration:**
 - **`CanPerform` calculation** — per-record boolean for UI visibility (compiles to SQL), with DSL sugar (`can_perform_actions`, `can_perform`)

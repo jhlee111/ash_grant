@@ -125,4 +125,17 @@ defmodule AshGrant.ExplanationSummaryTest do
       assert decoded["reason_code"] == "allow_matched"
     end
   end
+
+  describe "String.Chars" do
+    test "interpolates as the plain-text report, without ANSI colors" do
+      actor = %{id: "user_1", permissions: ["post:*:read:always"]}
+      explanation = AshGrant.explain(Post, :read, actor)
+
+      text = "#{explanation}"
+
+      assert text == AshGrant.Explanation.to_string(explanation, color: false)
+      assert text =~ "ALLOW"
+      refute text =~ "\e["
+    end
+  end
 end

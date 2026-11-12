@@ -9,8 +9,10 @@ defmodule AshGrant.Explainer do
 
   alias AshGrant.{
     ArgumentAnalyzer,
+    Evaluator,
     Explanation,
     Info,
+    Introspect,
     Permission,
     PermissionInput,
     Permissionable
@@ -39,21 +41,111 @@ defmodule AshGrant.Explainer do
   """
   @spec explain(module(), atom(), term(), map()) :: Explanation.t()
   def explain(resource, action, actor, context \\ %{}) do
+    grants =
+      explain_permissions(
+        resource,
+        action,
+        actor,
+        context,
+        get_permissions(resource, actor, context)
+      )
+
+    case get_ceiling(resource, actor, context) do
+      nil ->
+        grants
+
+      ceiling ->
+        within_ceiling(
+          grants,
+          explain_permissions(resource, action, actor, context, ceiling),
+          resource
+        )
+    end
+  end
+
+  # The grants and the ceiling are explained as separate permission lists; the
+  # action is allowed only when both allow, and their read filters are ANDed.
+  defp within_ceiling(
+         %Explanation{decision: :allow} = grants,
+         %Explanation{decision: :allow} = ceiling,
+         resource
+       ) do
+    scope_filter =
+      AshGrant.Ceiling.intersect_filters([
+        grants.scope_filter || true,
+        ceiling.scope_filter || true
+      ])
+
+    scope_filter_string = stringify_scope_filter(scope_filter)
+
+    %{
+      grants
+      | ceiling: ceiling,
+        field_groups:
+          AshGrant.Introspect.intersect_field_groups(
+            resource,
+            grants.field_groups,
+            ceiling.field_groups
+          ),
+        scope_filter: scope_filter,
+        scope_filter_string: scope_filter_string,
+        summary:
+          build_summary(
+            :allow,
+            :allow_matched,
+            grants.matching_permissions,
+            [],
+            grants.action,
+            scope_filter_string
+          )
+    }
+  end
+
+  defp within_ceiling(%Explanation{decision: :allow} = grants, ceiling, _resource) do
+    %{
+      grants
+      | ceiling: ceiling,
+        decision: :deny,
+        reason: :denied_by_ceiling,
+        reason_code: :ceiling_denied,
+        scope_filter: nil,
+        scope_filter_string: nil,
+        summary: "Allowed by the actor's grants but not by the ceiling: #{ceiling.summary}"
+    }
+  end
+
+  defp within_ceiling(grants, ceiling, _resource), do: %{grants | ceiling: ceiling}
+
+  defp explain_permissions(resource, action, actor, context, raw_permissions) do
     resource_name = Info.resource_name(resource)
     action_str = to_string(action)
     action_type = resolve_action_type(resource, action)
 
-    raw_permissions = get_permissions(resource, actor, context)
     permission_inputs = Enum.map(raw_permissions, &Permissionable.to_permission_input/1)
+    permissions = Enum.map(permission_inputs, &Permission.from_input/1)
+
+    match = %{
+      resource: resource,
+      resource_name: resource_name,
+      action: action_str,
+      action_type: action_type,
+      parents: scope_through_parents(resource, action_str, action_type),
+      permissions: permissions
+    }
 
     evaluated =
-      Enum.map(
-        permission_inputs,
-        &evaluate_permission(&1, resource, resource_name, action_str, action_type)
-      )
+      permission_inputs
+      |> Enum.zip(permissions)
+      |> Enum.map(fn {input, perm} -> evaluate_permission(input, perm, match) end)
 
-    {decision, reason, matching_allows} = determine_decision(evaluated)
-    scope_filter = resolve_explain_scope_filter(decision, matching_allows, resource, context)
+    # The verdict is the one `AshGrant.Introspect.can?/4` gives, so explain agrees
+    # with the runtime on instance grants, scope_through and deny rules.
+    {decision, reason} = decide(resource, action, permissions)
+    matching_allows = Enum.filter(evaluated, &(&1.matched and not &1.is_deny))
+
+    scope_filter =
+      resolve_explain_scope_filter(decision, matching_allows, permissions, match, context)
+
     field_groups = extract_field_groups(matching_allows)
     resolve_arguments = build_resolve_arguments(resource, action)
 
@@ -105,7 +197,7 @@ defmodule AshGrant.Explainer do
   end
 
   defp build_summary(:deny, :deny_rule_matched, _matching, evaluated, _action, _scope_str) do
-    case Enum.find(evaluated, fn e -> e.matched && e.is_deny end) do
+    case Enum.find(evaluated, &(&1.matched and &1.is_deny and &1.instance_id == "*")) do
       nil -> "Denied by a deny rule."
       deny -> "Denied by '#{deny.permission}' (deny rule)."
     end
@@ -153,15 +245,11 @@ defmodule AshGrant.Explainer do
     end
   end
 
-  defp evaluate_permission(input, resource, resource_name, action_str, action_type) do
-    perm = Permission.from_input(input)
-    matched = Permission.matches?(perm, resource_name, action_str, action_type)
+  defp evaluate_permission(input, perm, match) do
     is_deny = Permission.deny?(perm)
+    {matched, reason} = match_permission(perm, is_deny, match)
 
-    reason =
-      explain_mismatch_reason(perm, matched, is_deny, resource_name, action_str, action_type)
-
-    scope_name = if perm.scope, do: String.to_atom(perm.scope), else: nil
+    scope_name = if perm.scope, do: scope_name(perm.scope), else: nil
 
     %{
       permission: PermissionInput.to_string(input),
@@ -170,61 +258,177 @@ defmodule AshGrant.Explainer do
       reason: reason,
       description: input.description,
       source: input.source,
+      instance_id: perm.instance_id,
       scope_name: scope_name,
-      scope_description: if(scope_name, do: Info.scope_description(resource, scope_name)),
+      scope_description: if(scope_name, do: Info.scope_description(match.resource, scope_name)),
       field_group: perm.field_group
     }
   end
 
-  defp explain_mismatch_reason(_perm, true, true, _resource_name, _action_str, _action_type),
-    do: "Denied by explicit deny rule"
+  # A scope name comes from permission data, so it converts only to an atom that
+  # exists (#143). Every declared scope is one; an undeclared name stays a
+  # string, which `Info.resolve_scope_filter/3` treats as an unknown scope (or
+  # hands to a legacy `scope_resolver`) exactly as it did the atom.
+  defp scope_name(scope) do
+    String.to_existing_atom(scope)
+  rescue
+    ArgumentError -> scope
+  end
 
-  defp explain_mismatch_reason(_perm, true, false, _resource_name, _action_str, _action_type),
-    do: nil
+  # `matched` means the runtime counts the grant for this action: an RBAC grant
+  # with a scope, a deny, the resource's own instance grant, or a parent's instance
+  # grant that reaches the resource through `scope_through`.
+  defp match_permission(%Permission{instance_id: "*"} = perm, is_deny, match) do
+    matched = Permission.matches?(perm, match.resource_name, match.action, match.action_type)
 
-  defp explain_mismatch_reason(perm, false, _is_deny, resource_name, action_str, action_type) do
     cond do
-      !matches_resource?(perm, resource_name) -> "Resource mismatch"
-      !Permission.matches_action?(perm.action, action_str, action_type) -> "Action mismatch"
-      true -> "No match"
+      not matched ->
+        {false, mismatch_reason(perm, match)}
+
+      is_deny ->
+        {true, "Denied by explicit deny rule"}
+
+      is_nil(perm.scope) ->
+        {false, "No scope: an RBAC grant without a scope authorizes no records"}
+
+      true ->
+        {true, nil}
     end
   end
 
-  defp determine_decision(evaluated) do
-    has_matching_deny = Enum.any?(evaluated, fn e -> e.matched && e.is_deny end)
-    matching_allows = Enum.filter(evaluated, fn e -> e.matched && !e.is_deny end)
+  defp match_permission(perm, is_deny, match) do
+    action_matches? = Permission.matches_action?(perm.action, match.action, match.action_type)
 
     cond do
-      has_matching_deny -> {:deny, :denied_by_rule, matching_allows}
-      matching_allows != [] -> {:allow, nil, matching_allows}
-      true -> {:deny, :no_matching_permissions, matching_allows}
+      not action_matches? ->
+        {false, mismatch_reason(perm, match)}
+
+      Permission.matches_resource?(perm.resource, match.resource_name) ->
+        instance_verdict(perm, is_deny, match.resource_name, "instance", match)
+
+      relationship = parent_relationship(perm, match.parents) ->
+        instance_verdict(
+          perm,
+          is_deny,
+          perm.resource,
+          "#{perm.resource} via scope_through :#{relationship}",
+          match
+        )
+
+      true ->
+        {false, mismatch_reason(perm, match)}
     end
   end
 
-  defp resolve_explain_scope_filter(:deny, _matching_allows, _resource, _context), do: nil
+  defp instance_verdict(perm, true = _is_deny, _resource_name, label, _match),
+    do: {true, "Excludes #{label} #{perm.instance_id} (instance deny)"}
 
-  defp resolve_explain_scope_filter(:allow, [], _resource, _context), do: nil
+  defp instance_verdict(perm, false = _is_deny, resource_name, label, match) do
+    if instance_denied?(match, resource_name, perm.instance_id) do
+      {false, "Cancelled by an instance deny on #{perm.instance_id}"}
+    else
+      {true, "Grants #{label} #{perm.instance_id}"}
+    end
+  end
 
-  # Mirrors `AshGrant.FilterCheck.build_combined_filter/3`: the read path ORs
-  # every matching scope, and a filter resolving to `true` absorbs the union
-  # whatever the scope is named (#149). Reporting only the first matching allow
-  # described a filter narrower than the one actually applied, and which of them
-  # got reported depended on the order the resolver returned grants in (#151).
-  defp resolve_explain_scope_filter(:allow, matching_allows, resource, context) do
-    filters = Enum.map(matching_allows, &resolve_allow_filter(&1, resource, context))
+  defp instance_denied?(match, resource_name, instance_id) do
+    Enum.any?(match.permissions, fn perm ->
+      Permission.deny?(perm) and perm.instance_id == instance_id and
+        Permission.matches_resource?(perm.resource, resource_name) and
+        Permission.matches_action?(perm.action, match.action, match.action_type)
+    end)
+  end
 
-    if true in filters do
+  defp parent_relationship(perm, parents) do
+    Enum.find_value(parents, fn {parent_name, relationship} ->
+      if Permission.matches_resource?(perm.resource, parent_name), do: relationship
+    end)
+  end
+
+  # `{parent resource name, relationship}` for each scope_through that applies
+  # to this action.
+  defp scope_through_parents(resource, action_str, action_type) do
+    for scope_through <- Info.scope_throughs(resource),
+        Info.scope_through_allows_action?(scope_through, action_str, action_type),
+        parent = Introspect.scope_through_parent_resource(resource, scope_through) do
+      {Info.resource_name(parent), scope_through.relationship}
+    end
+  end
+
+  defp mismatch_reason(perm, match) do
+    cond do
+      !matches_resource?(perm, match.resource_name) ->
+        "Resource mismatch"
+
+      !Permission.matches_action?(perm.action, match.action, match.action_type) ->
+        "Action mismatch"
+
+      true ->
+        "No match"
+    end
+  end
+
+  defp decide(resource, action, permissions) do
+    case Introspect.decide(resource, action, permissions) do
+      {:allow, _details} -> {:allow, nil}
+      {:deny, %{reason: :denied_by_rule}} -> {:deny, :denied_by_rule}
+      {:deny, _details} -> {:deny, :no_matching_permissions}
+    end
+  end
+
+  defp resolve_explain_scope_filter(:deny, _allows, _permissions, _match, _context), do: nil
+
+  # The filter `AshGrant.FilterCheck` applies: the RBAC scopes ORed (a filter
+  # resolving to `true` absorbs the union whatever the scope is named, #149/#151),
+  # ORed with the resource's own instance ids and the scope_through parents, then
+  # narrowed by the deny rules.
+  defp resolve_explain_scope_filter(:allow, matching_allows, permissions, match, context) do
+    %{resource: resource, action: action, action_type: action_type} = match
+
+    rbac =
+      for %{instance_id: "*"} = allow <- matching_allows,
+          do: resolve_allow_filter(allow, resource, context)
+
+    instance_ids =
+      Evaluator.get_matching_instance_ids(permissions, match.resource_name, action, action_type)
+
+    instance_filter =
+      if instance_ids != [] do
+        Ash.Expr.expr(^Ash.Expr.ref(Info.instance_key(resource)) in ^instance_ids)
+      end
+
+    parent_filters =
+      AshGrant.FilterCheck.build_parent_instance_filters(
+        resource,
+        permissions,
+        action,
+        action_type
+      )
+
+    deny_summary = Evaluator.deny_summary(permissions, match.resource_name, action, action_type)
+
+    if true in rbac do
       true
     else
-      Enum.reduce(filters, fn filter, acc -> Ash.Expr.expr(^acc or ^filter) end)
+      [or_filters(rbac), instance_filter | parent_filters]
+      |> Enum.reject(&(is_nil(&1) or &1 == false))
+      |> or_filters()
+      |> Kernel.||(false)
     end
+    |> Evaluator.restrict_filter(deny_summary, resource)
   end
+
+  defp or_filters([]), do: nil
+  defp or_filters(filters), do: Enum.reduce(filters, &Ash.Expr.expr(^&2 or ^&1))
 
   # A grant with no scope segment is unrestricted for the actions it matches.
   defp resolve_allow_filter(%{scope_name: nil}, _resource, _context), do: true
 
-  defp resolve_allow_filter(%{scope_name: scope_name}, resource, context),
-    do: Info.resolve_scope_filter(resource, scope_name, context)
+  defp resolve_allow_filter(%{scope_name: scope_name}, resource, context) do
+    if AshGrant.Scope.universal?(to_string(scope_name)),
+      do: true,
+      else: Info.resolve_scope_filter(resource, scope_name, context)
+  end
 
   defp extract_field_groups(matching_allows) do
     matching_allows
@@ -246,6 +450,12 @@ defmodule AshGrant.Explainer do
       resolver when is_atom(resolver) ->
         resolver.resolve(actor, context) || []
     end
+  end
+
+  defp get_ceiling(_resource, nil, _context), do: nil
+
+  defp get_ceiling(resource, actor, context) do
+    AshGrant.Ceiling.resolve(Info.resolver(resource), actor, context)
   end
 
   defp matches_resource?(%Permission{resource: perm_resource}, resource_name) do

@@ -29,6 +29,11 @@ defmodule AshGrant.Test.Domain do
     # Uses default_policies: true
     resource(AshGrant.Test.Article)
 
+    # default_policies + user-declared bypass (regression for #183).
+    resource(AshGrant.Test.ArticleWithBypass)
+    resource(AshGrant.Test.ArticleForbidBeforeBypass)
+    resource(AshGrant.Test.ArticleWithPolicyGroup)
+
     # Multi-tenancy test resource
     # Uses ^tenant() scope expression
     resource(AshGrant.Test.TenantPost)
@@ -44,12 +49,15 @@ defmodule AshGrant.Test.Domain do
 
     # Field-group column-level authorization test resource
     resource(AshGrant.Test.SensitiveRecord)
+    resource(AshGrant.Test.CeilingPost)
+    resource(AshGrant.Test.CeilingComment)
 
     # field_group_permissions :strict test resource (issue #117)
     resource(AshGrant.Test.StrictFieldGroupRecord)
 
     # Per-record field visibility test resource (field groups + :own scope, #117 ②)
     resource(AshGrant.Test.OwnedRecord)
+    resource(AshGrant.Test.FieldPolicyCanPerformRecord)
 
     # Calculation + aggregate inside a field group (filter oracle, CVE-2026-86338)
     resource(AshGrant.Test.ComputedFieldRecord)
