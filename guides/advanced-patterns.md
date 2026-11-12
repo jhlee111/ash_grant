@@ -314,9 +314,9 @@ semantics you must resolve manually (see the
 [hand-rolled version](argument-based-scope.md#hand-rolled-version-under-the-hood))
 and read from `changeset.attributes` instead.
 
-This applies only to scopes that read a `resolve_argument` argument. A scope
-that reads the FK attribute itself, and a `scope_through` parent, is checked
-against both the original and the written FK.
+`AshGrant.Check` also resolves the argument a second time from the written
+FK when the update changes it, and authorizes the write against both values.
+The argument your actions and changes see is still the original one.
 
 ## See also
 

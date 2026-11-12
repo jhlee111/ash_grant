@@ -85,16 +85,14 @@ defmodule AshGrant.WriteCheckNewValuesTest do
       assert {:ok, _} = update_as(post, %{title: "Still a draft"}, actor)
     end
 
-    test "a set_attribute change in the action is checked too" do
+    test "a value the action sets itself is part of what the grant authorizes" do
       actor = %{id: Ash.UUID.generate(), permissions: ["post:*:publish:draft"]}
       post = generate(post(title: "Draft", status: :draft))
 
-      assert {:error, %Ash.Error.Forbidden{}} =
+      assert {:ok, %{status: :published}} =
                post
                |> Ash.Changeset.for_update(:publish, %{})
                |> Ash.update(actor: actor)
-
-      assert %{status: :draft} = Ash.get!(Post, post.id, authorize?: false)
     end
   end
 

@@ -37,7 +37,9 @@ defmodule AshGrant.Changes.ResolveArgument do
       attributes, fetch the head record, then walk the remaining path keys
       through loaded relationships.
     * **update/destroy**: load the relationship path on `changeset.data`, then
-      read the leaf attribute.
+      read the leaf attribute. When the change writes the path's first foreign
+      key, the value is also resolved from the written key and stored in the
+      changeset context, where `AshGrant.Check` reads it.
 
   If any intermediate value is nil or the path cannot be resolved (e.g., the
   referenced record was deleted), the argument stays unset and the scope
@@ -70,12 +72,68 @@ defmodule AshGrant.Changes.ResolveArgument do
     changeset = Changeset.delete_argument(changeset, name)
 
     if needs_resolution?(actor, scopes_needing, changeset) do
-      case resolve_value(changeset, path) do
-        {:ok, value} -> Changeset.set_argument(changeset, name, value)
-        :skip -> changeset
-      end
+      changeset =
+        case resolve_value(changeset, path) do
+          {:ok, value} -> Changeset.set_argument(changeset, name, value)
+          :skip -> changeset
+        end
+
+      put_written_argument(changeset, name, path)
     else
       changeset
+    end
+  end
+
+  # An update or destroy that changes the path's first foreign key writes a
+  # different argument value. `AshGrant.Check` authorizes the write against it
+  # as well, read from context as `{:ok, value}`, or `:unknown` when the key is
+  # set through `manage_relationship` and is not known before the action runs.
+  defp put_written_argument(%{action_type: action_type} = changeset, name, path)
+       when action_type in [:update, :destroy] do
+    case written_value(changeset, path) do
+      :unchanged ->
+        changeset
+
+      value ->
+        written = get_in(changeset.context, [:ash_grant, :written_arguments]) || %{}
+
+        Changeset.set_context(changeset, %{
+          ash_grant: %{written_arguments: Map.put(written, name, value)}
+        })
+    end
+  end
+
+  defp put_written_argument(changeset, _name, _path), do: changeset
+
+  defp written_value(changeset, [leaf]) do
+    if Changeset.changing_attribute?(changeset, leaf),
+      do: {:ok, Changeset.get_attribute(changeset, leaf)},
+      else: :unchanged
+  end
+
+  defp written_value(changeset, [first_rel | _] = path) do
+    case Ash.Resource.Info.relationship(changeset.resource, first_rel) do
+      %{source_attribute: source_attribute, name: name} ->
+        cond do
+          Map.has_key?(changeset.relationships || %{}, name) ->
+            :unknown
+
+          Changeset.changing_attribute?(changeset, source_attribute) ->
+            written_path_value(changeset, path)
+
+          true ->
+            :unchanged
+        end
+
+      nil ->
+        :unchanged
+    end
+  end
+
+  defp written_path_value(changeset, path) do
+    case resolve_from_attributes(changeset, path) do
+      {:ok, value} -> {:ok, value}
+      :skip -> {:ok, nil}
     end
   end
 
@@ -208,23 +266,7 @@ defmodule AshGrant.Changes.ResolveArgument do
   # relationship to walk. The multi-segment clause below treats the first
   # segment as a relationship, which is nil for a leaf attribute and would
   # silently `:skip`.
-  defp resolve_value(%{action_type: :create} = cs, [leaf]) do
-    case Changeset.get_attribute(cs, leaf) do
-      nil -> :skip
-      value -> {:ok, value}
-    end
-  end
-
-  defp resolve_value(%{action_type: :create} = cs, [first_rel | rest]) do
-    with %{source_attribute: source_attr, destination: destination} <-
-           Ash.Resource.Info.relationship(cs.resource, first_rel),
-         fk_value when not is_nil(fk_value) <- Changeset.get_attribute(cs, source_attr),
-         head when not is_nil(head) <- safe_get(destination, fk_value, tenant_opts(cs)) do
-      traverse(head, rest)
-    else
-      _ -> :skip
-    end
-  end
+  defp resolve_value(%{action_type: :create} = cs, path), do: resolve_from_attributes(cs, path)
 
   defp resolve_value(cs, path) do
     {rel_path, leaf} = split_relationship_path(cs.resource, path)
@@ -232,6 +274,25 @@ defmodule AshGrant.Changes.ResolveArgument do
     case safe_load(cs.data, build_load(rel_path), tenant_opts(cs)) do
       {:ok, loaded} -> traverse_loaded(loaded, rel_path, leaf)
       :error -> :skip
+    end
+  end
+
+  # Resolve from the changeset's attribute values, as a create sees them.
+  defp resolve_from_attributes(cs, [leaf]) do
+    case Changeset.get_attribute(cs, leaf) do
+      nil -> :skip
+      value -> {:ok, value}
+    end
+  end
+
+  defp resolve_from_attributes(cs, [first_rel | rest]) do
+    with %{source_attribute: source_attr, destination: destination} <-
+           Ash.Resource.Info.relationship(cs.resource, first_rel),
+         fk_value when not is_nil(fk_value) <- Changeset.get_attribute(cs, source_attr),
+         head when not is_nil(head) <- safe_get(destination, fk_value, tenant_opts(cs)) do
+      traverse(head, rest)
+    else
+      _ -> :skip
     end
   end
 
