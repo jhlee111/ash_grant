@@ -1,5 +1,11 @@
 # AshGrant
 
+[![CI](https://github.com/jhlee111/ash_grant/actions/workflows/ci.yml/badge.svg)](https://github.com/jhlee111/ash_grant/actions/workflows/ci.yml)
+[![Hex version](https://img.shields.io/hexpm/v/ash_grant.svg)](https://hex.pm/packages/ash_grant)
+[![Hex downloads](https://img.shields.io/hexpm/dt/ash_grant.svg)](https://hex.pm/packages/ash_grant)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-purple.svg)](https://hexdocs.pm/ash_grant)
+[![License: MIT](https://img.shields.io/hexpm/l/ash_grant.svg)](https://github.com/jhlee111/ash_grant/blob/main/LICENSE)
+
 Permission-based authorization extension for [Ash Framework](https://ash-hq.org/).
 
 AshGrant connects three Ash-native concepts — **resources**, **actions**, and
