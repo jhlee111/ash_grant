@@ -501,6 +501,10 @@ defmodule AshGrant.Evaluator do
   when there is no field restriction at all. A broader group-less grant is therefore
   never narrowed by a more specific field-group grant (additive allow semantics).
 
+  Pass `deny_fields_by_default: true` (see `AshGrant.Info.deny_fields_by_default?/1`)
+  for a resource that hides ungranted fields. A group-less grant then opens no group
+  and is left out, so `[]` means "no field group", never "unrestricted".
+
   ## Examples
 
       iex> permissions = ["employee:*:read:always:sensitive", "employee:*:read:always:billing"]
@@ -515,30 +519,45 @@ defmodule AshGrant.Evaluator do
       iex> AshGrant.Evaluator.get_all_field_groups(permissions, "employee", "read")
       []
 
+      iex> permissions = ["employee:*:read:always", "employee:*:read:always:sensitive"]
+      iex> AshGrant.Evaluator.get_all_field_groups(permissions, "employee", "read", nil,
+      ...>   deny_fields_by_default: true)
+      ["sensitive"]
+
   """
-  @spec get_all_field_groups(permissions(), String.t(), String.t(), atom() | nil) :: [String.t()]
-  def get_all_field_groups(permissions, resource, action, action_type \\ nil) do
+  @spec get_all_field_groups(permissions(), String.t(), String.t(), atom() | nil, keyword()) ::
+          [String.t()]
+  def get_all_field_groups(permissions, resource, action, action_type \\ nil, opts \\ []) do
     permissions = normalize_permissions(permissions)
     match = &Permission.matches?(&1, resource, action, action_type)
-    compute = &all_field_groups(permissions, &1)
+    deny_fields_by_default? = Keyword.get(opts, :deny_fields_by_default, false)
+    compute = &all_field_groups(permissions, &1, deny_fields_by_default?)
 
     AshGrant.IndeterminateMatch.guard(compute, match, permissions, resource, action, action_type)
   end
 
-  defp all_field_groups(permissions, match) do
+  defp all_field_groups(permissions, match, deny_fields_by_default?) do
     if denied?(permissions, match) do
       []
     else
       matching_allows = Enum.filter(permissions, &(not Permission.deny?(&1) and match.(&1)))
 
-      # A group-less (4-part) allow grant means "all fields are visible" and dominates
-      # the union, so it collapses the result to [] (unrestricted). Without this, adding
-      # a narrower field-group grant on top of a broad group-less grant would silently
-      # subtract access (see issue #116).
-      if Enum.any?(matching_allows, &is_nil(&1.field_group)) do
-        []
-      else
-        matching_allows |> Enum.map(& &1.field_group) |> Enum.uniq()
+      cond do
+        deny_fields_by_default? ->
+          matching_allows
+          |> Enum.map(& &1.field_group)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
+
+        # A group-less (4-part) allow grant means "all fields are visible" and dominates
+        # the union, so it collapses the result to [] (unrestricted). Without this, adding
+        # a narrower field-group grant on top of a broad group-less grant would silently
+        # subtract access (see issue #116).
+        Enum.any?(matching_allows, &is_nil(&1.field_group)) ->
+          []
+
+        true ->
+          matching_allows |> Enum.map(& &1.field_group) |> Enum.uniq()
       end
     end
   end
@@ -557,21 +576,46 @@ defmodule AshGrant.Evaluator do
   or its `field_group` equals or inherits toward `required_group`.
 
   `resource_module` is the resource module (needed to resolve field-group
-  inheritance); `required_group` is the field-group atom.
+  inheritance); `required_group` is the field-group atom. With
+  `deny_fields_by_default: true` a group-less grant contributes to no group; the
+  option defaults to `AshGrant.Info.deny_fields_by_default?/1` for the resource.
   """
-  @spec field_group_grants(permissions(), module(), String.t(), atom(), atom() | nil) ::
-          [Permission.t()]
-  def field_group_grants(permissions, resource_module, action, required_group, action_type \\ nil) do
+  @spec field_group_grants(
+          permissions(),
+          module(),
+          String.t(),
+          atom(),
+          atom() | nil,
+          keyword()
+        ) :: [Permission.t()]
+  def field_group_grants(
+        permissions,
+        resource_module,
+        action,
+        required_group,
+        action_type \\ nil,
+        opts \\ []
+      ) do
     resource_name = AshGrant.Info.resource_name(resource_module)
     permissions = normalize_permissions(permissions)
     match = &Permission.matches_action?(&1.action, action, action_type)
+
+    deny_fields_by_default? =
+      Keyword.get_lazy(opts, :deny_fields_by_default, fn ->
+        AshGrant.Info.deny_fields_by_default?(resource_module)
+      end)
 
     compute = fn match ->
       Enum.filter(permissions, fn perm ->
         not Permission.deny?(perm) and
           Permission.matches_resource?(perm.resource, resource_name) and
           match.(perm) and
-          grants_field_group?(resource_module, perm.field_group, required_group)
+          grants_field_group?(
+            resource_module,
+            perm.field_group,
+            required_group,
+            deny_fields_by_default?
+          )
       end)
     end
 
@@ -585,10 +629,13 @@ defmodule AshGrant.Evaluator do
     )
   end
 
-  # A group-less (4-part) grant has no field_group — it grants every group.
-  defp grants_field_group?(_resource_module, nil, _required), do: true
+  # A group-less (4-part) grant has no field_group. It grants every group, unless the
+  # resource denies fields by default, where it grants none.
+  defp grants_field_group?(_resource_module, nil, _required, deny_fields_by_default?),
+    do: not deny_fields_by_default?
 
-  defp grants_field_group?(resource_module, field_group, required) when is_binary(field_group) do
+  defp grants_field_group?(resource_module, field_group, required, _deny_fields_by_default?)
+       when is_binary(field_group) do
     field_group == to_string(required) or
       field_group_inherits_toward?(resource_module, field_group, required)
   end

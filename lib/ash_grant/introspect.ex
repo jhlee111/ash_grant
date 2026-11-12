@@ -24,6 +24,9 @@ defmodule AshGrant.Introspect do
   Every function that reports a decision intersects the actor's grants with the
   resolver's ceiling (`c:AshGrant.PermissionResolver.ceiling/2`), as the runtime checks do.
 
+  A `field_groups: []` result means every field is visible, except on a resource
+  with `deny_fields_by_default`, where it means no field group is visible.
+
   ## Examples
 
       # Admin UI: What can this user do?
@@ -422,9 +425,7 @@ defmodule AshGrant.Introspect do
       instance_ids =
         Evaluator.get_matching_instance_ids(permissions, resource_name, action_name, action_type)
 
-      # Check field groups
-      field_groups =
-        Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
+      field_groups = actor_field_groups(resource, permissions, action_name, action_type)
 
       grants_allow =
         (scopes != [] or instance_ids != [] or
@@ -596,12 +597,19 @@ defmodule AshGrant.Introspect do
 
   @doc false
   # The field groups two permission lists both show, where `[]` means every
-  # field. A group is kept when all of its fields are visible under both lists.
-  # When no group fits, the narrower list's groups are reported: `[]` would
-  # claim every field is visible.
+  # field, or no field when the resource sets deny_fields_by_default. A group is
+  # kept when all of its fields are visible under both lists. When no group
+  # fits, the narrower list's groups are reported: `[]` would claim every field
+  # is visible.
   @spec intersect_field_groups(module(), [String.t()], [String.t()]) :: [String.t()]
-  def intersect_field_groups(_resource, [], ceiling_groups), do: ceiling_groups
-  def intersect_field_groups(_resource, grants_groups, []), do: grants_groups
+  def intersect_field_groups(resource, grants_groups, ceiling_groups)
+      when grants_groups == [] or ceiling_groups == [] do
+    cond do
+      Info.deny_fields_by_default?(resource) -> []
+      grants_groups == [] -> ceiling_groups
+      true -> grants_groups
+    end
+  end
 
   def intersect_field_groups(resource, grants_groups, ceiling_groups) do
     grants_fields = field_group_fields(resource, grants_groups)
@@ -683,8 +691,7 @@ defmodule AshGrant.Introspect do
     instance_ids =
       Evaluator.get_matching_instance_ids(permissions, resource_name, action_name, action_type)
 
-    field_groups =
-      Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
+    field_groups = actor_field_groups(resource, permissions, action_name, action_type)
 
     # Check parent instance permissions via scope_through
     has_parent_instance =
@@ -707,6 +714,17 @@ defmodule AshGrant.Introspect do
       true ->
         {:deny, %{reason: :no_permission}}
     end
+  end
+
+  # `[]` means every field, or no field when the resource sets deny_fields_by_default.
+  defp actor_field_groups(resource, permissions, action_name, action_type) do
+    Evaluator.get_all_field_groups(
+      permissions,
+      Info.resource_name(resource),
+      action_name,
+      action_type,
+      deny_fields_by_default: Info.deny_fields_by_default?(resource)
+    )
   end
 
   defp has_parent_instance_access?(resource, permissions, action_name, action_type) do

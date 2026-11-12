@@ -273,8 +273,13 @@ defmodule AshGrant.Explanation do
   defp field_group_section(%{field_groups: [], field_group_defs: []} = _explanation, _color),
     do: nil
 
-  defp field_group_section(%{field_groups: [], field_group_defs: defs} = _explanation, color)
+  defp field_group_section(%{field_groups: [], field_group_defs: defs} = explanation, color)
        when defs != [] do
+    heading =
+      if deny_fields_by_default?(explanation.resource),
+        do: "defined; deny_fields_by_default is on and the actor holds none of them",
+        else: "defined, but actor has no field_group restriction"
+
     groups_info =
       Enum.map_join(defs, "\n", fn fg ->
         name = Atom.to_string(fg.name)
@@ -289,7 +294,7 @@ defmodule AshGrant.Explanation do
 
     """
 
-    Field Groups (defined, but actor has no field_group restriction):
+    Field Groups (#{heading}):
     #{groups_info}
     """
   end
@@ -315,6 +320,10 @@ defmodule AshGrant.Explanation do
       Actor's groups: #{maybe_color(actor_groups, :bright, color)}
     #{groups_info}
     """
+  end
+
+  defp deny_fields_by_default?(resource) do
+    Spark.Dsl.is?(resource, Ash.Resource) and AshGrant.Info.deny_fields_by_default?(resource)
   end
 
   defp resolve_arguments_section(%{resolve_arguments: []} = _explanation, _color), do: nil

@@ -21,6 +21,14 @@ defmodule AshGrant.Domain.Info do
   end
 
   @doc """
+  Gets the domain's `deny_fields_by_default` option, or `nil` when unset.
+  """
+  @spec deny_fields_by_default(domain :: Ash.Domain.t()) :: boolean() | nil
+  def deny_fields_by_default(domain) do
+    Spark.Dsl.Extension.get_opt(domain, [:ash_grant], :deny_fields_by_default)
+  end
+
+  @doc """
   Gets all scope definitions from the domain.
 
   Returns `[]` if the domain does not use the `AshGrant.Domain` extension.

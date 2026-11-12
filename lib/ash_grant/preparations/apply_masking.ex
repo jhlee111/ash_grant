@@ -71,11 +71,13 @@ defmodule AshGrant.Preparations.ApplyMasking do
         permissions,
         resource_name,
         action_name,
-        action_type
+        action_type,
+        deny_fields_by_default: AshGrant.Info.deny_fields_by_default?(resource)
       )
 
+    # [] is either unrestricted access or, under deny_fields_by_default, no
+    # visible group field. Neither has a field to mask.
     if actor_field_groups == [] do
-      # No field groups in permissions — no masking applies
       %{}
     else
       resolve_masking(resource, actor_field_groups)

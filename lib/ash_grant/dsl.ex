@@ -592,6 +592,17 @@ defmodule AshGrant.Dsl do
         instead of `WHERE id IN ('feed_abc')`.
         """
       ],
+      deny_fields_by_default: [
+        type: :boolean,
+        doc: """
+        Hides every field that no granted field group names.
+
+        With `true`, a group-less (4-part) grant still authorizes the row but opens
+        no field group, and fields outside every `field_group` are forbidden to all
+        actors. Unset, the value comes from the domain's `ash_grant` block, then
+        `config :ash_grant, deny_fields_by_default:`, then `false`.
+        """
+      ],
       field_group_permissions: [
         type: {:in, [:strict, :warn, :off]},
         doc: """

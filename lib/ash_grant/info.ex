@@ -18,6 +18,7 @@ defmodule AshGrant.Info do
   | `resolve_scope_filter/3` | Resolve a scope to its read filter expression |
   | `resolve_write_scope_filter/3` | Resolve a scope to its write filter expression |
   | `field_groups/1` | Get all field group definitions |
+  | `deny_fields_by_default?/1` | Whether ungranted fields are hidden |
   | `get_field_group/2` | Get a specific field group by name |
   | `resolve_field_group/2` | Resolve a field group with inheritance |
   | `owner_field/1` | **Deprecated.** Use explicit scope expressions instead |
@@ -125,6 +126,38 @@ defmodule AshGrant.Info do
     Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :field_group_permissions) ||
       Application.get_env(:ash_grant, :field_group_permissions, :warn)
   end
+
+  @doc """
+  Whether the resource hides every field that no granted field group names.
+
+  Precedence: the resource option, else the domain option (`AshGrant.Domain`),
+  else `config :ash_grant, :deny_fields_by_default`, else `false`.
+  """
+  @spec deny_fields_by_default?(Ash.Resource.t()) :: boolean()
+  def deny_fields_by_default?(resource) do
+    resolve_deny_fields_by_default(
+      Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :deny_fields_by_default),
+      domain_deny_fields_by_default(Ash.Resource.Info.domain(resource)),
+      Application.get_env(:ash_grant, :deny_fields_by_default)
+    )
+  end
+
+  @doc """
+  Picks the effective `deny_fields_by_default` from the resource, domain and app
+  config values, where `nil` means unset.
+  """
+  @spec resolve_deny_fields_by_default(boolean() | nil, boolean() | nil, boolean() | nil) ::
+          boolean()
+  def resolve_deny_fields_by_default(resource_value, domain_value, app_value) do
+    Enum.find([resource_value, domain_value, app_value], false, &is_boolean/1)
+  end
+
+  @doc false
+  @spec domain_deny_fields_by_default(Ash.Domain.t() | nil) :: boolean() | nil
+  def domain_deny_fields_by_default(nil), do: nil
+
+  def domain_deny_fields_by_default(domain),
+    do: AshGrant.Domain.Info.deny_fields_by_default(domain)
 
   @doc """
   Gets all scope_through entities for a resource.
