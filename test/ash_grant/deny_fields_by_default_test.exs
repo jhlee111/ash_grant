@@ -11,6 +11,8 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
   alias AshGrant.{Evaluator, Info, Introspect}
 
   alias AshGrant.Test.{
+    DenyFieldsAppConfigRecord,
+    DenyFieldsDisjointRecord,
     DenyFieldsDomainRecord,
     DenyFieldsExceptRecord,
     DenyFieldsOptOutRecord,
@@ -222,6 +224,12 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
       assert Info.resolve_deny_fields_by_default(false, true, true) == false
       assert Info.resolve_deny_fields_by_default(true, false, false) == true
     end
+
+    test "a non-boolean app config value raises" do
+      assert_raise ArgumentError, ~r/config :ash_grant, :deny_fields_by_default.*"true"/, fn ->
+        Info.resolve_deny_fields_by_default(nil, nil, "true")
+      end
+    end
   end
 
   describe "Evaluator" do
@@ -284,6 +292,10 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
       assert Introspect.intersect_field_groups(DenyFieldsRecord, ["public"], []) == []
       assert Introspect.intersect_field_groups(SensitiveRecord, [], ["public"]) == ["public"]
     end
+
+    test "intersect_field_groups reports no group for disjoint lists under the flag" do
+      assert Introspect.intersect_field_groups(DenyFieldsDisjointRecord, ["a"], ["b"]) == []
+    end
   end
 
   describe "policy tester" do
@@ -315,6 +327,161 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
     end
   end
 
+  describe "masking" do
+    test "an instance grant's masked group masks the field on that record only" do
+      granted = record!()
+      other = record!()
+
+      perms = [
+        "denyfieldsrecord:*:read:always",
+        "denyfieldsrecord:#{granted.id}:read::sensitive"
+      ]
+
+      results = Ash.read!(DenyFieldsRecord, actor: %{permissions: perms})
+
+      assert Enum.find(results, &(&1.id == granted.id)).phone == "********"
+      assert forbidden?(Enum.find(results, &(&1.id == other.id)).phone)
+    end
+
+    test "a 4-part grant beside a 5-part masked grant still masks under the flag" do
+      record = record!()
+
+      result =
+        read_one!(DenyFieldsRecord, record.id, [
+          "denyfieldsrecord:*:read:always",
+          "denyfieldsrecord:*:read:always:sensitive"
+        ])
+
+      assert result.phone == "********"
+    end
+  end
+
+  describe "FieldCheck" do
+    test "a 4-part grant fails a group field under the flag" do
+      authorizer = %{
+        resource: DenyFieldsRecord,
+        action: %{name: :read, type: :read},
+        query: %{tenant: nil},
+        changeset: nil
+      }
+
+      refute AshGrant.FieldCheck.match?(
+               %{permissions: ["denyfieldsrecord:*:read:always"]},
+               authorizer,
+               field_group: :public
+             )
+    end
+  end
+
+  describe "app config" do
+    setup do
+      previous = Application.fetch_env(:ash_grant, :deny_fields_by_default)
+      Application.put_env(:ash_grant, :deny_fields_by_default, true)
+
+      on_exit(fn ->
+        case previous do
+          {:ok, value} -> Application.put_env(:ash_grant, :deny_fields_by_default, value)
+          :error -> Application.delete_env(:ash_grant, :deny_fields_by_default)
+        end
+      end)
+    end
+
+    test "turns the flag on for a resource that sets it nowhere" do
+      record = create!(DenyFieldsAppConfigRecord, %{name: "Ada", notes: "n"})
+
+      result =
+        read_one!(DenyFieldsAppConfigRecord, record.id, [
+          "denyfieldsappconfigrecord:*:read:always"
+        ])
+
+      assert result.id == record.id
+      assert forbidden?(result.name)
+      assert forbidden?(result.notes)
+    end
+  end
+
+  describe "without default_field_policies" do
+    test "a resource-level true is a compile error" do
+      assert_raise Spark.Error.DslError,
+                   ~r/no effect without\n?\s*`default_field_policies true`/,
+                   fn ->
+                     defmodule NoFieldPoliciesStrict do
+                       @moduledoc false
+                       use Ash.Resource,
+                         domain: nil,
+                         validate_domain_inclusion?: false,
+                         data_layer: Ash.DataLayer.Ets,
+                         extensions: [AshGrant]
+
+                       ash_grant do
+                         resolver(fn _, _ -> [] end)
+                         deny_fields_by_default(true)
+                         scope(:always, true)
+                         field_group(:public, [:name])
+                       end
+
+                       attributes do
+                         uuid_primary_key(:id)
+                         attribute(:name, :string, public?: true)
+                       end
+
+                       actions do
+                         defaults([:read])
+                       end
+                     end
+                   end
+    end
+
+    test "the verifier reports an inherited true" do
+      output =
+        capture_io(:stderr, fn ->
+          Code.compile_string("""
+          defmodule AshGrant.DenyFieldsByDefaultTest.FlagDomain3 do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshGrant.Domain],
+              validate_config_inclusion?: false
+
+            ash_grant do
+              deny_fields_by_default(true)
+            end
+
+            resources do
+              allow_unregistered?(true)
+            end
+          end
+
+          defmodule AshGrant.DenyFieldsByDefaultTest.DomainNoFieldPolicies do
+            @moduledoc false
+            use Ash.Resource,
+              domain: AshGrant.DenyFieldsByDefaultTest.FlagDomain3,
+              validate_domain_inclusion?: false,
+              data_layer: Ash.DataLayer.Ets,
+              extensions: [AshGrant]
+
+            ash_grant do
+              resolver(fn _, _ -> [] end)
+              scope(:always, true)
+              field_group(:public, [:name])
+            end
+
+            attributes do
+              uuid_primary_key(:id)
+              attribute(:name, :string, public?: true)
+            end
+
+            actions do
+              defaults([:read])
+            end
+          end
+          """)
+        end)
+
+      assert output =~ "has no effect without"
+      refute Info.deny_fields_by_default?(AshGrant.DenyFieldsByDefaultTest.DomainNoFieldPolicies)
+    end
+  end
+
   describe "verification" do
     test "a resource-level true without field groups is a compile error" do
       assert_raise Spark.Error.DslError, ~r/deny_fields_by_default is on/, fn ->
@@ -328,6 +495,7 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
 
           ash_grant do
             resolver(fn _, _ -> [] end)
+            default_field_policies(true)
             deny_fields_by_default(true)
             scope(:always, true)
           end
@@ -373,6 +541,7 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
 
             ash_grant do
               resolver(fn _, _ -> [] end)
+              default_field_policies(true)
               scope(:always, true)
             end
 

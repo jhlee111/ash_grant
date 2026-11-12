@@ -177,9 +177,9 @@ The option can be set at three levels. The first one set wins:
 
 `AshGrant.Info.deny_fields_by_default?/1` returns the effective value. It is resolved at runtime, like the domain resolver, because a resource cannot read its domain at compile time. To opt one resource out of a domain or app-wide setting, set `deny_fields_by_default false` on it.
 
-A resource with the option in effect and no `field_group` could never show a field. Setting it on such a resource is a compile error. Inheriting it from the domain or app config gives a compile warning. Add a group such as `field_group :public, :all`, or opt the resource out.
+The option requires `default_field_policies true`. Without it no field policy is generated, so `AshGrant.Info.deny_fields_by_default?/1` returns `false` and the resource is reported at compile time. A non-boolean `config :ash_grant, :deny_fields_by_default` value, such as `"true"`, raises `ArgumentError`.
 
-With `default_field_policies false` the option still changes `AshGrant.FieldFilterCheck` and `AshGrant.field_check/1`, but the `field_policies` you write decide what happens to fields in no group.
+A resource with the option in effect and no `field_group` could never show a field. Setting it on such a resource is a compile error. Inheriting it from the domain or app config gives a compile warning. Add a group such as `field_group :public, :all`, or opt the resource out.
 
 ## Field Group Inheritance
 

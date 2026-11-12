@@ -131,23 +131,33 @@ defmodule AshGrant.Info do
   Whether the resource hides every field that no granted field group names.
 
   Precedence: the resource option, else the domain option (`AshGrant.Domain`),
-  else `config :ash_grant, :deny_fields_by_default`, else `false`.
+  else `config :ash_grant, :deny_fields_by_default`, else `false`. Always `false`
+  without `default_field_policies true`, since no field policy then hides a field.
   """
   @spec deny_fields_by_default?(Ash.Resource.t()) :: boolean()
   def deny_fields_by_default?(resource) do
-    resolve_deny_fields_by_default(
-      Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :deny_fields_by_default),
-      domain_deny_fields_by_default(Ash.Resource.Info.domain(resource)),
-      Application.get_env(:ash_grant, :deny_fields_by_default)
-    )
+    default_field_policies(resource) == true and
+      resolve_deny_fields_by_default(
+        Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :deny_fields_by_default),
+        domain_deny_fields_by_default(Ash.Resource.Info.domain(resource)),
+        Application.get_env(:ash_grant, :deny_fields_by_default)
+      )
   end
 
   @doc """
   Picks the effective `deny_fields_by_default` from the resource, domain and app
   config values, where `nil` means unset.
+
+  Raises `ArgumentError` when the app config value is neither `nil` nor a boolean.
   """
-  @spec resolve_deny_fields_by_default(boolean() | nil, boolean() | nil, boolean() | nil) ::
-          boolean()
+  @spec resolve_deny_fields_by_default(boolean() | nil, boolean() | nil, term()) :: boolean()
+  def resolve_deny_fields_by_default(_resource_value, _domain_value, app_value)
+      when not is_nil(app_value) and not is_boolean(app_value) do
+    raise ArgumentError,
+          "config :ash_grant, :deny_fields_by_default must be a boolean, got: " <>
+            inspect(app_value)
+  end
+
   def resolve_deny_fields_by_default(resource_value, domain_value, app_value) do
     Enum.find([resource_value, domain_value, app_value], false, &is_boolean/1)
   end

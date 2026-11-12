@@ -72,6 +72,8 @@ defmodule AshGrant.Test.Domain do
     # deny_fields_by_default test resources
     resource(AshGrant.Test.DenyFieldsRecord)
     resource(AshGrant.Test.DenyFieldsExceptRecord)
+    resource(AshGrant.Test.DenyFieldsDisjointRecord)
+    resource(AshGrant.Test.DenyFieldsAppConfigRecord)
 
     # Overlapping field_group :always deduplication test resource
     resource(AshGrant.Test.OverlappingRecord)

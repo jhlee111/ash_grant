@@ -7,11 +7,13 @@ defmodule AshGrant.Transformers.ValidateFieldGroups do
   - References to undefined parent field groups
   - Circular inheritance chains
   - mask fields without mask_with function
-  - `deny_fields_by_default true` on a resource with no field group
+  - `deny_fields_by_default true` on a resource with no field group or without
+    `default_field_policies true`
   """
 
   use Spark.Dsl.Transformer
 
+  alias AshGrant.Verifiers.ValidateDenyFieldsByDefault
   alias Spark.Dsl.Transformer
 
   @impl true
@@ -26,12 +28,8 @@ defmodule AshGrant.Transformers.ValidateFieldGroups do
 
     # Only the resource's own `true` is known here: the domain cannot be read from a
     # transformer, so ValidateDenyFieldsByDefault covers inherited values.
-    if field_groups == [] and
-         Transformer.get_option(dsl_state, [:ash_grant], :deny_fields_by_default) == true do
-      dsl_state
-      |> Transformer.get_persisted(:module)
-      |> AshGrant.Verifiers.ValidateDenyFieldsByDefault.error()
-      |> raise()
+    if Transformer.get_option(dsl_state, [:ash_grant], :deny_fields_by_default) == true do
+      validate_deny_fields_by_default!(dsl_state, field_groups)
     end
 
     if field_groups != [] do
@@ -45,6 +43,21 @@ defmodule AshGrant.Transformers.ValidateFieldGroups do
     end
 
     {:ok, dsl_state}
+  end
+
+  defp validate_deny_fields_by_default!(dsl_state, field_groups) do
+    resource = Transformer.get_persisted(dsl_state, :module)
+
+    cond do
+      Transformer.get_option(dsl_state, [:ash_grant], :default_field_policies) != true ->
+        raise ValidateDenyFieldsByDefault.no_field_policies_error(resource)
+
+      field_groups == [] ->
+        raise ValidateDenyFieldsByDefault.error(resource)
+
+      true ->
+        :ok
+    end
   end
 
   defp get_field_group_entities(dsl_state) do

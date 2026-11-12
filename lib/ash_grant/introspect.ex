@@ -599,8 +599,9 @@ defmodule AshGrant.Introspect do
   # The field groups two permission lists both show, where `[]` means every
   # field, or no field when the resource sets deny_fields_by_default. A group is
   # kept when all of its fields are visible under both lists. When no group
-  # fits, the narrower list's groups are reported: `[]` would claim every field
-  # is visible.
+  # fits, deny_fields_by_default reports `[]` (no group), since the runtime
+  # shows none of them; otherwise the narrower list's groups are reported,
+  # because `[]` would claim every field is visible.
   @spec intersect_field_groups(module(), [String.t()], [String.t()]) :: [String.t()]
   def intersect_field_groups(resource, grants_groups, ceiling_groups)
       when grants_groups == [] or ceiling_groups == [] do
@@ -623,6 +624,7 @@ defmodule AshGrant.Introspect do
 
     cond do
       fitting != [] -> fitting
+      Info.deny_fields_by_default?(resource) -> []
       MapSet.size(ceiling_fields) <= MapSet.size(grants_fields) -> ceiling_groups
       true -> grants_groups
     end
