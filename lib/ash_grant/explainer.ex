@@ -421,8 +421,10 @@ defmodule AshGrant.Explainer do
   defp or_filters([]), do: nil
   defp or_filters(filters), do: Enum.reduce(filters, &Ash.Expr.expr(^&2 or ^&1))
 
-  # A grant with no scope segment is unrestricted for the actions it matches.
-  defp resolve_allow_filter(%{scope_name: nil}, _resource, _context), do: true
+  # An RBAC grant with no scope segment authorizes no records (issue #215).
+  # `match_permission/3` already reports it as unmatched, so it never gets here;
+  # if it did, it would contribute nothing to the union.
+  defp resolve_allow_filter(%{scope_name: nil}, _resource, _context), do: false
 
   defp resolve_allow_filter(%{scope_name: scope_name}, resource, context) do
     if AshGrant.Scope.universal?(to_string(scope_name)),

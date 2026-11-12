@@ -61,6 +61,7 @@ defmodule AshGrant.PermissionValidation do
   | `:deprecated_type_wildcard` | `:action` | warning | from `AshGrant.Permission.diagnostics/1` |
   | `:dead_instance_type_wildcard` | `:action` | warning | from `AshGrant.Permission.diagnostics/1` |
   | `:scoped_deny` | `:scope` | warning | from `AshGrant.Permission.diagnostics/1`: a deny ignores its scope |
+  | `:empty_rbac_scope` | `:scope` | error | from `AshGrant.Permission.diagnostics/1`: an RBAC allow with no scope authorizes no records |
   | `:undeclared_scope` | `:scope` | error¹ | no resource the grant applies to declares the scope |
   | `:scope_missing_on` | `:scope` | error¹ | some of the resources the grant applies to lack the scope — listed in `:resources` |
   | `:unverifiable_scope` | `:scope` | warning | undeclared, but a `scope_resolver` is configured and may know it |
@@ -144,10 +145,12 @@ defmodule AshGrant.PermissionValidation do
     dead_instance_type_wildcard: :warning,
     unknown_action_type: :error,
     # A warning: the deny still applies, just more broadly than written.
-    scoped_deny: :warning
+    scoped_deny: :warning,
+    # An error: the grant authorizes no records at all (#215).
+    empty_rbac_scope: :error
   }
 
-  @diagnostic_segments %{scoped_deny: :scope}
+  @diagnostic_segments %{scoped_deny: :scope, empty_rbac_scope: :scope}
 
   @doc """
   Validates `permissions` and signals any invalid deny+field_group entries per `mode`.

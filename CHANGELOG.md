@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: an RBAC grant with no scope authorizes no writes** ([#215](https://github.com/jhlee111/ash_grant/issues/215)). `post:*:update:` — and the legacy 2-part `post:update`, which parses to the same thing — used to allow the update on **every** record, while the same grant on a read returned nothing. `AshGrant.Check` treated an empty scope as "no conditions"; reads, `can_update?` (`AshGrant.Calculation.CanPerform`), `AshGrant.Introspect.can?/4`, `AshGrant.explain/4` and the policy test checker all treated it as "no records". The write check now agrees with them: such a grant authorizes nothing, on create, update, destroy and generic actions alike. It also no longer widens a scoped grant beside it (`post:*:update:own` + `post:*:update:` updates own posts only). `AshGrant.Evaluator.get_write_scopes/4` no longer returns `:unrestricted`. Deny rules with an empty scope still deny, and instance grants keep their meaning: `post:<id>:update:` is the named record without conditions. **Before upgrading, run `mix ash_grant.check_permissions` over your stored grants**: each such grant is reported as `:empty_rbac_scope`. Replace it with the scope you meant, `always` for every record. `AshGrant.Validations.PermissionStrings` now rejects these strings under its default `reject: :errors`.
 - **The declared Elixir requirement is now `~> 1.18`** (was `~> 1.15`). CI tests Elixir 1.18.4 (the floor) and 1.20, and nothing tested 1.15–1.17, so the old requirement claimed support that was never checked. If you are on Elixir 1.17 or older, stay on AshGrant 0.22.x until you upgrade Elixir.
 
 - **A `write:` expression that references a relationship is checked against the persisted row.** `AshGrant.Check` runs it as a DB query, as it already did for an inline scope without `write:`. A `write:` expression without relationship references is still evaluated in memory.
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`:empty_rbac_scope` diagnostic** ([#215](https://github.com/jhlee111/ash_grant/issues/215)). `AshGrant.Permission.diagnostics/1` reports an RBAC allow with no scope (`post:*:update:`, legacy `post:update`), which authorizes no records. `AshGrant.PermissionValidation.check/2` gives it severity `:error`, so `mix ash_grant.check_permissions` exits 1 on it. Denies and instance grants with an empty scope are not reported.
 - **`:scoped_deny` diagnostic.** `AshGrant.Permission.diagnostics/1` (and so `mix ash_grant.verify` and `AshGrant.PermissionValidation.check/2`) warns on a deny carrying a scope other than `always`/`all`/`global`. A deny matches on resource and action only, so `!post:*:update:own` denies every update, not only own posts.
 
 ### Fixed
