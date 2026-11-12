@@ -314,6 +314,10 @@ semantics you must resolve manually (see the
 [hand-rolled version](argument-based-scope.md#hand-rolled-version-under-the-hood))
 and read from `changeset.attributes` instead.
 
+This applies only to scopes that read a `resolve_argument` argument. A scope
+that reads the FK attribute itself, and a `scope_through` parent, is checked
+against both the original and the written FK.
+
 ## See also
 
 - [Argument-Based Scope](argument-based-scope.md) — deep dive on

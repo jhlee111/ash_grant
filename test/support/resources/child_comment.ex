@@ -69,7 +69,7 @@ defmodule AshGrant.Test.ChildComment do
     end
 
     update :update do
-      accept([:body])
+      accept([:body, :post_id])
     end
   end
 end
