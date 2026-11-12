@@ -112,7 +112,7 @@ defmodule AshGrant.Check.WrittenRecord do
 
   defp equal?(resource, attribute, left, right) do
     case Ash.Resource.Info.attribute(resource, attribute) do
-      %{type: type, constraints: constraints} -> Ash.Type.equal?(type, left, right, constraints)
+      %{type: type} -> Ash.Type.equal?(type, left, right)
       nil -> left == right
     end
   end
