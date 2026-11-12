@@ -718,8 +718,10 @@ defmodule AshGrant.Evaluator do
     |> Enum.uniq()
   end
 
-  defp blank_to_nil(""), do: nil
-  defp blank_to_nil(scope), do: scope
+  @doc false
+  @spec blank_to_nil(String.t() | nil) :: String.t() | nil
+  def blank_to_nil(""), do: nil
+  def blank_to_nil(scope), do: scope
 
   @doc """
   Summarises the deny rules that apply to a resource and action, across both tiers.

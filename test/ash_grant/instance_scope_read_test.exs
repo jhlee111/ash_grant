@@ -10,10 +10,17 @@ defmodule AshGrant.InstanceScopeReadTest do
   """
   use AshGrant.DataCase, async: true
 
+  # An undeclared instance scope logs a warning on every read.
+  @moduletag :capture_log
+
   import AshGrant.Test.Generator
 
   alias AshGrant.PolicyTest.Checker
-  alias AshGrant.Test.{CeilingPost, Feed, OwnedRecord, Post, TenantPost}
+  import ExUnit.CaptureLog
+
+  alias AshGrant.Introspect
+  alias AshGrant.PolicyTest.YamlParser
+  alias AshGrant.Test.{CeilingPost, ChildComment, Feed, OwnedRecord, Post, TenantPost}
 
   defp actor(permissions), do: %{id: Ash.UUID.generate(), permissions: permissions}
 
@@ -252,61 +259,57 @@ defmodule AshGrant.InstanceScopeReadTest do
   end
 
   describe "CanPerform" do
-    defp can_update_by_id(actor) do
-      Post
-      |> Ash.Query.load(:can_update?)
-      |> Ash.read!(actor: actor)
-      |> Map.new(&{&1.id, &1.can_update?})
+    # `AshGrant.Check` does not honour an own-resource instance grant on writes
+    # yet, so the read action is the one where CanPerform can agree with the runtime.
+    defp can_read_by_id(resource \\ Post, actor) do
+      resource
+      |> Ash.Query.calculate(
+        :can_read?,
+        :boolean,
+        {AshGrant.Calculation.CanPerform, action: :read, resource: resource}
+      )
+      |> Ash.read!(actor: actor, authorize?: false)
+      |> Map.new(&{&1.id, &1.calculations[:can_read?]})
     end
 
     test "a scoped instance grant is true only where the scope holds", %{
       draft: draft,
       published: published
     } do
-      actor =
-        actor([
-          "post:*:read:always",
-          "post:#{draft.id}:update:draft",
-          "post:#{published.id}:update:draft"
-        ])
-
-      can = can_update_by_id(actor)
+      actor = actor(["post:#{draft.id}:read:draft", "post:#{published.id}:read:draft"])
+      can = can_read_by_id(actor)
 
       assert can[draft.id] == true
       assert can[published.id] == false
+      assert read_ids(actor) == [draft.id]
     end
 
     test "an undeclared scope is false and does not raise", %{draft: draft} do
-      actor = actor(["post:*:read:always", "post:#{draft.id}:update:no_such_scope_207"])
+      actor = actor(["post:*:read:published", "post:#{draft.id}:read:no_such_scope_207"])
 
-      assert can_update_by_id(actor)[draft.id] == false
+      assert can_read_by_id(actor)[draft.id] == false
     end
 
     test "an actor-template scope holds only for the actor's own records", %{draft: draft} do
       someone_elses = generate(post())
 
-      permissions =
-        ["post:*:read:always"] ++ Enum.map([draft, someone_elses], &"post:#{&1.id}:update:own")
+      actor = %{
+        id: draft.author_id,
+        permissions: Enum.map([draft, someone_elses], &"post:#{&1.id}:read:own")
+      }
 
-      can = can_update_by_id(%{id: draft.author_id, permissions: permissions})
+      can = can_read_by_id(actor)
 
       assert can[draft.id] == true
       assert can[someone_elses.id] == false
+      assert read_ids(actor) == [draft.id]
     end
 
     test "a scope applies against a non-default instance_key" do
       draft = generate(feed())
       published = generate(feed(status: :published))
-
-      permissions =
-        ["feed:*:read:always"] ++
-          Enum.map([draft, published], &"feed:#{&1.feed_id}:update:published")
-
-      can =
-        Feed
-        |> Ash.Query.load(:can_update?)
-        |> Ash.read!(actor: actor(permissions))
-        |> Map.new(&{&1.id, &1.can_update?})
+      actor = actor(Enum.map([draft, published], &"feed:#{&1.feed_id}:read:published"))
+      can = can_read_by_id(Feed, actor)
 
       assert can[published.id] == true
       assert can[draft.id] == false
@@ -454,6 +457,201 @@ defmodule AshGrant.InstanceScopeReadTest do
                  :read,
                  record_map(draft)
                )
+    end
+  end
+
+  describe "type wildcard and logging" do
+    test "a scoped grant on a type wildcard narrows the read", %{
+      draft: draft,
+      published: published
+    } do
+      actor = actor(Enum.map([draft, published], &"post:#{&1.id}:@read:draft"))
+
+      assert read_ids(actor) == [draft.id]
+    end
+
+    test "an undeclared instance scope logs a warning naming it", %{draft: draft} do
+      log =
+        capture_log(fn ->
+          assert read_ids(actor(["post:#{draft.id}:read:no_such_scope_207"])) == []
+        end)
+
+      assert log =~ "no_such_scope_207"
+      assert log =~ "authorizes nothing"
+    end
+  end
+
+  describe "scope_through" do
+    defp comment!(post) do
+      ChildComment
+      |> Ash.Changeset.for_create(
+        :create,
+        %{body: "b", post_id: post.id, user_id: Ash.UUID.generate()},
+        authorize?: false
+      )
+      |> Ash.create!()
+    end
+
+    defp comment_ids(actor) do
+      case Ash.read(ChildComment, actor: actor) do
+        {:ok, records} -> records |> Enum.map(& &1.id) |> Enum.sort()
+        {:error, %Ash.Error.Forbidden{}} -> []
+      end
+    end
+
+    defp write_comment(verb, comment, actor) do
+      result =
+        case verb do
+          :update ->
+            comment
+            |> Ash.Changeset.for_update(:update, %{body: "x"}, actor: actor)
+            |> Ash.update()
+
+          :destroy ->
+            comment
+            |> Ash.Changeset.for_destroy(:destroy, %{}, actor: actor)
+            |> Ash.destroy()
+        end
+
+      case result do
+        :ok -> :allow
+        {:ok, _} -> :allow
+        {:error, %Ash.Error.Forbidden{}} -> :deny
+      end
+    end
+
+    test "a parent grant's scope must hold on the parent row for reads", %{
+      draft: draft,
+      published: published
+    } do
+      on_draft = comment!(draft)
+      _on_published = comment!(published)
+
+      actor = actor(Enum.map([draft, published], &"post:#{&1.id}:read:draft"))
+
+      assert comment_ids(actor) == [on_draft.id]
+      assert read_ids(actor) == [draft.id]
+    end
+
+    test "an undeclared parent scope reaches no child", %{published: published} do
+      comment!(published)
+
+      assert comment_ids(actor(["post:#{published.id}:read:no_such_scope_207"])) == []
+    end
+
+    test "an empty parent scope still reaches every child", %{published: published} do
+      comment = comment!(published)
+
+      assert comment_ids(actor(["post:#{published.id}:read:"])) == [comment.id]
+    end
+
+    test "a parent grant's scope must hold on the parent row for updates", %{
+      draft: draft,
+      published: published
+    } do
+      on_draft = comment!(draft)
+      on_published = comment!(published)
+      actor = actor(Enum.map([draft, published], &"post:#{&1.id}:update:draft"))
+
+      assert write_comment(:update, on_draft, actor) == :allow
+      assert write_comment(:update, on_published, actor) == :deny
+    end
+
+    test "an undeclared parent scope does not allow a destroy", %{published: published} do
+      comment = comment!(published)
+      actor = actor(["post:#{published.id}:destroy:no_such_scope_207"])
+
+      assert write_comment(:destroy, comment, actor) == :deny
+    end
+
+    test "CanPerform applies the parent grant's scope", %{draft: draft, published: published} do
+      on_draft = comment!(draft)
+      on_published = comment!(published)
+
+      permissions =
+        ["child_comment:*:read:always"] ++
+          Enum.map([draft, published], &"post:#{&1.id}:update:draft")
+
+      can =
+        ChildComment
+        |> Ash.Query.load(:can_update?)
+        |> Ash.read!(actor: actor(permissions))
+        |> Map.new(&{&1.id, &1.can_update?})
+
+      assert can[on_draft.id] == true
+      assert can[on_published.id] == false
+    end
+
+    test "the checker leaves a scoped parent grant undecided", %{published: published} do
+      comment = comment!(published)
+      actor = actor(["post:#{published.id}:read:draft"])
+
+      record =
+        Map.take(comment, Ash.Resource.Info.attribute_names(ChildComment) |> Enum.to_list())
+
+      assert {:indeterminate, _} = Checker.check(ChildComment, actor, :read, record)
+
+      assert {:deny, _} =
+               Checker.check(
+                 ChildComment,
+                 actor(["post:#{published.id}:read:no_such_scope_207"]),
+                 :read,
+                 record
+               )
+    end
+
+    test "explain names the parent grant's scope", %{draft: draft} do
+      comment!(draft)
+      grant = "post:#{draft.id}:read:draft"
+      explanation = AshGrant.explain(ChildComment, :read, actor([grant]))
+
+      entry = Enum.find(explanation.evaluated_permissions, &(&1.permission == grant))
+      assert %{matched: true, reason: reason} = entry
+      assert reason =~ "while scope `draft` holds"
+    end
+  end
+
+  describe "Introspect" do
+    test "an undeclared-scope instance grant does not allow the action", %{draft: draft} do
+      actor = actor(["post:#{draft.id}:read:no_such_scope_207"])
+
+      assert {:deny, _} = Introspect.can?(Post, :read, actor)
+
+      assert %{allowed: false, instance_ids: nil} =
+               Post |> Introspect.actor_permissions(actor) |> Enum.find(&(&1.action == "read"))
+    end
+
+    test "a scoped instance grant allows the action and reports its scope", %{draft: draft} do
+      actor = actor(["post:#{draft.id}:read:draft"])
+
+      assert {:allow, %{instance_ids: [id], instance_grants: [{id, "draft"}]}} =
+               Introspect.can?(Post, :read, actor)
+
+      assert id == draft.id
+    end
+
+    test "an undeclared parent scope does not allow the child action", %{draft: draft} do
+      assert {:deny, _} =
+               Introspect.can?(
+                 ChildComment,
+                 :read,
+                 actor(["post:#{draft.id}:read:no_such_scope_207"])
+               )
+    end
+
+    test "the checker without a record agrees", %{draft: draft} do
+      assert {:deny, _} =
+               Checker.check(Post, actor(["post:#{draft.id}:read:no_such_scope_207"]), :read, nil)
+    end
+  end
+
+  describe "YAML policy tests" do
+    test "the instance scope fixture passes every assertion" do
+      fixture = "test/fixtures/policy_tests/instance_scope.yaml"
+      {:ok, results} = YamlParser.run_yaml_tests(fixture)
+
+      assert length(results) == 3
+      assert Enum.reject(results, & &1.passed) == []
     end
   end
 end

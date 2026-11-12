@@ -111,13 +111,10 @@ defmodule AshGrant.FieldFilterCheck do
     scopes = rbac |> Enum.map(& &1.scope) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     instance_grants =
-      instance |> Enum.map(&{&1.instance_id, blank_to_nil(&1.scope)}) |> Enum.uniq()
+      instance |> Enum.map(&{&1.instance_id, Evaluator.blank_to_nil(&1.scope)}) |> Enum.uniq()
 
     {scopes, instance_grants}
   end
-
-  defp blank_to_nil(""), do: nil
-  defp blank_to_nil(scope), do: scope
 
   # Mirrors AshGrant.FilterCheck.build_filter_with_instances (raw true/false/expr)
   # but with CanPerform's empty-context scope resolution, because this predicate

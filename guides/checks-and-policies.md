@@ -150,9 +150,10 @@ At load time, `expression/2` runs **once** with the actor in context:
    named scope adds that scope's filter (`id in ^ids and <scope>`), and a
    grant with an undeclared scope adds nothing.
 4. For each `scope_through`, add
-   `expr(fk in ^parent_instance_ids)` (or an `exists()` subquery when
-   the parent's `instance_key` differs from the relationship's
-   destination attribute).
+   `expr(fk in ^parent_instance_ids)`, or an `exists()` subquery on the
+   parent when the parent's `instance_key` differs from the relationship's
+   destination attribute or a parent grant carries a named scope. The
+   subquery applies the parent grant's scope to the parent row.
 5. Combine everything with `OR`. Shortcuts:
    - Any scope's expression resolves to `true` → the calculation is
      literally `expr(true)` and collapses to a `SELECT true`. This is a

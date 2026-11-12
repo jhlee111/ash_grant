@@ -163,7 +163,13 @@ defmodule AshGrant.Calculation.CanPerform do
       |> AshGrant.InstanceFilter.build(resource, %{})
 
     parent_filters =
-      build_parent_instance_filters(resource, permissions, action, action_type)
+      AshGrant.FilterCheck.build_parent_instance_filters(
+        resource,
+        permissions,
+        action,
+        action_type,
+        %{}
+      )
 
     deny_summary =
       AshGrant.Evaluator.deny_summary(permissions, resource_name, action, action_type)
@@ -209,59 +215,10 @@ defmodule AshGrant.Calculation.CanPerform do
     end
   end
 
-  # Parent instance filter building (mirrors FilterCheck's build_parent_instance_filters)
-
   defp action_type_for(resource, action) do
     case Ash.Resource.Info.action(resource, String.to_existing_atom(action)) do
       nil -> nil
       action_struct -> action_struct.type
-    end
-  end
-
-  defp build_parent_instance_filters(resource, permissions, action_name, action_type) do
-    AshGrant.Info.scope_throughs(resource)
-    |> Enum.filter(&AshGrant.Info.scope_through_allows_action?(&1, action_name, action_type))
-    |> Enum.flat_map(fn scope_through ->
-      parent_resource = resolve_parent_resource(resource, scope_through)
-      parent_resource_name = AshGrant.Info.resource_name(parent_resource)
-
-      parent_ids =
-        AshGrant.Evaluator.get_matching_instance_ids(
-          permissions,
-          parent_resource_name,
-          action_name,
-          action_type
-        )
-
-      if parent_ids != [] do
-        [parent_instance_expr(resource, scope_through, parent_resource, parent_ids)]
-      else
-        []
-      end
-    end)
-  end
-
-  defp parent_instance_expr(resource, scope_through, parent_resource, parent_ids) do
-    relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
-    fk_field = relationship.source_attribute
-    parent_dest_field = relationship.destination_attribute
-    parent_instance_key = AshGrant.Info.instance_key(parent_resource)
-
-    if parent_instance_key == parent_dest_field do
-      expr(^ref(fk_field) in ^parent_ids)
-    else
-      expr(exists(^[scope_through.relationship], ^ref(parent_instance_key) in ^parent_ids))
-    end
-  end
-
-  defp resolve_parent_resource(resource, scope_through) do
-    case scope_through.resource do
-      nil ->
-        relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
-        relationship.destination
-
-      explicit ->
-        explicit
     end
   end
 

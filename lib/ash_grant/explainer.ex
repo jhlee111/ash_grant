@@ -315,14 +315,17 @@ defmodule AshGrant.Explainer do
         |> instance_verdict(is_deny, match.resource_name, "instance", match)
         |> with_instance_scope(perm, is_deny, match.resource)
 
-      relationship = parent_relationship(perm, match.parents) ->
-        instance_verdict(
-          perm,
+      through = parent_relationship(perm, match.parents) ->
+        {relationship, parent} = through
+
+        perm
+        |> instance_verdict(
           is_deny,
           perm.resource,
           "#{perm.resource} via scope_through :#{relationship}",
           match
         )
+        |> with_instance_scope(perm, is_deny, parent)
 
       true ->
         {false, mismatch_reason(perm, match)}
@@ -340,16 +343,16 @@ defmodule AshGrant.Explainer do
     end
   end
 
-  # The resource's own instance grant reaches the record only while its scope
-  # holds, and not at all when the scope is undeclared (#207), as in
-  # `AshGrant.InstanceFilter`.
+  # An instance grant reaches a record only while its scope holds on the granted
+  # resource (the parent, for scope_through), and not at all when that resource
+  # does not declare the scope (#207), as in `AshGrant.InstanceFilter`.
   defp with_instance_scope({true, reason}, %Permission{scope: scope}, false, resource)
        when scope not in [nil, ""] do
     cond do
       AshGrant.Scope.universal?(scope) ->
         {true, reason}
 
-      Info.get_scope(resource, scope_name(scope)) || Info.scope_resolver(resource) ->
+      AshGrant.InstanceFilter.reachable?(scope, resource) ->
         {true, "#{reason} while scope `#{scope}` holds"}
 
       true ->
@@ -368,18 +371,18 @@ defmodule AshGrant.Explainer do
   end
 
   defp parent_relationship(perm, parents) do
-    Enum.find_value(parents, fn {parent_name, relationship} ->
-      if Permission.matches_resource?(perm.resource, parent_name), do: relationship
+    Enum.find_value(parents, fn {parent_name, relationship, parent} ->
+      if Permission.matches_resource?(perm.resource, parent_name), do: {relationship, parent}
     end)
   end
 
-  # `{parent resource name, relationship}` for each scope_through that applies
-  # to this action.
+  # `{parent resource name, relationship, parent resource}` for each scope_through
+  # that applies to this action.
   defp scope_through_parents(resource, action_str, action_type) do
     for scope_through <- Info.scope_throughs(resource),
         Info.scope_through_allows_action?(scope_through, action_str, action_type),
         parent = Introspect.scope_through_parent_resource(resource, scope_through) do
-      {Info.resource_name(parent), scope_through.relationship}
+      {Info.resource_name(parent), scope_through.relationship, parent}
     end
   end
 
@@ -427,7 +430,8 @@ defmodule AshGrant.Explainer do
         resource,
         permissions,
         action,
-        action_type
+        action_type,
+        context
       )
 
     deny_summary = Evaluator.deny_summary(permissions, match.resource_name, action, action_type)

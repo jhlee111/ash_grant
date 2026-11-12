@@ -208,14 +208,20 @@ defmodule AshGrant.PolicyTest.Checker do
     action_name = to_string(action)
     action_type = Introspect.resolve_action_type(resource, action)
 
-    ids_for = fn resource_name ->
-      Evaluator.get_matching_instance_ids(permissions, resource_name, action_name, action_type)
+    grants_for = fn parent ->
+      permissions
+      |> Evaluator.get_matching_instance_grants(
+        Info.resource_name(parent),
+        action_name,
+        action_type
+      )
+      |> Enum.filter(fn {_id, scope} -> AshGrant.InstanceFilter.reachable?(scope, parent) end)
     end
 
     parents =
       for scope_through <- Info.scope_throughs(resource),
           Info.scope_through_allows_action?(scope_through, action_name, action_type),
-          do: parent_admits?(resource, scope_through, record, ids_for)
+          do: parent_admits?(resource, scope_through, record, grants_for)
 
     own =
       permissions
@@ -244,22 +250,37 @@ defmodule AshGrant.PolicyTest.Checker do
   # Decidable from the record only when the foreign key points at the parent's
   # instance_key. Otherwise the runtime joins to the parent row, which a policy
   # test does not have: with a parent grant in play that is undecided, not a deny.
-  defp parent_admits?(resource, scope_through, record, ids_for) do
+  # The same holds for a parent grant with a scope, which must hold on the parent
+  # row (#207). An undeclared parent scope admits nothing.
+  defp parent_admits?(resource, scope_through, record, grants_for) do
     relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
     parent = Introspect.scope_through_parent_resource(resource, scope_through)
-    parent_ids = ids_for.(Info.resource_name(parent))
+    grants = grants_for.(parent)
+
+    {unconditional, conditional} =
+      Enum.split_with(grants, fn {_id, scope} -> AshGrant.InstanceFilter.unconditional?(scope) end)
+
+    ids = fn grants -> Enum.map(grants, &elem(&1, 0)) end
 
     cond do
-      Info.instance_key(parent) == relationship.destination_attribute ->
-        id_in?(record, relationship.source_attribute, parent_ids)
-
-      parent_ids == [] ->
+      grants == [] ->
         false
 
-      true ->
+      Info.instance_key(parent) != relationship.destination_attribute ->
         {:indeterminate,
          "scope_through `#{scope_through.relationship}` matches the parent by " <>
            "`#{Info.instance_key(parent)}`, which only a join to the parent row can check"}
+
+      id_in?(record, relationship.source_attribute, ids.(unconditional)) ->
+        true
+
+      id_in?(record, relationship.source_attribute, ids.(conditional)) ->
+        {:indeterminate,
+         "scope_through `#{scope_through.relationship}` grant's scope must hold on the " <>
+           "parent row, which a policy test does not have"}
+
+      true ->
+        false
     end
   end
 

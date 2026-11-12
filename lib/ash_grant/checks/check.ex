@@ -355,7 +355,8 @@ defmodule AshGrant.Check do
           permissions,
           action_name,
           action_type,
-          authorizer
+          authorizer,
+          context
         )
     end
   end
@@ -413,7 +414,8 @@ defmodule AshGrant.Check do
          permissions,
          action_name,
          action_type,
-         authorizer
+         authorizer,
+         context
        ) do
     scope_throughs = AshGrant.Info.scope_throughs(resource_module)
 
@@ -430,7 +432,8 @@ defmodule AshGrant.Check do
           permissions,
           action_name,
           action_type,
-          record
+          record,
+          context
         )
       end)
     end
@@ -442,37 +445,49 @@ defmodule AshGrant.Check do
          permissions,
          action_name,
          action_type,
-         record
+         record,
+         context
        ) do
-    # Check action filter
-    action_allowed =
-      AshGrant.Info.scope_through_allows_action?(scope_through, action_name, action_type)
-
-    if action_allowed do
+    if record &&
+         AshGrant.Info.scope_through_allows_action?(scope_through, action_name, action_type) do
       parent_resource = resolve_parent_resource(resource_module, scope_through)
-      parent_resource_name = AshGrant.Info.resource_name(parent_resource)
+      relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
+      fk_value = to_string(Map.get(record, relationship.source_attribute))
 
-      parent_ids =
-        AshGrant.Evaluator.get_matching_instance_ids(
-          permissions,
-          parent_resource_name,
-          action_name,
-          action_type
-        )
+      scopes =
+        for {id, scope} <-
+              AshGrant.Evaluator.get_matching_instance_grants(
+                permissions,
+                AshGrant.Info.resource_name(parent_resource),
+                action_name,
+                action_type
+              ),
+            id == fk_value,
+            do: scope
 
-      if parent_ids != [] and record do
-        relationship =
-          Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
-
-        fk_field = relationship.source_attribute
-        fk_value = to_string(Map.get(record, fk_field))
-        fk_value in parent_ids
-      else
-        false
-      end
+      Enum.any?(scopes, &AshGrant.InstanceFilter.unconditional?/1) or
+        Enum.any?(scopes, &parent_scope_holds?(relationship, &1, fk_value, context))
     else
       false
     end
+  end
+
+  # A parent instance grant's scope must hold on the parent row (#207), checked
+  # against the database as the parent's own read filter would be.
+  defp parent_scope_holds?(relationship, scope, fk_value, context) do
+    case AshGrant.InstanceFilter.condition(scope, relationship.destination, context) do
+      false ->
+        false
+
+      condition ->
+        relationship.destination
+        |> Ash.Query.for_read(:read, %{})
+        |> Ash.Query.filter(^[{relationship.destination_attribute, fk_value}])
+        |> Ash.Query.filter(^resolve_templates(condition, context))
+        |> Ash.exists?(exists_opts(context))
+    end
+  rescue
+    _ -> false
   end
 
   defp resolve_parent_resource(resource_module, scope_through) do

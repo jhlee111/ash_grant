@@ -3,8 +3,11 @@ defmodule AshGrant.InstanceFilter do
   # The instance-permission part of a read filter, shared by `AshGrant.FilterCheck`,
   # `AshGrant.Calculation.CanPerform`, `AshGrant.FieldFilterCheck` and
   # `AshGrant.Explainer` so the four agree on what a scoped instance grant reaches.
+  # `AshGrant.Check`, `AshGrant.Introspect` and `AshGrant.PolicyTest.Checker` use
+  # `condition/3`, `unconditional?/1` and `reachable?/2` for the same rule.
 
   require Ash.Expr
+  require Logger
 
   alias AshGrant.Info
 
@@ -27,9 +30,7 @@ defmodule AshGrant.InstanceFilter do
     {unconditional, conditional} =
       grants
       |> Enum.group_by(&elem(&1, 1), &elem(&1, 0))
-      |> Enum.map(fn {scope, ids} ->
-        {scope_condition(scope, resource, context), Enum.uniq(ids)}
-      end)
+      |> Enum.map(fn {scope, ids} -> {condition(scope, resource, context), Enum.uniq(ids)} end)
       |> Enum.reject(fn {condition, _ids} -> condition == false end)
       |> Enum.split_with(fn {condition, _ids} -> condition == true end)
 
@@ -49,16 +50,51 @@ defmodule AshGrant.InstanceFilter do
     end
   end
 
-  defp scope_condition(nil, _resource, _context), do: true
+  @doc """
+  The condition an instance grant's scope puts on a record of `resource`: `true`
+  for an empty or universal scope, `false` for an undeclared one, otherwise the
+  scope's read filter. An undeclared scope logs a warning.
+  """
+  @spec condition(String.t() | nil, Ash.Resource.t(), map()) :: term()
+  def condition(nil, _resource, _context), do: true
 
-  defp scope_condition(scope, resource, context) do
+  def condition(scope, resource, context) do
     name = scope_name(scope)
 
     cond do
-      AshGrant.Scope.universal?(scope) -> true
-      Info.get_scope(resource, name) -> Info.resolve_scope_filter(resource, name, context)
-      true -> legacy_scope_condition(resource, name, context)
+      AshGrant.Scope.universal?(scope) ->
+        true
+
+      Info.get_scope(resource, name) ->
+        Info.resolve_scope_filter(resource, name, context)
+
+      Info.scope_resolver(resource) ->
+        legacy_scope_condition(resource, name, context)
+
+      true ->
+        Logger.warning(
+          "AshGrant: an instance permission on #{inspect(resource)} names scope " <>
+            "#{inspect(scope)}, which the resource does not declare. The grant authorizes " <>
+            "nothing. Run `mix ash_grant.check_permissions` to find such grants."
+        )
+
+        false
     end
+  end
+
+  @doc "Whether an instance grant's scope matches the record by id alone."
+  @spec unconditional?(String.t() | nil) :: boolean()
+  def unconditional?(scope), do: is_nil(scope) or AshGrant.Scope.universal?(scope)
+
+  @doc """
+  Whether an instance grant with this scope can reach any record of `resource`.
+  Only an undeclared scope cannot. A legacy `scope_resolver` counts as declaring
+  every scope, since only resolving it tells.
+  """
+  @spec reachable?(String.t() | nil, Ash.Resource.t()) :: boolean()
+  def reachable?(scope, resource) do
+    unconditional?(scope) or Info.scope_resolver(resource) != nil or
+      Info.get_scope(resource, scope_name(scope)) != nil
   end
 
   # A legacy `scope_resolver` written for RBAC scopes may have no clause for a
