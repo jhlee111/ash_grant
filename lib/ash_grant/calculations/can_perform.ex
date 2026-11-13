@@ -60,14 +60,15 @@ defmodule AshGrant.Calculation.CanPerform do
 
   1. Resolves actor's permissions via the configured `PermissionResolver`
   2. Gets RBAC scopes via `AshGrant.Evaluator.get_all_scopes/4`
-  3. Gets instance IDs via `AshGrant.Evaluator.get_matching_instance_ids/4`
+  3. Gets instance grants via `AshGrant.Evaluator.get_matching_instance_grants/4`
   4. Builds a combined boolean expression:
      - "always"/"all"/"global" in scopes -> `true` (by-name fast path)
      - any scope whose expression resolves to `true` -> `true`, absorbing the
        OR union whatever that scope is named (#149)
      - No scopes AND no instances -> `false`
      - RBAC scopes -> scope filters combined with OR
-     - Instance IDs -> `id in ^instance_ids`
+     - Instance grants -> `id in ^ids`, ANDed with the grant's scope filter when
+       it names one (an undeclared scope matches nothing)
      - Both -> RBAC filter OR instance filter
 
   ## See Also
@@ -121,17 +122,19 @@ defmodule AshGrant.Calculation.CanPerform do
         tenant: context.tenant
       }
 
-      instance_key = AshGrant.Info.instance_key(resource)
-
       grants = resolve_permissions(resolver, actor, resolver_context)
 
       resolver
       |> AshGrant.Ceiling.permission_sets(actor, resolver_context, grants)
       |> Enum.map(fn permissions ->
-        permission_expression(permissions, resource, resource_name, action, action_type, %{
-          scope_resolver: scope_resolver,
-          instance_key: instance_key
-        })
+        permission_expression(
+          permissions,
+          resource,
+          resource_name,
+          action,
+          action_type,
+          scope_resolver
+        )
       end)
       |> AshGrant.Ceiling.intersect_filters()
       |> case do
@@ -141,24 +144,38 @@ defmodule AshGrant.Calculation.CanPerform do
     end
   end
 
-  defp permission_expression(permissions, resource, resource_name, action, action_type, env) do
-    %{scope_resolver: scope_resolver, instance_key: instance_key} = env
-
+  defp permission_expression(
+         permissions,
+         resource,
+         resource_name,
+         action,
+         action_type,
+         scope_resolver
+       ) do
     scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action, action_type)
 
     # Left untyped on purpose: whether instance type wildcards (`doc:abc:@read:`)
-    # match is undecided (issue #131).
-    instance_ids =
-      AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
+    # match is undecided (issue #131). The empty context leaves template refs
+    # (^actor, ^tenant) for Ash to fill after expression/2 returns.
+    instance_filter =
+      permissions
+      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action)
+      |> AshGrant.InstanceFilter.build(resource, %{})
 
     parent_filters =
-      build_parent_instance_filters(resource, permissions, action, action_type)
+      AshGrant.FilterCheck.build_parent_instance_filters(
+        resource,
+        permissions,
+        action,
+        action_type,
+        %{}
+      )
 
     deny_summary =
       AshGrant.Evaluator.deny_summary(permissions, resource_name, action, action_type)
 
     scopes
-    |> build_expression(instance_ids, instance_key, parent_filters, scope_resolver, resource)
+    |> build_expression(instance_filter, parent_filters, scope_resolver, resource)
     |> AshGrant.Evaluator.restrict_filter(deny_summary, resource)
   end
 
@@ -174,16 +191,8 @@ defmodule AshGrant.Calculation.CanPerform do
 
   # Expression building (mirrors FilterCheck's build_filter_with_instances)
 
-  defp build_expression(
-         scopes,
-         instance_ids,
-         instance_key,
-         parent_filters,
-         scope_resolver,
-         resource
-       ) do
+  defp build_expression(scopes, instance_filter, parent_filters, scope_resolver, resource) do
     rbac_filter = build_rbac_expression(scopes, scope_resolver, resource)
-    instance_filter = build_instance_expression(instance_ids, instance_key)
 
     # Combine all filters with OR (same logic as FilterCheck)
     all_filters =
@@ -206,72 +215,10 @@ defmodule AshGrant.Calculation.CanPerform do
     end
   end
 
-  defp build_instance_expression([], _instance_key), do: nil
-
-  defp build_instance_expression(instance_ids, instance_key),
-    do: build_instance_filter(instance_ids, instance_key)
-
-  defp build_instance_filter(instance_ids, :id) do
-    expr(id in ^instance_ids)
-  end
-
-  defp build_instance_filter(instance_ids, instance_key) do
-    expr(^ref(instance_key) in ^instance_ids)
-  end
-
-  # Parent instance filter building (mirrors FilterCheck's build_parent_instance_filters)
-
   defp action_type_for(resource, action) do
     case Ash.Resource.Info.action(resource, String.to_existing_atom(action)) do
       nil -> nil
       action_struct -> action_struct.type
-    end
-  end
-
-  defp build_parent_instance_filters(resource, permissions, action_name, action_type) do
-    AshGrant.Info.scope_throughs(resource)
-    |> Enum.filter(&AshGrant.Info.scope_through_allows_action?(&1, action_name, action_type))
-    |> Enum.flat_map(fn scope_through ->
-      parent_resource = resolve_parent_resource(resource, scope_through)
-      parent_resource_name = AshGrant.Info.resource_name(parent_resource)
-
-      parent_ids =
-        AshGrant.Evaluator.get_matching_instance_ids(
-          permissions,
-          parent_resource_name,
-          action_name,
-          action_type
-        )
-
-      if parent_ids != [] do
-        [parent_instance_expr(resource, scope_through, parent_resource, parent_ids)]
-      else
-        []
-      end
-    end)
-  end
-
-  defp parent_instance_expr(resource, scope_through, parent_resource, parent_ids) do
-    relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
-    fk_field = relationship.source_attribute
-    parent_dest_field = relationship.destination_attribute
-    parent_instance_key = AshGrant.Info.instance_key(parent_resource)
-
-    if parent_instance_key == parent_dest_field do
-      expr(^ref(fk_field) in ^parent_ids)
-    else
-      expr(exists(^[scope_through.relationship], ^ref(parent_instance_key) in ^parent_ids))
-    end
-  end
-
-  defp resolve_parent_resource(resource, scope_through) do
-    case scope_through.resource do
-      nil ->
-        relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
-        relationship.destination
-
-      explicit ->
-        explicit
     end
   end
 

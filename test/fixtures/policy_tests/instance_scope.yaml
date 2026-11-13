@@ -1,0 +1,37 @@
+resource: AshGrant.Test.Post
+
+actors:
+  draft_reader:
+    id: reader_1
+    permissions:
+      - post:post_1:read:draft
+
+  stale_grant:
+    id: reader_2
+    permissions:
+      - post:post_1:read:no_such_scope_207
+
+tests:
+  - name: "a scoped instance grant admits the record while the scope holds"
+    assert_can:
+      actor: draft_reader
+      action: read
+      record:
+        id: post_1
+        status: draft
+
+  - name: "a scoped instance grant does not admit the record once the scope fails"
+    assert_cannot:
+      actor: draft_reader
+      action: read
+      record:
+        id: post_1
+        status: published
+
+  - name: "an undeclared instance scope admits nothing"
+    assert_cannot:
+      actor: stale_grant
+      action: read
+      record:
+        id: post_1
+        status: draft

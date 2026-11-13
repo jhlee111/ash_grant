@@ -734,8 +734,12 @@ Instance permissions enable resource-sharing patterns (like Google Docs sharing)
 "document:doc_abc123:update:draft"  # Update only when in draft status
 ```
 
-For read actions, `FilterCheck` automatically builds `WHERE id IN (...)` filters
-from instance permissions and combines them with RBAC scope filters using OR.
+For read actions, `FilterCheck` builds `WHERE id IN (...)` filters from instance
+permissions and combines them with RBAC scope filters using OR. A named scope on an
+instance permission narrows it: `document:doc_abc123:read:draft` reaches the
+document only while the `draft` scope holds for it. An empty or universal scope
+(`always`, `all`, `global`) matches by id alone, and an undeclared scope authorizes
+nothing.
 
 Instance permissions match against the resource's own key field only (`:id` by
 default, or the field set by `instance_key`). They do **not** propagate to child
