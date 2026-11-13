@@ -284,7 +284,7 @@ AshGrant generates policy checks, but Ash must be told to enforce them.
 | Option                 | Type              | Required | Default | Description                                                  |
 |------------------------|-------------------|----------|---------|--------------------------------------------------------------|
 | `resolver`             | module or fun/2   | Yes      | —       | Resolves permissions for actors                              |
-| `default_policies`     | bool/atom         | No       | `false` | `true`, `:always`, `:read`, or `:write`                        |
+| `default_policies`     | bool/atom         | No       | `false` | `true`, `:all`, `:read`, or `:write`                           |
 | `default_field_policies`| boolean          | No       | `false` | Auto-generate `field_policies` from `field_group` definitions|
 | `resource_name`        | string            | No       | derived | Override resource name for permission matching               |
 | `instance_key`         | atom              | No       | `:id`   | Field to match instance permission IDs against               |
@@ -715,15 +715,15 @@ Always return an empty list `[]` for unauthenticated or unknown actors.
 
 `default_policies` controls automatic policy generation:
 
-| Value    | Read policy | Write policy |
-|----------|-------------|--------------|
-| `false`  | No          | No           |
-| `true`   | Yes         | Yes          |
-| `:always`   | Yes         | Yes          |
-| `:read`  | Yes         | No           |
-| `:write` | No          | Yes          |
+| Value    | Read policy | Write policy (create/update/destroy) | Generic action policy |
+|----------|-------------|--------------------------------------|-----------------------|
+| `false`  | No          | No                                   | No                    |
+| `true`   | Yes         | Yes                                  | Yes                   |
+| `:all`   | Yes         | Yes                                  | Yes                   |
+| `:read`  | Yes         | No                                   | No                    |
+| `:write` | No          | Yes                                  | No                    |
 
-Generated policies are equivalent to:
+With `true` or `:all`, the generated policies are equivalent to:
 
 ```elixir
 policies do
@@ -734,11 +734,17 @@ policies do
   policy action_type([:create, :update, :destroy]) do
     authorize_if AshGrant.check()
   end
+
+  policy action_type(:action) do
+    authorize_if AshGrant.check()
+  end
 end
 ```
 
 Use `:read` or `:write` when you need auto-generation for one type and
-explicit control over the other.
+explicit control over the other. Neither generates the generic action policy:
+with `:read` or `:write`, write your own `policy action_type(:action)` if the
+resource has generic actions.
 
 ## Instance Permissions
 
