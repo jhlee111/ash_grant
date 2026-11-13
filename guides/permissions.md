@@ -249,7 +249,7 @@ Instance permissions work with both:
 
 An instance grant whose scope the resource does not declare authorizes nothing.
 It does not raise, so a grant stored before a scope was removed cannot block
-reads of the resource. `mix ash_grant.check_permissions` reports such grants.
+reads of the resource. `mix ash_grant.check_permissions` reports such grants as errors.
 
 ### Instance Permission Read Example
 
@@ -511,8 +511,9 @@ and do not fail it.
   parent's instance permissions against the *child's* action, so
   `post:post_abc123:moderate:` is valid when a resource that `scope_through`s `post`
   has a `moderate` action, even if `post` itself does not.
-- **Deny and instance permissions** report an undeclared scope as a warning,
-  because it cannot raise. A deny applies whatever its scope. An instance grant
-  with an undeclared scope authorizes nothing.
+- **Deny permissions** report an undeclared scope as a warning, because a deny
+  applies whatever its scope. An **instance** grant with an undeclared scope is
+  an error. It does not raise, but it authorizes nothing and logs a warning on
+  each read.
 - **Syntax problems** from `AshGrant.Permission.diagnostics/1` (the deprecated
   `read*` spelling, a type Ash does not have) are included in the same list.
