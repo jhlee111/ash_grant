@@ -30,7 +30,7 @@ defmodule AshGrant.Verifiers.ValidateDenyFieldsByDefault do
       not effective? ->
         :ok
 
-      Verifier.get_option(dsl_state, [:ash_grant], :default_field_policies) != true ->
+      not AshGrant.Info.dsl_default_field_policies(dsl_state) ->
         {:error, no_field_policies_error(resource)}
 
       not field_groups?(dsl_state) ->
@@ -56,6 +56,10 @@ defmodule AshGrant.Verifiers.ValidateDenyFieldsByDefault do
           ash_grant do
             default_field_policies true
           end
+
+      Or generate them app-wide in config/config.exs (not runtime.exs):
+
+          config :ash_grant, default_field_policies: true
 
       Or turn the option off for this resource:
 

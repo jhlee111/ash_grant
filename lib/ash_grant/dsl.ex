@@ -548,9 +548,13 @@ defmodule AshGrant.Dsl do
       ],
       default_field_policies: [
         type: :boolean,
-        default: false,
         doc: """
         Automatically generate Ash `field_policies` from `field_group` definitions.
+
+        Unset, it falls back to `config :ash_grant, default_field_policies: true`, else
+        `false`. The app value is read when the resource compiles, so set it in
+        `config/config.exs`, not `runtime.exs`. A resource without a `field_group` gets
+        no generated field policy.
 
         When `true`, AshGrant generates field policies that use
         `AshGrant.FieldFilterCheck` to authorize field access per record, based on

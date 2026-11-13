@@ -609,4 +609,138 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
       refute output =~ "deny_fields_by_default is on"
     end
   end
+
+  describe "default_field_policies app config" do
+    setup do
+      keys = [:default_field_policies, :deny_fields_by_default]
+      previous = Map.new(keys, &{&1, Application.fetch_env(:ash_grant, &1)})
+
+      on_exit(fn ->
+        Enum.each(previous, fn
+          {key, {:ok, value}} -> Application.put_env(:ash_grant, key, value)
+          {key, :error} -> Application.delete_env(:ash_grant, key)
+        end)
+      end)
+    end
+
+    defp compile_app_config_resource!(name, ash_grant_body) do
+      module = Module.concat([__MODULE__, name])
+      domain = Module.concat([__MODULE__, name, Domain])
+
+      Code.compile_string("""
+      defmodule #{inspect(domain)} do
+        @moduledoc false
+        use Ash.Domain, validate_config_inclusion?: false
+
+        resources do
+          allow_unregistered?(true)
+        end
+      end
+
+      defmodule #{inspect(module)} do
+        @moduledoc false
+        use Ash.Resource,
+          domain: #{inspect(domain)},
+          validate_domain_inclusion?: false,
+          data_layer: Ash.DataLayer.Ets,
+          authorizers: [Ash.Policy.Authorizer],
+          extensions: [AshGrant]
+
+        ash_grant do
+          resolver(fn actor, _ -> actor.permissions end)
+          default_policies(true)
+          scope(:always, true)
+          #{ash_grant_body}
+        end
+
+        attributes do
+          uuid_primary_key(:id)
+          attribute(:name, :string, public?: true)
+          attribute(:notes, :string, public?: true)
+        end
+
+        actions do
+          defaults([:read, create: [:name, :notes]])
+        end
+      end
+      """)
+
+      module
+    end
+
+    defp read_app_config_record!(module, permissions) do
+      record = create!(module, %{name: "Ada", notes: "n"})
+      result = read_one!(module, record.id, permissions)
+      {record, result}
+    end
+
+    test "app true generates field policies for a resource that sets nothing" do
+      Application.put_env(:ash_grant, :default_field_policies, true)
+      module = compile_app_config_resource!(AppFp, "field_group(:public, [:name])")
+
+      assert Info.default_field_policies(module)
+      assert Ash.Policy.Info.field_policies(module) != []
+    end
+
+    test "resource false overrides app true" do
+      Application.put_env(:ash_grant, :default_field_policies, true)
+
+      module =
+        compile_app_config_resource!(AppFpOptOut, """
+        default_field_policies(false)
+        field_group(:public, [:name])
+        """)
+
+      refute Info.default_field_policies(module)
+      assert Ash.Policy.Info.field_policies(module) == []
+    end
+
+    test "app true with app deny_fields_by_default hides ungranted fields" do
+      Application.put_env(:ash_grant, :default_field_policies, true)
+      Application.put_env(:ash_grant, :deny_fields_by_default, true)
+      module = compile_app_config_resource!(AppFpDeny, "field_group(:public, [:name])")
+
+      {record, result} =
+        read_app_config_record!(module, ["#{Info.resource_name(module)}:*:read:always"])
+
+      assert result.id == record.id
+      assert forbidden?(result.name)
+      assert forbidden?(result.notes)
+    end
+
+    test "a non-boolean app value raises" do
+      Application.put_env(:ash_grant, :default_field_policies, "yes")
+
+      assert_raise ArgumentError, fn -> Info.resolve_default_field_policies(nil, "yes") end
+
+      # Spark wraps a transformer's ArgumentError in a RuntimeError.
+      assert_raise RuntimeError, ~r/default_field_policies must be a boolean/, fn ->
+        compile_app_config_resource!(AppFpBad, "field_group(:public, [:name])")
+      end
+    end
+
+    test "app true leaves a resource without field groups fully visible" do
+      Application.put_env(:ash_grant, :default_field_policies, true)
+      module = compile_app_config_resource!(AppFpNoGroups, "")
+
+      assert Ash.Policy.Info.field_policies(module) == []
+
+      {record, result} =
+        read_app_config_record!(module, ["#{Info.resource_name(module)}:*:read:always"])
+
+      assert result.id == record.id
+      assert result.name == "Ada"
+      assert result.notes == "n"
+    end
+
+    test "app true with deny on reports a resource without field groups" do
+      Application.put_env(:ash_grant, :default_field_policies, true)
+      Application.put_env(:ash_grant, :deny_fields_by_default, true)
+
+      output =
+        capture_io(:stderr, fn -> compile_app_config_resource!(AppFpDenyNoGroups, "") end)
+
+      assert output =~ "defines no field_group"
+    end
+  end
 end

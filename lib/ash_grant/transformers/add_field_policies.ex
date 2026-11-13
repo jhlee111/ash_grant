@@ -62,7 +62,11 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
 
   @impl true
   def transform(dsl_state) do
-    default_fp = Transformer.get_option(dsl_state, [:ash_grant], :default_field_policies, false)
+    default_fp = AshGrant.Info.dsl_default_field_policies(dsl_state)
+
+    dsl_state =
+      Spark.Dsl.Transformer.persist(dsl_state, :ash_grant_default_field_policies, default_fp)
+
     field_groups = get_field_group_entities(dsl_state)
 
     if default_fp and field_groups != [] do

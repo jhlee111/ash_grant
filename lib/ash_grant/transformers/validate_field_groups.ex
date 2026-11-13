@@ -49,7 +49,7 @@ defmodule AshGrant.Transformers.ValidateFieldGroups do
     resource = Transformer.get_persisted(dsl_state, :module)
 
     cond do
-      Transformer.get_option(dsl_state, [:ash_grant], :default_field_policies) != true ->
+      not AshGrant.Info.dsl_default_field_policies(dsl_state) ->
         raise ValidateDenyFieldsByDefault.no_field_policies_error(resource)
 
       field_groups == [] ->
