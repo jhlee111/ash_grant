@@ -98,6 +98,12 @@ jobs:
         if: matrix.pin
         run: mix credo
 
+      # Downstream formatters read locals_without_parens from .formatter.exs,
+      # so a DSL option added without its entry gets parenthesised there.
+      - name: Check DSL formatter exports
+        if: matrix.pin
+        run: mix spark.formatter --extensions AshGrant,AshGrant.Domain --check
+
       - name: Run tests
         run: mix test
         env:
