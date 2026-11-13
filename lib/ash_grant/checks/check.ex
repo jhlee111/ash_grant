@@ -87,6 +87,35 @@ defmodule AshGrant.Check do
      against the target record — the action is authorized if ANY grant's
      scope passes. Grants are additive: a narrow grant never shadows a
      broader one (issue #123), matching the read path's OR-composition
+  4. **Instance grants**: On an update or destroy, an instance permission
+     naming the target record (see below) also authorizes
+  5. **scope_through**: A parent's instance permission authorizes writes to
+     its children (see `AshGrant.Info.scope_throughs/1`)
+
+  Steps 3–5 are one union: the action is authorized when any of them passes.
+  A matching `!` deny on the resource wins over all of them.
+
+  ## Instance Permissions
+
+  An instance permission (`resource:<instance_id>:action:scope`) authorizes an
+  **update** or **destroy** of the one record whose `instance_key` (the primary
+  key unless configured) equals `instance_id`. The id is compared in the key
+  attribute's own type, so an uppercase UUID still names the record.
+
+      "post:3f2c…:update:"        # update this post
+      "post:3f2c…:*:"             # update and destroy this post
+      "post:3f2c…:update:draft"   # update this post while `draft` holds for it
+
+  - An empty scope is unconditional for the record. A named scope is evaluated
+    against the record like an RBAC scope; an undeclared one never passes (it
+    does not raise).
+  - The action is matched by name, `*`, or a type wildcard (`@update`), as on
+    the read path. `AshGrant.Permission.diagnostics/1` still reports an instance
+    type wildcard as `:dead_instance_type_wildcard`; that code is retired
+    with #131.
+  - Creates and generic actions have no existing record, so instance grants
+    never authorize them.
+  - `!resource:<instance_id>:action:` cancels instance grants on that record.
 
   ## Scope Evaluation
 
@@ -165,7 +194,10 @@ defmodule AshGrant.Check do
   An update or destroy is authorized against the record as stored and the
   record as the caller writes it. Some grant must admit each, not necessarily
   the same one, so a write cannot move a record out of every scope the actor
-  holds. The written record applies the values the caller supplies: attributes
+  holds. The grants are the union above: RBAC scopes, instance grants, and
+  scope_through parent grants. An instance grant must still name the written
+  record and its scope must still pass for it. The written record applies the
+  values the caller supplies: attributes
   the action accepts, attributes a `set_attribute` change fills from an
   argument, a belongs_to foreign key managed with `manage_relationship`, and a
   `resolve_argument` argument resolved again from a written foreign key. A
@@ -326,13 +358,14 @@ defmodule AshGrant.Check do
         scope_resolver: scope_resolver,
         context: context,
         authorizer: authorizer,
+        action: action,
         opts: opts
       })
     end)
   end
 
   defp authorized_by?(permissions, resource_module, resource_name, action_name, action_type, env) do
-    %{scope_resolver: scope_resolver, context: context, authorizer: authorizer, opts: opts} = env
+    %{context: context, authorizer: authorizer} = env
 
     AshGrant.PermissionValidation.validate(
       permissions,
@@ -357,29 +390,170 @@ defmodule AshGrant.Check do
       :unrestricted ->
         true
 
-      {:scopes, [_ | _] = scopes} ->
-        stored_and_written?(
-          scopes,
-          &check_scope_access(&1, scope_resolver, context, authorizer, opts),
-          &written_scope_access(&1, scope_resolver, context, opts)
-        )
-
       :denied ->
-        # A deny rule matches — deny-wins, never overridden by scope_through (#170).
+        # A deny rule matches — deny-wins, never overridden by an instance or
+        # scope_through grant (#170).
         false
 
-      {:scopes, []} ->
-        # No matching RBAC grant and no deny — try scope_through (parent instance
-        # permissions).
-        check_scope_through_write(
-          resource_module,
-          permissions,
-          action_name,
-          action_type,
-          authorizer,
-          context
+      {:scopes, scopes} ->
+        # The RBAC scopes, the record's own instance grants and its scope_through
+        # parent's instance grants are one union, as on the read path: a failing
+        # RBAC scope must not hide an instance grant on the same record. Some
+        # grant in the union must admit the stored record, and some grant must
+        # admit the record as written.
+        grants =
+          Enum.map(scopes, &{:scope, &1}) ++
+            instance_grants(permissions, resource_name, action_name, action_type, env) ++
+            scope_through_grants(resource_module, permissions, action_name, action_type)
+
+        record = get_target_record(authorizer)
+
+        stored_and_written?(
+          grants,
+          &grant_admits_stored?(&1, record, env),
+          &grant_admits_written?(&1, env)
         )
     end
+  end
+
+  defp grant_admits_stored?({:scope, scope}, _record, env),
+    do: check_scope_access(scope, env.scope_resolver, env.context, env.authorizer, env.opts)
+
+  defp grant_admits_stored?({:instance, perm}, record, env),
+    do:
+      instance_id_matches?(env.context.resource, perm.instance_id, instance_id_of(record, env)) and
+        instance_scope_passes?(
+          perm.scope,
+          env.scope_resolver,
+          env.context,
+          env.authorizer,
+          env.opts
+        )
+
+  defp grant_admits_stored?({:parent, _fk_field, _parent_ids}, nil, _env), do: false
+
+  defp grant_admits_stored?({:parent, fk_field, parent_ids}, record, _env),
+    do: granted_parent?(record, fk_field, parent_ids)
+
+  defp grant_admits_written?({:scope, scope}, env),
+    do: written_scope_access(scope, env.scope_resolver, env.context, env.opts)
+
+  # The grant must still name the record and its scope must still pass. A part
+  # the write leaves unchanged is decided on the stored record.
+  defp grant_admits_written?({:instance, perm}, env) do
+    resource = env.context.resource
+    instance_key = AshGrant.Info.instance_key(resource)
+    record = get_target_record(env.authorizer)
+
+    names_record =
+      written_result(
+        [instance_key],
+        env.context,
+        &instance_id_matches?(resource, perm.instance_id, Map.get(&1, instance_key))
+      )
+
+    scope_passes = written_instance_scope(perm.scope, env)
+
+    case {names_record, scope_passes} do
+      {:unchanged, :unchanged} ->
+        :unchanged
+
+      _ ->
+        or_stored(names_record, fn ->
+          instance_id_matches?(resource, perm.instance_id, instance_id_of(record, env))
+        end) and
+          or_stored(scope_passes, fn ->
+            instance_scope_passes?(
+              perm.scope,
+              env.scope_resolver,
+              env.context,
+              env.authorizer,
+              env.opts
+            )
+          end)
+    end
+  end
+
+  defp grant_admits_written?({:parent, fk_field, parent_ids}, env),
+    do: written_result([fk_field], env.context, &granted_parent?(&1, fk_field, parent_ids))
+
+  defp or_stored(:unchanged, stored?), do: stored?.()
+  defp or_stored(written?, _stored?), do: written?
+
+  # An undeclared scope never passes on the stored record, so the written one
+  # need not be evaluated.
+  defp written_instance_scope(scope, _env) when scope in [nil, ""], do: :unchanged
+
+  defp written_instance_scope(scope, env) do
+    if instance_scope_evaluable?(scope, env.scope_resolver, env.context.resource),
+      do: written_scope_access(scope, env.scope_resolver, env.context, env.opts),
+      else: :unchanged
+  end
+
+  defp instance_id_of(nil, _env), do: nil
+
+  defp instance_id_of(record, env),
+    do: Map.get(record, AshGrant.Info.instance_key(env.context.resource))
+
+  # ============================================================
+  # Instance permissions (resource:<instance_id>:action:scope)
+  # ============================================================
+
+  # An instance grant names one existing record, so it can only authorize an
+  # update or destroy — a create or generic action has no record to compare.
+  # `action` is the Ash action itself, so an `action:` override in opts still
+  # gates on the real action type. Instance denies are already settled by
+  # instance_denied?/5 before this runs.
+  defp instance_grants(permissions, resource_name, action_name, action_type, env) do
+    if action_type_from(env.action) in [:update, :destroy] do
+      for perm <- AshGrant.Evaluator.normalize_permissions(permissions),
+          instance_allow?(perm, resource_name, action_name, action_type),
+          do: {:instance, perm}
+    else
+      []
+    end
+  end
+
+  # The action matches by name, `*`, or a type wildcard (`@update`) when the
+  # action type is known — as instance denies and the read path match (#131).
+  defp instance_allow?(perm, resource_name, action_name, action_type) do
+    not perm.deny and
+      AshGrant.Permission.instance_permission?(perm) and
+      AshGrant.Permission.matches_resource?(perm.resource, resource_name) and
+      AshGrant.Permission.matches_action?(perm.action, action_name, action_type)
+  end
+
+  # Cast and compared like an instance deny, so one rule decides both: an id
+  # the key's type cannot cast names no record.
+  defp instance_id_matches?(_resource, _instance_id, nil), do: false
+
+  defp instance_id_matches?(resource, instance_id, record_id) do
+    [instance_id]
+    |> AshGrant.Evaluator.cast_instance_ids(resource)
+    |> Enum.any?(&instance_id_equal?(resource, &1, record_id))
+  end
+
+  # An empty scope is unconditional for the record. A named scope is an
+  # authorization condition evaluated against the record, like an RBAC scope —
+  # except that an undeclared one never passes instead of raising: a stored
+  # instance grant with a stale scope name authorizes nothing.
+  defp instance_scope_passes?(nil, _scope_resolver, _context, _authorizer, _opts), do: true
+  defp instance_scope_passes?("", _scope_resolver, _context, _authorizer, _opts), do: true
+
+  defp instance_scope_passes?(scope, scope_resolver, context, authorizer, opts) do
+    instance_scope_evaluable?(scope, scope_resolver, context.resource) and
+      check_scope_access(scope, scope_resolver, context, authorizer, opts)
+  end
+
+  defp instance_scope_evaluable?(scope, scope_resolver, resource) do
+    AshGrant.Scope.universal?(scope) or not is_nil(scope_resolver) or
+      instance_scope_declared?(resource, scope)
+  end
+
+  defp instance_scope_declared?(resource, scope) do
+    AshGrant.Info.get_scope(resource, String.to_existing_atom(scope)) != nil
+  rescue
+    ArgumentError -> false
   end
 
   # Creates and generic actions have no existing record an instance deny could name.
@@ -455,34 +629,16 @@ defmodule AshGrant.Check do
     end
   end
 
-  defp check_scope_through_write(
-         resource_module,
-         permissions,
-         action_name,
-         action_type,
-         authorizer,
-         context
-       ) do
-    record = get_target_record(authorizer)
-
-    parent_grants =
-      resource_module
-      |> AshGrant.Info.scope_throughs()
-      |> Enum.flat_map(
-        &scope_through_parent_grant(&1, resource_module, permissions, action_name, action_type)
-      )
-
-    record != nil and
-      stored_and_written?(
-        parent_grants,
-        fn {fk_field, parent_ids} -> granted_parent?(record, fk_field, parent_ids) end,
-        fn {fk_field, parent_ids} ->
-          written_result([fk_field], context, &granted_parent?(&1, fk_field, parent_ids))
-        end
-      )
+  # A parent's instance grants, one `{:parent, foreign key, parent ids}` per
+  # scope_through that admits the action.
+  defp scope_through_grants(resource_module, permissions, action_name, action_type) do
+    resource_module
+    |> AshGrant.Info.scope_throughs()
+    |> Enum.flat_map(
+      &scope_through_parent_grant(&1, resource_module, permissions, action_name, action_type)
+    )
   end
 
-  # [{foreign key, granted parent ids}] when the scope_through admits the action.
   defp scope_through_parent_grant(
          scope_through,
          resource_module,
@@ -503,7 +659,7 @@ defmodule AshGrant.Check do
         )
 
       relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
-      if parent_ids == [], do: [], else: [{relationship.source_attribute, parent_ids}]
+      if parent_ids == [], do: [], else: [{:parent, relationship.source_attribute, parent_ids}]
     else
       []
     end

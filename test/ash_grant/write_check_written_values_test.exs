@@ -466,6 +466,22 @@ defmodule AshGrant.WriteCheckWrittenValuesTest do
     end
   end
 
+  describe "an instance grant" do
+    test "cannot move the record to an instance key it does not name", ctx do
+      item =
+        KeyedItem
+        |> Ash.Changeset.for_create(:create, %{title: "a", author_id: ctx.me})
+        |> Ash.create!(authorize?: false)
+
+      actor = %{permissions: ["keyed_item:#{ctx.me}:update:"]}
+
+      assert {:error, %Ash.Error.Forbidden{}} =
+               Ash.update(item, %{author_id: ctx.other}, actor: actor)
+
+      assert {:ok, _} = Ash.update(item, %{title: "b"}, actor: actor)
+    end
+  end
+
   describe "tenant attribute" do
     test "a same_tenant grant cannot move the record to another tenant" do
       tenant = Ash.UUID.generate()
