@@ -623,6 +623,27 @@ defmodule AshGrant.PermissionTest do
       end
     end
 
+    test "an RBAC allow with no scope is flagged, in every spelling (#215)" do
+      for s <- [
+            "blog:*:update:",
+            "blog:update",
+            "blog:*:*:",
+            "*:*:update:",
+            "blog:*:read::public"
+          ] do
+        assert [d] = Permission.diagnostics(s), "expected one diagnostic for #{s}"
+        assert d.code == :empty_rbac_scope
+        assert d.message =~ "authorizes no records"
+        assert d.suggestion == nil
+      end
+    end
+
+    test "an empty scope is fine on a deny or an instance grant (#215)" do
+      for s <- ["!blog:*:update:", "!blog:update", "blog:post_abc:update:", "blog:post_abc:*:"] do
+        assert Permission.diagnostics(s) == [], "expected #{s} to be clean"
+      end
+    end
+
     test "accepts a Permission struct as well as a string" do
       perm = Permission.parse!("blog:*:read*:always")
       assert [%{code: :deprecated_type_wildcard}] = Permission.diagnostics(perm)

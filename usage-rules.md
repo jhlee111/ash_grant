@@ -53,6 +53,23 @@ Instance permissions with a scope name impose an attribute-based condition.
 On writes they authorize an update or destroy of the named record only — never a
 create or a generic action, which have no existing record.
 
+### DON'T: Leave the scope empty on an RBAC grant
+
+An empty scope means "no conditions" only on an **instance** grant. On an RBAC grant
+(`instance_id` `*`) it authorizes **no records**, on reads and on writes. The legacy
+2-part `"blog:update"` parses to the same thing.
+
+```elixir
+# DON'T — authorizes nothing; reported as :empty_rbac_scope (an error)
+"blog:*:update:"
+"blog:update"
+
+# DO — name the scope; `always` grants every record
+"blog:*:update:always"
+```
+
+Run `mix ash_grant.check_permissions` over stored grants to find these.
+
 ### DON'T: Use `read*` — it is a type wildcard, not a prefix glob
 
 `@read` matches any action whose **Ash action type** is `:read`, regardless of its

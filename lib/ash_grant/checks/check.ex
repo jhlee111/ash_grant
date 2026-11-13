@@ -367,9 +367,6 @@ defmodule AshGrant.Check do
       end
 
     case write_scopes do
-      :unrestricted ->
-        true
-
       :denied ->
         # A deny rule matches — deny-wins, never overridden by an instance or
         # scope_through grant (#170).
@@ -646,8 +643,9 @@ defmodule AshGrant.Check do
   end
 
   defp check_scope_access(nil, _scope_resolver, _context, _authorizer, _opts) do
-    # No scope means no filtering (like instance permissions)
-    true
+    # An RBAC grant with no scope authorizes no records (issue #215). The
+    # evaluator already drops such grants; fail closed if one ever gets here.
+    false
   end
 
   defp check_scope_access(scope, _scope_resolver, _context, _authorizer, _opts)

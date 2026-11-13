@@ -202,6 +202,12 @@ For sharing specific resources (like Google Docs):
 Instance permissions have an empty scope (trailing colon) because the permission
 is already scoped to a specific instance.
 
+> **An RBAC grant needs a scope.** On an RBAC grant (`instance_id` `*`) an empty
+> scope does not mean "no conditions": `"blog:*:update:"` authorizes **no records**,
+> on reads and on writes alike. Write `"blog:*:update:always"` to grant every record.
+> `AshGrant.Permission.diagnostics/1` and `mix ash_grant.check_permissions` report
+> such a grant as `:empty_rbac_scope`.
+
 > **Boundary note:** Instance permissions match against the resource's own key field only
 > (`:id` by default, or the field specified by `instance_key`). They do **not** automatically
 > propagate to child resources. For example, `"feed:feed_abc:read:"` grants access to
@@ -397,7 +403,7 @@ For backward compatibility, shorter formats are supported but **use with caution
 | Input | Parsed As | Notes |
 |-------|-----------|-------|
 | `"blog:read:always"` | `blog:*:read:always` | Safe - 3rd part is clearly a scope |
-| `"blog:read"` | `blog:*:read:` | Safe - 2-part format |
+| `"blog:read"` | `blog:*:read:` | **Authorizes nothing** - an RBAC grant with no scope matches no records (`:empty_rbac_scope`) |
 | `"blog:post123:read"` | `blog:*:post123:read` | Ambiguous! `post123` becomes action |
 
 **Recommendation:** Always use the full 4-part format to avoid ambiguity:
