@@ -14,7 +14,7 @@ if Code.ensure_loaded?(Igniter) do
     def info(_argv, _composing_task) do
       %Igniter.Mix.Task.Info{
         group: :ash,
-        installs: [{:ash, "~> 3.33"}],
+        installs: [{:ash, "~> 3.33 and >= 3.33.4"}],
         example: "mix igniter.install ash_grant"
       }
     end
