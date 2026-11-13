@@ -307,6 +307,7 @@ defmodule AshGrant do
   - `AshGrant.FilterCheck` - FilterCheck for read actions
   - `AshGrant.FieldFilterCheck` - per-record FilterCheck for field groups; what `default_field_policies` generates
   - `AshGrant.FieldCheck` - action-wide SimpleCheck for hand-written `field_policies` (`field_check/1`)
+  - `AshGrant.UngroupedFieldCheck` - shows fields outside every field group unless `deny_fields_by_default` is on
   - `AshGrant.Info` - DSL introspection helpers (scopes, field groups, configuration)
   - `AshGrant.Introspect` - Runtime permission introspection for UIs and APIs
   - `AshGrant.Explanation` - Authorization decision explanation struct
@@ -329,7 +330,8 @@ defmodule AshGrant do
     verifiers: [
       AshGrant.Verifiers.ValidateResolverPresent,
       AshGrant.Verifiers.ValidateScopes,
-      AshGrant.Verifiers.ValidateArgumentResolvers
+      AshGrant.Verifiers.ValidateArgumentResolvers,
+      AshGrant.Verifiers.ValidateDenyFieldsByDefault
     ]
 
   @doc """

@@ -548,9 +548,13 @@ defmodule AshGrant.Dsl do
       ],
       default_field_policies: [
         type: :boolean,
-        default: false,
         doc: """
         Automatically generate Ash `field_policies` from `field_group` definitions.
+
+        Unset, it falls back to `config :ash_grant, default_field_policies: true`, else
+        `false`. The app value is read when the resource compiles, so set it in
+        `config/config.exs`, not `runtime.exs`. A resource without a `field_group` gets
+        no generated field policy.
 
         When `true`, AshGrant generates field policies that use
         `AshGrant.FieldFilterCheck` to authorize field access per record, based on
@@ -590,6 +594,17 @@ defmodule AshGrant.Dsl do
 
         With this, `"feed:feed_abc:read:"` generates `WHERE feed_id IN ('feed_abc')`
         instead of `WHERE id IN ('feed_abc')`.
+        """
+      ],
+      deny_fields_by_default: [
+        type: :boolean,
+        doc: """
+        Hides every field that no granted field group names.
+
+        With `true`, a group-less (4-part) grant still authorizes the row but opens
+        no field group, and fields outside every `field_group` are forbidden to all
+        actors. Unset, the value comes from the domain's `ash_grant` block, then
+        `config :ash_grant, deny_fields_by_default:`, then `false`.
         """
       ],
       field_group_permissions: [

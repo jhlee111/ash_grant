@@ -17,7 +17,7 @@ Permissions resolve to native Ash filters and policy checks, with deny-wins sema
 - **Global scope registry** — declare `:own` / `:same_tenant` once with `use AshGrant.ScopeRegistry`, override per-resource or per-domain
 - **Scope DSL** with `expr()` — row-level filters, scope inheritance, `^tenant()` support
 - **Argument-based scopes** with `resolve_argument` — multi-hop authorization via action arguments populated from the resource's own relationships, with lazy loading
-- **Field groups** — column-level read access with inheritance and masking
+- **Field groups** — column-level read access with inheritance and masking; `deny_fields_by_default` hides every field no granted group names
 - **Instance permissions** — per-record sharing with optional scope conditions
 - **Deny-wins evaluation** — deny rules always override allows, across type (`post:*:...`) and instance (`post:<id>:...`) grants
 
