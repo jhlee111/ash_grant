@@ -193,6 +193,14 @@ defmodule AshGrant.InstanceWriteTest do
                update_as(published, actor(["post:#{published.id}:update:draft"]))
     end
 
+    test "the record as written must also satisfy the scope" do
+      draft = generate(post(status: :draft))
+      actor = actor(["post:#{draft.id}:update:draft"])
+
+      assert {:error, %Ash.Error.Forbidden{}} = update_as(draft, actor, %{status: :published})
+      assert {:ok, _} = update_as(draft, actor, %{title: "changed"})
+    end
+
     test "a universal scope is unconditional" do
       post = generate(post(status: :published))
       assert {:ok, _} = update_as(post, actor(["post:#{post.id}:update:always"]))

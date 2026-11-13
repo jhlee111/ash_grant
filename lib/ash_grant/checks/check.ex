@@ -189,8 +189,26 @@ defmodule AshGrant.Check do
   and relationship parts. Relationship parts are verified by extracting the FK from
   the changeset and querying the parent resource.
 
-  This means scopes like `exists(team.memberships, user_id == ^actor(:id))` now work
-  correctly for all action types without requiring a `write:` option.
+  ## Written Values
+
+  An update or destroy is authorized against the record as stored and the
+  record as the caller writes it. Some grant must admit each, not necessarily
+  the same one, so a write cannot move a record out of every scope the actor
+  holds. The grants are the union above: RBAC scopes, instance grants, and
+  scope_through parent grants. An instance grant must still name the written
+  record and its scope must still pass for it. The written record applies the
+  values the caller supplies: attributes
+  the action accepts, attributes a `set_attribute` change fills from an
+  argument, a belongs_to foreign key managed with `manage_relationship`, and a
+  `resolve_argument` argument resolved again from a written foreign key. A
+  value the action sets on its own, such as `:publish` setting `status`, is
+  part of what the grant authorizes and is not checked.
+
+  A written value the check cannot compute before the action runs denies the
+  write when the scope reads it: an atomic change `Ash.Expr.eval/2` cannot
+  evaluate (any `fragment/1`), and a foreign key set through
+  `manage_relationship`. A value a `before_action` hook or a custom change sets
+  is not seen.
 
   ## Examples
 
@@ -220,6 +238,8 @@ defmodule AshGrant.Check do
   require Ash.Expr
   require Ash.Query
   require Logger
+
+  alias AshGrant.Check.WrittenRecord
 
   @doc """
   Creates a check tuple for use in policies.
@@ -345,7 +365,7 @@ defmodule AshGrant.Check do
   end
 
   defp authorized_by?(permissions, resource_module, resource_name, action_name, action_type, env) do
-    %{scope_resolver: scope_resolver, context: context, authorizer: authorizer, opts: opts} = env
+    %{context: context, authorizer: authorizer} = env
 
     AshGrant.PermissionValidation.validate(
       permissions,
@@ -360,7 +380,7 @@ defmodule AshGrant.Check do
     # the action is authorized when ANY grant's scope passes — a narrow grant
     # must never shadow a broader one. `!` deny is the only subtractive device.
     write_scopes =
-      if instance_denied?(deny_summary, resource_module, action_type, authorizer) do
+      if instance_denied?(deny_summary, resource_module, action_type, authorizer, context) do
         :denied
       else
         AshGrant.Evaluator.get_write_scopes(permissions, resource_name, action_name, action_type)
@@ -378,18 +398,102 @@ defmodule AshGrant.Check do
       {:scopes, scopes} ->
         # The RBAC scopes, the record's own instance grants and its scope_through
         # parent's instance grants are one union, as on the read path: a failing
-        # RBAC scope must not hide an instance grant on the same record.
-        Enum.any?(scopes, &check_scope_access(&1, scope_resolver, context, authorizer, opts)) or
-          instance_grants_write?(permissions, resource_name, action_name, action_type, env) or
-          check_scope_through_write(
-            resource_module,
-            permissions,
-            action_name,
-            action_type,
-            authorizer
-          )
+        # RBAC scope must not hide an instance grant on the same record. Some
+        # grant in the union must admit the stored record, and some grant must
+        # admit the record as written.
+        grants =
+          Enum.map(scopes, &{:scope, &1}) ++
+            instance_grants(permissions, resource_name, action_name, action_type, env) ++
+            scope_through_grants(resource_module, permissions, action_name, action_type)
+
+        record = get_target_record(authorizer)
+
+        stored_and_written?(
+          grants,
+          &grant_admits_stored?(&1, record, env),
+          &grant_admits_written?(&1, env)
+        )
     end
   end
+
+  defp grant_admits_stored?({:scope, scope}, _record, env),
+    do: check_scope_access(scope, env.scope_resolver, env.context, env.authorizer, env.opts)
+
+  defp grant_admits_stored?({:instance, perm}, record, env),
+    do:
+      instance_id_matches?(env.context.resource, perm.instance_id, instance_id_of(record, env)) and
+        instance_scope_passes?(
+          perm.scope,
+          env.scope_resolver,
+          env.context,
+          env.authorizer,
+          env.opts
+        )
+
+  defp grant_admits_stored?({:parent, _fk_field, _parent_ids}, nil, _env), do: false
+
+  defp grant_admits_stored?({:parent, fk_field, parent_ids}, record, _env),
+    do: granted_parent?(record, fk_field, parent_ids)
+
+  defp grant_admits_written?({:scope, scope}, env),
+    do: written_scope_access(scope, env.scope_resolver, env.context, env.opts)
+
+  # The grant must still name the record and its scope must still pass. A part
+  # the write leaves unchanged is decided on the stored record.
+  defp grant_admits_written?({:instance, perm}, env) do
+    resource = env.context.resource
+    instance_key = AshGrant.Info.instance_key(resource)
+    record = get_target_record(env.authorizer)
+
+    names_record =
+      written_result(
+        [instance_key],
+        env.context,
+        &instance_id_matches?(resource, perm.instance_id, Map.get(&1, instance_key))
+      )
+
+    scope_passes = written_instance_scope(perm.scope, env)
+
+    case {names_record, scope_passes} do
+      {:unchanged, :unchanged} ->
+        :unchanged
+
+      _ ->
+        or_stored(names_record, fn ->
+          instance_id_matches?(resource, perm.instance_id, instance_id_of(record, env))
+        end) and
+          or_stored(scope_passes, fn ->
+            instance_scope_passes?(
+              perm.scope,
+              env.scope_resolver,
+              env.context,
+              env.authorizer,
+              env.opts
+            )
+          end)
+    end
+  end
+
+  defp grant_admits_written?({:parent, fk_field, parent_ids}, env),
+    do: written_result([fk_field], env.context, &granted_parent?(&1, fk_field, parent_ids))
+
+  defp or_stored(:unchanged, stored?), do: stored?.()
+  defp or_stored(written?, _stored?), do: written?
+
+  # An undeclared scope never passes on the stored record, so the written one
+  # need not be evaluated.
+  defp written_instance_scope(scope, _env) when scope in [nil, ""], do: :unchanged
+
+  defp written_instance_scope(scope, env) do
+    if instance_scope_evaluable?(scope, env.scope_resolver, env.context.resource),
+      do: written_scope_access(scope, env.scope_resolver, env.context, env.opts),
+      else: :unchanged
+  end
+
+  defp instance_id_of(nil, _env), do: nil
+
+  defp instance_id_of(record, env),
+    do: Map.get(record, AshGrant.Info.instance_key(env.context.resource))
 
   # ============================================================
   # Instance permissions (resource:<instance_id>:action:scope)
@@ -399,54 +503,24 @@ defmodule AshGrant.Check do
   # update or destroy — a create or generic action has no record to compare.
   # `action` is the Ash action itself, so an `action:` override in opts still
   # gates on the real action type. Instance denies are already settled by
-  # instance_denied?/4 before this runs.
-  defp instance_grants_write?(permissions, resource_name, action_name, action_type, env) do
-    %{
-      scope_resolver: scope_resolver,
-      context: context,
-      authorizer: authorizer,
-      action: action,
-      opts: opts
-    } = env
-
-    with type when type in [:update, :destroy] <- action_type_from(action),
-         record when not is_nil(record) <- get_target_record(authorizer) do
-      resource = context.resource
-      record_id = Map.get(record, AshGrant.Info.instance_key(resource))
-
-      permissions
-      |> AshGrant.Evaluator.normalize_permissions()
-      |> Enum.filter(
-        &instance_allow_for_record?(
-          &1,
-          resource,
-          resource_name,
-          action_name,
-          action_type,
-          record_id
-        )
-      )
-      |> Enum.any?(&instance_scope_passes?(&1.scope, scope_resolver, context, authorizer, opts))
+  # instance_denied?/5 before this runs.
+  defp instance_grants(permissions, resource_name, action_name, action_type, env) do
+    if action_type_from(env.action) in [:update, :destroy] do
+      for perm <- AshGrant.Evaluator.normalize_permissions(permissions),
+          instance_allow?(perm, resource_name, action_name, action_type),
+          do: {:instance, perm}
     else
-      _ -> false
+      []
     end
   end
 
   # The action matches by name, `*`, or a type wildcard (`@update`) when the
   # action type is known — as instance denies and the read path match (#131).
-  defp instance_allow_for_record?(
-         perm,
-         resource,
-         resource_name,
-         action_name,
-         action_type,
-         record_id
-       ) do
+  defp instance_allow?(perm, resource_name, action_name, action_type) do
     not perm.deny and
       AshGrant.Permission.instance_permission?(perm) and
       AshGrant.Permission.matches_resource?(perm.resource, resource_name) and
-      AshGrant.Permission.matches_action?(perm.action, action_name, action_type) and
-      instance_id_matches?(resource, perm.instance_id, record_id)
+      AshGrant.Permission.matches_action?(perm.action, action_name, action_type)
   end
 
   # Cast and compared like an instance deny, so one rule decides both: an id
@@ -467,12 +541,13 @@ defmodule AshGrant.Check do
   defp instance_scope_passes?("", _scope_resolver, _context, _authorizer, _opts), do: true
 
   defp instance_scope_passes?(scope, scope_resolver, context, authorizer, opts) do
-    if AshGrant.Scope.universal?(scope) or not is_nil(scope_resolver) or
-         instance_scope_declared?(context.resource, scope) do
+    instance_scope_evaluable?(scope, scope_resolver, context.resource) and
       check_scope_access(scope, scope_resolver, context, authorizer, opts)
-    else
-      false
-    end
+  end
+
+  defp instance_scope_evaluable?(scope, scope_resolver, resource) do
+    AshGrant.Scope.universal?(scope) or not is_nil(scope_resolver) or
+      instance_scope_declared?(resource, scope)
   end
 
   defp instance_scope_declared?(resource, scope) do
@@ -482,25 +557,50 @@ defmodule AshGrant.Check do
   end
 
   # Creates and generic actions have no existing record an instance deny could name.
-  defp instance_denied?(%{denied_instance_ids: []}, _resource_module, _action_type, _authorizer),
-    do: false
+  defp instance_denied?(
+         %{denied_instance_ids: []},
+         _resource_module,
+         _action_type,
+         _authorizer,
+         _context
+       ),
+       do: false
 
-  defp instance_denied?(_summary, _resource_module, action_type, _authorizer)
+  defp instance_denied?(_summary, _resource_module, action_type, _authorizer, _context)
        when action_type in [:create, :action],
        do: false
 
-  defp instance_denied?(%{denied_instance_ids: ids}, resource_module, _action_type, authorizer) do
+  defp instance_denied?(
+         %{denied_instance_ids: ids},
+         resource_module,
+         _action_type,
+         authorizer,
+         context
+       ) do
+    instance_key = AshGrant.Info.instance_key(resource_module)
+    denied_ids = AshGrant.Evaluator.cast_instance_ids(ids, resource_module)
+
+    denied? = fn record ->
+      record_id = Map.get(record, instance_key)
+      Enum.any?(denied_ids, &instance_id_equal?(resource_module, &1, record_id))
+    end
+
     case get_target_record(authorizer) do
       # Without the record the deny cannot be ruled out, so fail closed.
       nil ->
         true
 
       record ->
-        record_id = Map.get(record, AshGrant.Info.instance_key(resource_module))
+        # An update that rewrites the instance key must not reach a denied id either.
+        denied?.(record) or written_instance_denied?(instance_key, context, denied?)
+    end
+  end
 
-        ids
-        |> AshGrant.Evaluator.cast_instance_ids(resource_module)
-        |> Enum.any?(&instance_id_equal?(resource_module, &1, record_id))
+  defp written_instance_denied?(instance_key, context, denied?) do
+    case written_state([instance_key], context) do
+      :unchanged -> false
+      :unknown -> true
+      {:changed, record, _arguments} -> denied?.(record)
     end
   end
 
@@ -529,49 +629,26 @@ defmodule AshGrant.Check do
     end
   end
 
-  defp check_scope_through_write(
-         resource_module,
-         permissions,
-         action_name,
-         action_type,
-         authorizer
-       ) do
-    scope_throughs = AshGrant.Info.scope_throughs(resource_module)
-
-    if scope_throughs == [] do
-      false
-    else
-      # Get the record being written (from changeset data or authorizer)
-      record = get_target_record(authorizer)
-
-      Enum.any?(scope_throughs, fn scope_through ->
-        scope_through_grants_write?(
-          scope_through,
-          resource_module,
-          permissions,
-          action_name,
-          action_type,
-          record
-        )
-      end)
-    end
+  # A parent's instance grants, one `{:parent, foreign key, parent ids}` per
+  # scope_through that admits the action.
+  defp scope_through_grants(resource_module, permissions, action_name, action_type) do
+    resource_module
+    |> AshGrant.Info.scope_throughs()
+    |> Enum.flat_map(
+      &scope_through_parent_grant(&1, resource_module, permissions, action_name, action_type)
+    )
   end
 
-  defp scope_through_grants_write?(
+  defp scope_through_parent_grant(
          scope_through,
          resource_module,
          permissions,
          action_name,
-         action_type,
-         record
+         action_type
        ) do
-    # Check action filter
-    action_allowed =
-      AshGrant.Info.scope_through_allows_action?(scope_through, action_name, action_type)
-
-    if action_allowed do
-      parent_resource = resolve_parent_resource(resource_module, scope_through)
-      parent_resource_name = AshGrant.Info.resource_name(parent_resource)
+    if AshGrant.Info.scope_through_allows_action?(scope_through, action_name, action_type) do
+      parent_resource_name =
+        resource_module |> resolve_parent_resource(scope_through) |> AshGrant.Info.resource_name()
 
       parent_ids =
         AshGrant.Evaluator.get_matching_instance_ids(
@@ -581,20 +658,15 @@ defmodule AshGrant.Check do
           action_type
         )
 
-      if parent_ids != [] and record do
-        relationship =
-          Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
-
-        fk_field = relationship.source_attribute
-        fk_value = to_string(Map.get(record, fk_field))
-        fk_value in parent_ids
-      else
-        false
-      end
+      relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
+      if parent_ids == [], do: [], else: [{:parent, relationship.source_attribute, parent_ids}]
     else
-      false
+      []
     end
   end
+
+  defp granted_parent?(record, fk_field, parent_ids),
+    do: to_string(Map.get(record, fk_field)) in parent_ids
 
   defp resolve_parent_resource(resource_module, scope_through) do
     case scope_through.resource do
@@ -692,29 +764,100 @@ defmodule AshGrant.Check do
   defp db_query_filter(_scope_def, _scope, filter, _context), do: filter
 
   defp check_scope_in_memory(:create, filter, context, _authorizer, opts) do
-    check_create_scope_in_memory(context, filter, opts)
+    case created_record(filter, context) do
+      {:ok, record} -> record_matches_filter?(record, filter, context, opts)
+      :unknown -> false
+    end
   end
 
   defp check_scope_in_memory(_action_type, filter, context, authorizer, opts) do
     record = get_target_record(authorizer)
-    if record, do: record_matches_filter?(record, filter, context, opts), else: false
+    record != nil and record_matches_filter?(record, filter, context, opts)
   end
 
   defp get_action_type(%{type: type}), do: type
   defp get_action_type(_), do: nil
 
-  # In-memory evaluation for create actions (no DB query needed)
-  defp check_create_scope_in_memory(context, filter, opts) do
-    changeset = context[:changeset]
+  # ============================================================
+  # Written values
+  # ============================================================
 
-    case changeset do
-      nil ->
-        false
+  # Grants are additive (#123), on the record as written as much as on the
+  # record as stored: some grant must admit each, not necessarily the same one.
+  # `written` returns `:unchanged` when the write leaves everything the grant
+  # reads as stored, in which case the stored answer stands for it.
+  defp stored_and_written?(grants, stored?, written) do
+    Enum.any?(grants, stored?) and
+      Enum.any?(grants, fn grant ->
+        case written.(grant) do
+          :unchanged -> stored?.(grant)
+          result -> result
+        end
+      end)
+  end
 
-      cs ->
-        virtual_record = build_virtual_record(cs)
-        record_matches_filter?(virtual_record, filter, context, opts)
+  defp written_scope_access(nil, _scope_resolver, _context, _opts), do: :unchanged
+
+  defp written_scope_access(scope, _scope_resolver, _context, _opts)
+       when scope in ~w(always all global),
+       do: :unchanged
+
+  defp written_scope_access(scope, scope_resolver, context, opts) do
+    resource = context.resource
+
+    case resolve_scope(resource, scope_resolver, scope, context) do
+      filter when is_boolean(filter) ->
+        :unchanged
+
+      filter ->
+        if should_use_db_query?(filter, resource) do
+          db_filter = db_query_filter(get_scope_def(resource, scope), scope, filter, context)
+
+          written_result(
+            WrittenRecord.referenced(db_filter, resource),
+            context,
+            &unsaved_record_matches?(resource, &1, db_filter, &2)
+          )
+        else
+          written_result(
+            WrittenRecord.referenced(filter, resource),
+            context,
+            &record_matches_filter?(&1, filter, &2, opts)
+          )
+        end
     end
+  end
+
+  # `:unchanged`, or whether `matches?` admits the record as written. A value
+  # that cannot be computed before the action runs denies.
+  defp written_result(referenced, context, matches?) when is_function(matches?, 2) do
+    case written_state(referenced, context) do
+      :unchanged -> :unchanged
+      :unknown -> false
+      {:changed, record, arguments} -> matches?.(record, Map.put(context, :arguments, arguments))
+    end
+  end
+
+  defp written_result(referenced, context, matches?) when is_function(matches?, 1),
+    do: written_result(referenced, context, fn record, _context -> matches?.(record) end)
+
+  defp written_state(referenced, context) do
+    case context[:changeset] do
+      %Ash.Changeset{action_type: action_type} = changeset
+      when action_type in [:update, :destroy] ->
+        WrittenRecord.state(changeset, referenced, context)
+
+      _ ->
+        :unchanged
+    end
+  end
+
+  defp created_record(filter, context) do
+    WrittenRecord.created(
+      context[:changeset],
+      WrittenRecord.referenced(filter, context.resource),
+      context
+    )
   end
 
   # ============================================================
@@ -791,19 +934,15 @@ defmodule AshGrant.Check do
 
   # Route to the correct DB query strategy based on action type
   defp db_query_scope_check(resource, :create, _authorizer, read_filter, context) do
-    changeset = context[:changeset]
-
-    if changeset,
-      do: db_query_create_check(resource, changeset, read_filter, context),
-      else: false
+    case created_record(read_filter, context) do
+      {:ok, record} -> unsaved_record_matches?(resource, record, read_filter, context)
+      :unknown -> false
+    end
   end
 
   defp db_query_scope_check(resource, _action_type, authorizer, read_filter, context) do
     record = get_target_record(authorizer)
-
-    if record,
-      do: db_query_record_check(resource, record, read_filter, context),
-      else: false
+    record != nil and db_query_record_check(resource, record, read_filter, context)
   end
 
   # DB query for update/destroy: "does this record match the read scope?"
@@ -823,105 +962,164 @@ defmodule AshGrant.Check do
     _ -> false
   end
 
-  # DB query for create: record doesn't exist yet, so we split the filter
-  # into direct-attribute parts (eval in-memory) and relationship parts (query DB).
-  defp db_query_create_check(resource, changeset, scope_filter, context) do
-    {direct_filter, relationship_parts} = split_filter_for_create(scope_filter)
+  # A record not stored yet (a create, or an update's written values) cannot be
+  # found by primary key. The filter is evaluated over its `and`/`or`/`not`
+  # tree with SQL's three-valued logic: relationship-free parts in memory, each
+  # relationship part by querying the related resource through the record's
+  # foreign key. Any part that cannot be decided denies.
+  defp unsaved_record_matches?(resource, record, filter, context) do
+    unsaved_eval(resource, record, filter, context) == {:ok, true}
+  end
 
-    # Check direct-attribute conditions in-memory
-    direct_ok =
-      case direct_filter do
-        true ->
-          true
-
-        false ->
-          false
-
-        filter ->
-          virtual_record = build_virtual_record(changeset)
-          record_matches_filter?(virtual_record, filter, context, [])
+  defp unsaved_eval(resource, record, %Ash.Query.BooleanExpression{} = expr, context) do
+    if contains_relationship_reference?(expr) do
+      with {:ok, left} <- unsaved_eval(resource, record, expr.left, context),
+           {:ok, right} <- unsaved_eval(resource, record, expr.right, context) do
+        {:ok, combine(expr.op, left, right)}
       end
-
-    # Check relationship conditions via DB
-    relationship_ok =
-      Enum.all?(relationship_parts, fn part ->
-        check_relationship_via_db(resource, changeset, part, context)
-      end)
-
-    direct_ok and relationship_ok
-  end
-
-  # Split a filter expression into direct-attribute parts and relationship parts.
-  defp split_filter_for_create(%Ash.Query.Exists{} = exists) do
-    {true, [exists]}
-  end
-
-  defp split_filter_for_create(%Ash.Query.BooleanExpression{op: :and, left: left, right: right}) do
-    {left_direct, left_rels} = split_filter_for_create(left)
-    {right_direct, right_rels} = split_filter_for_create(right)
-    direct = combine_and(left_direct, right_direct)
-    {direct, left_rels ++ right_rels}
-  end
-
-  defp split_filter_for_create(other) do
-    if contains_relationship_reference?(other) do
-      {true, [other]}
     else
-      {other, []}
+      eval_in_memory(record, expr, context)
     end
   end
 
-  defp combine_and(true, right), do: right
-  defp combine_and(left, true), do: left
-  defp combine_and(false, _), do: false
-  defp combine_and(_, false), do: false
-  defp combine_and(left, right), do: Ash.Expr.expr(^left and ^right)
+  defp unsaved_eval(resource, record, %Ash.Query.Not{expression: inner}, context) do
+    with {:ok, value} <- unsaved_eval(resource, record, inner, context) do
+      {:ok, if(is_nil(value), do: nil, else: not value)}
+    end
+  end
 
-  # Handle exists() by extracting FK from changeset and querying the parent resource.
-  defp check_relationship_via_db(
+  defp unsaved_eval(resource, record, filter, context) do
+    if contains_relationship_reference?(filter) do
+      relationship_leaf(resource, record, filter, context)
+    else
+      eval_in_memory(record, filter, context)
+    end
+  end
+
+  defp combine(:and, false, _), do: false
+  defp combine(:and, _, false), do: false
+  defp combine(:and, true, true), do: true
+  defp combine(:and, _, _), do: nil
+  defp combine(:or, true, _), do: true
+  defp combine(:or, _, true), do: true
+  defp combine(:or, false, false), do: false
+  defp combine(:or, _, _), do: nil
+
+  defp eval_in_memory(_record, value, _context) when is_boolean(value), do: {:ok, value}
+
+  defp eval_in_memory(record, filter, context) do
+    case Ash.Expr.eval(resolve_templates(filter, context),
+           record: record,
+           resource: context[:resource],
+           actor: context[:actor],
+           tenant: context[:tenant]
+         ) do
+      {:ok, value} when is_boolean(value) or is_nil(value) -> {:ok, value}
+      _ -> :error
+    end
+  end
+
+  # exists(rel.rest, inner): query rel's destination through the foreign key.
+  defp relationship_leaf(
          resource,
-         changeset,
+         record,
          %Ash.Query.Exists{path: [rel | rest], expr: inner},
          context
        ) do
-    target_filter =
-      if rest == [], do: inner, else: %Ash.Query.Exists{path: rest, expr: inner, at_path: []}
-
-    query_relationship_from_changeset(resource, changeset, rel, target_filter, context)
-  rescue
-    _ -> false
-  end
-
-  # Handle expressions containing dot-path refs (e.g., order.center_id in ^actor(:ids))
-  defp check_relationship_via_db(resource, changeset, expr, context) do
-    case extract_first_relationship(expr) do
-      nil ->
-        false
-
-      rel_name ->
-        transformed = transform_refs_for_target(expr, rel_name)
-        query_relationship_from_changeset(resource, changeset, rel_name, transformed, context)
-    end
-  rescue
-    _ -> false
-  end
-
-  # Query a parent resource via FK from changeset to check if the filter matches.
-  defp query_relationship_from_changeset(resource, changeset, rel_name, target_filter, context) do
-    with relationship when not is_nil(relationship) <-
-           Ash.Resource.Info.relationship(resource, rel_name),
-         fk_value when not is_nil(fk_value) <- get_fk_from_changeset(changeset, relationship) do
-      resolved = resolve_templates(target_filter, context)
-
-      relationship.destination
-      |> Ash.Query.for_read(:read, %{})
-      |> Ash.Query.filter(^[{relationship.destination_attribute, fk_value}])
-      |> Ash.Query.filter(^resolved)
-      |> Ash.exists?(exists_opts(context))
+    if parent_reference?(inner) do
+      :error
     else
-      _ -> false
+      target_filter =
+        if rest == [], do: inner, else: %Ash.Query.Exists{path: rest, expr: inner, at_path: []}
+
+      query_related(resource, record, rel, target_filter, context, false)
     end
   end
+
+  # A comparison whose every ref goes through the same first relationship
+  # (`team.name == ^actor(:team_name)`): query that relationship's destination.
+  defp relationship_leaf(resource, record, expr, context) do
+    case single_relationship(expr) do
+      {:ok, rel} ->
+        transformed = transform_refs_for_target(expr, rel)
+        query_related(resource, record, rel, transformed, context, nil)
+
+      :error ->
+        :error
+    end
+  end
+
+  defp query_related(resource, record, rel, target_filter, context, when_no_fk) do
+    case Ash.Resource.Info.relationship(resource, rel) do
+      nil ->
+        :error
+
+      relationship ->
+        case Map.get(record, relationship.source_attribute) do
+          nil ->
+            {:ok, when_no_fk}
+
+          fk_value ->
+            relationship.destination
+            |> Ash.Query.for_read(:read, %{})
+            |> Ash.Query.filter(^[{relationship.destination_attribute, fk_value}])
+            |> Ash.Query.filter(^resolve_templates(target_filter, context))
+            |> Ash.exists?(exists_opts(context))
+            |> then(&{:ok, &1})
+        end
+    end
+  rescue
+    error in [Ash.Error.Invalid, Ash.Error.Unknown, Ash.Error.Framework, ArgumentError] ->
+      Logger.warning(
+        "AshGrant: could not query #{inspect(rel)} for #{inspect(resource)}: " <>
+          Exception.message(error) <> "; failing closed"
+      )
+
+      :error
+  end
+
+  defp parent_reference?(%Ash.Query.Parent{}), do: true
+  defp parent_reference?({:_parent, _}), do: true
+  defp parent_reference?({:_parent, _, _}), do: true
+
+  defp parent_reference?(tuple) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> parent_reference?()
+
+  defp parent_reference?(list) when is_list(list), do: Enum.any?(list, &parent_reference?/1)
+
+  defp parent_reference?(%_{} = struct),
+    do: struct |> Map.from_struct() |> Map.values() |> parent_reference?()
+
+  defp parent_reference?(map) when is_map(map), do: map |> Map.values() |> parent_reference?()
+  defp parent_reference?(_), do: false
+
+  defp single_relationship(expr) do
+    case expr |> relationship_heads() |> Enum.uniq() do
+      [rel] when is_atom(rel) -> {:ok, rel}
+      _ -> :error
+    end
+  end
+
+  # The first relationship of every ref in `expr`; `:direct` for a ref to the
+  # resource's own attribute and `:other` for anything that is not a plain ref.
+  defp relationship_heads(%Ash.Query.Ref{relationship_path: [rel | _]}), do: [rel]
+  defp relationship_heads(%Ash.Query.Ref{}), do: [:direct]
+  defp relationship_heads(%Ash.Query.Exists{}), do: [:other]
+  defp relationship_heads(%Ash.Query.Parent{}), do: [:other]
+  defp relationship_heads({:_ref, _, _}), do: [:other]
+  defp relationship_heads({:_parent, _}), do: [:other]
+  defp relationship_heads({:_parent, _, _}), do: [:other]
+
+  defp relationship_heads(tuple) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> relationship_heads()
+
+  defp relationship_heads(list) when is_list(list), do: Enum.flat_map(list, &relationship_heads/1)
+
+  defp relationship_heads(%_{} = struct),
+    do: struct |> Map.from_struct() |> Map.values() |> relationship_heads()
+
+  defp relationship_heads(map) when is_map(map), do: map |> Map.values() |> relationship_heads()
+  defp relationship_heads(_), do: []
 
   # Build opts for Ash.exists? — always skip authorization, pass tenant if present
   defp exists_opts(context) do
@@ -939,34 +1137,16 @@ defmodule AshGrant.Check do
     )
   end
 
+  # `:arguments` is set when checking a written record whose arguments
+  # `AshGrant.Changes.ResolveArgument` resolved again from a written FK.
+  defp extract_arguments(%{arguments: arguments}) when is_map(arguments), do: arguments
+
   defp extract_arguments(context) do
     case context[:changeset] do
       %{arguments: args} when is_map(args) -> args
       _ -> %{}
     end
   end
-
-  # For belongs_to: source_attribute is the FK (e.g., :team_id)
-  defp get_fk_from_changeset(changeset, relationship) do
-    Ash.Changeset.get_attribute(changeset, relationship.source_attribute)
-  end
-
-  # Extract first relationship name from an expression containing dot-path refs
-  defp extract_first_relationship(%Ash.Query.Ref{relationship_path: [rel | _]}), do: rel
-
-  defp extract_first_relationship(%Ash.Query.BooleanExpression{left: l, right: r}) do
-    extract_first_relationship(l) || extract_first_relationship(r)
-  end
-
-  defp extract_first_relationship(%Ash.Query.Call{args: args}) do
-    Enum.find_value(args, &extract_first_relationship/1)
-  end
-
-  defp extract_first_relationship(%{__struct__: _, left: l, right: r}) do
-    extract_first_relationship(l) || extract_first_relationship(r)
-  end
-
-  defp extract_first_relationship(_), do: nil
 
   # Transform dot-path refs: remove the first relationship from relationship_path
   defp transform_refs_for_target(expr, rel_name) do
@@ -977,20 +1157,6 @@ defmodule AshGrant.Check do
       other ->
         other
     end)
-  end
-
-  defp build_virtual_record(changeset) do
-    # Extract attributes from changeset that might be used in scope filters
-    # Common fields: organization_unit_id, owner_id, user_id, etc.
-    attrs = changeset.attributes || %{}
-
-    # Also include any data that was set
-    data = changeset.data || %{}
-
-    # Merge: changeset attributes take precedence
-    Map.merge(Map.from_struct(data), attrs)
-  rescue
-    _ -> %{}
   end
 
   # First try inline scope DSL (using write scope resolution), then fall back to scope_resolver.
