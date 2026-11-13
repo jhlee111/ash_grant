@@ -87,18 +87,21 @@ MyApp.Role
 `diagnostics/1` reports spelling only. To check that a stored string also names
 things that exist, see [Checking Stored Permission Strings](#checking-stored-permission-strings).
 
-#### Type wildcards never work on instance permissions
+#### Type wildcards on instance permissions
 
-Instance matching has no action type available, so a type wildcard on an instance
-permission **never matches anything** — the grant is dead:
+A type wildcard on an instance permission matches by action type wherever the type is
+known: the read filter, the write check and instance denies.
 
 ```elixir
-"post:post_abc123:@read:"   # Dead — matches nothing, ever
-"post:post_abc123:read:"    # Use an exact action name
-"post:post_abc123:*:"       # ...or the catch-all wildcard
+"post:post_abc123:@update:"   # every update action on this post
+"post:post_abc123:update:"    # the :update action only
+"post:post_abc123:*:"         # every action on this post
 ```
 
-`AshGrant.Permission.diagnostics/1` flags these.
+Not everything agrees yet ([#131](https://github.com/jhlee111/ash_grant/issues/131)):
+`CanPerform` looks up instance grants without the action type, so `can_update?` misses
+`post:<id>:@update:`, and `AshGrant.Permission.diagnostics/1` still reports these grants
+as `:dead_instance_type_wildcard`. Prefer an exact action name or `*` until then.
 
 #### Type wildcards need the action type at check time
 
@@ -250,7 +253,42 @@ Ash.update!(published_doc, %{title: "New"}, actor: user)
 
 Instance permissions work with both:
 - **Read actions** (`filter_check/1`) - Adds `WHERE id IN (instance_ids)` filter
-- **Write actions** (`check/1`) - Validates access to specific instance
+- **Write actions** (`check/1`) - Authorizes an **update** or **destroy** of the named record
+
+### Instance Permissions on Writes
+
+`check/1` compares the target record's `instance_key` with the permission's instance id
+(in the key attribute's own type, so an uppercase UUID still matches):
+
+```elixir
+"post:3f2c…:update:"    # update this post — and no other
+"post:3f2c…:*:"         # update AND destroy this post (every update/destroy action)
+"post:3f2c…:publish:"   # the :publish update action only
+```
+
+- Instance grants join the same union as RBAC scopes and `scope_through`: a failing
+  RBAC scope (`post:*:update:own` on someone else's post) does not hide an instance
+  grant on that post.
+- A named scope must hold for the record (`update:draft` above). An undeclared scope
+  never passes — the grant authorizes nothing, and nothing raises.
+- Creates and generic actions have no existing record, so instance grants never
+  authorize them.
+- A type wildcard (`post:3f2c…:@update:`) matches by action type, as on reads.
+- Deny wins: `!post:*:update:always` forbids the update whatever instance grants exist,
+  and `!post:3f2c…:update:` cancels instance grants on that post.
+
+> **Up to v0.22.0:** `check/1` ignored a resource's own instance grants, so they authorized
+> no write, while `CanPerform` and `AshGrant.Introspect` reported them as allowed. Grants
+> that were inert become effective when you upgrade — `resource:<id>:*:` grants destroy as
+> well as update. Audit stored instance grants on write actions before upgrading.
+>
+> Watch for parent grants issued so that [`scope_through`](#scope-through-parent-child-propagation)
+> children become writable: `feed:<id>:*:` now also updates and destroys the feed itself.
+> To keep the parent read-only for those actors, give them RBAC denies on the parent
+> (`!feed:*:update:always`, `!feed:*:destroy:always`), which leave the children writable.
+> An instance deny (`!feed:<id>:update:`) would also cancel the children's `update`.
+> A narrower grant does not always help either: see
+> [Parent grants also reach the parent](#parent-grants-also-reach-the-parent).
 
 ### Instance Permission Read Example
 
@@ -347,6 +385,16 @@ scopes using OR logic.
 Options:
 - `scope_through :feed` — infer parent resource from relationship
 - `scope_through :feed, actions: [:read, :update]` — limit to specific actions
+
+#### Parent grants also reach the parent
+
+A parent instance grant also authorizes the same action on the parent record.
+`scope_through` matches the grant against the child's action name, so
+`feed:<id>:update:`, given so a moderator can edit the feed's posts, also lets them
+update the feed. An instance deny on the feed cancels the grant on its posts too, and
+the `actions:` option on `scope_through` does not protect the feed. To keep the feed
+read-only, give `Post` an action `Feed` doesn't have, such as `moderate`, and grant
+`feed:<id>:moderate:`. See [#214](https://github.com/jhlee111/ash_grant/issues/214).
 
 ## Legacy Format Support
 

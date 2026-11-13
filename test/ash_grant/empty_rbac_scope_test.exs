@@ -128,15 +128,25 @@ defmodule AshGrant.EmptyRbacScopeTest do
       assert id == post.id
     end
 
-    test "an empty-scope instance update grant does not reach the empty-RBAC-scope rule" do
-      # Instance grants never enter `Evaluator.get_write_scopes/4`, so this change
-      # cannot affect them. On main an instance grant does not authorize a write
-      # whatever its scope; PR #195 changes that, and its own tests cover it.
+    test "an empty-scope instance update grant still updates its record" do
+      # Instance grants never enter `Evaluator.get_write_scopes/4`; `Check` handles
+      # an empty instance scope itself, as unconditional for the named record.
       post = create_post!()
+      other = create_post!()
       actor = actor(["post:#{post.id}:update:"])
 
       assert AshGrant.Evaluator.get_write_scopes(actor.permissions, "post", "update", :update) ==
                {:scopes, []}
+
+      assert {:ok, _} =
+               post
+               |> Ash.Changeset.for_update(:update, %{title: "x"}, actor: actor)
+               |> Ash.update()
+
+      assert {:error, %Ash.Error.Forbidden{}} =
+               other
+               |> Ash.Changeset.for_update(:update, %{title: "x"}, actor: actor)
+               |> Ash.update()
 
       assert AshGrant.Permission.diagnostics("post:#{post.id}:update:") == []
     end

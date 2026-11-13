@@ -50,6 +50,8 @@ AshGrant only needs a resolver that returns permission strings for a given actor
 
 Instance permissions with an empty scope (trailing colon) mean unconditional access.
 Instance permissions with a scope name impose an attribute-based condition.
+On writes they authorize an update or destroy of the named record only — never a
+create or a generic action, which have no existing record.
 
 ### DON'T: Leave the scope empty on an RBAC grant
 
