@@ -542,8 +542,8 @@ defmodule AshGrant.Dsl do
         end
         ```
 
-        Note: When using `default_policies`, you should still add
-        `authorizers: [Ash.Policy.Authorizer]` to your resource options.
+        The resource must also set `authorizers: [Ash.Policy.Authorizer]`.
+        Compilation fails without it, because the generated policies would never run.
         """
       ],
       default_field_policies: [

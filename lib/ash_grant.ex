@@ -317,6 +317,7 @@ defmodule AshGrant do
   use Spark.Dsl.Extension,
     sections: AshGrant.Dsl.sections(),
     transformers: [
+      AshGrant.Transformers.ValidatePolicyAuthorizer,
       AshGrant.Transformers.ValidateScopeThroughs,
       AshGrant.Transformers.ResolveFieldGroupFields,
       AshGrant.Transformers.ValidateFieldGroups,

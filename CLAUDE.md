@@ -115,6 +115,7 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 Domain resolver/scope inheritance is resolved at runtime by `AshGrant.Info` (resolver falls back to the domain, then `config :ash_grant, resolver:`; scopes merge resource > domain > registry). There is no merge transformer since v0.20.0.
 
 - **`AshGrant.Transformers.ResolveFieldGroupFields`** / **`ValidateFieldGroups`** - Expand `:all` / `except:` field groups and validate them
+- **`AshGrant.Transformers.ValidatePolicyAuthorizer`** - Fails compilation when `default_policies` or `default_field_policies` is set but the resource does not use `Ash.Policy.Authorizer` (the generated policies would never run)
 - **`AshGrant.Transformers.AddDefaultPolicies`** - Auto-generates policies when `default_policies: true`
 - **`AshGrant.Transformers.AddFieldPolicies`** - Generates `field_policies` with `FieldFilterCheck` when `default_field_policies: true`
 - **`AshGrant.Transformers.AddMaskingPreparation`** - Adds the `ApplyMasking` preparation when a field group masks fields
