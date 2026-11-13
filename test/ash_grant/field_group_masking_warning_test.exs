@@ -20,7 +20,8 @@ defmodule AshGrant.FieldGroupMaskingWarningTest do
             domain: nil,
             validate_domain_inclusion?: false,
             data_layer: Ash.DataLayer.Ets,
-            extensions: [AshGrant]
+            extensions: [AshGrant],
+            authorizers: [Ash.Policy.Authorizer]
 
           ash_grant do
             resolver(fn _, _ -> [] end)
@@ -57,7 +58,8 @@ defmodule AshGrant.FieldGroupMaskingWarningTest do
             domain: nil,
             validate_domain_inclusion?: false,
             data_layer: Ash.DataLayer.Ets,
-            extensions: [AshGrant]
+            extensions: [AshGrant],
+            authorizers: [Ash.Policy.Authorizer]
 
           ash_grant do
             resolver(fn _, _ -> [] end)
