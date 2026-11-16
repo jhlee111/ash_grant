@@ -318,6 +318,10 @@ semantics you must resolve manually (see the
 [hand-rolled version](argument-based-scope.md#hand-rolled-version-under-the-hood))
 and read from `changeset.attributes` instead.
 
+`AshGrant.Check` also resolves the argument a second time from the written
+FK when the update changes it, and authorizes the write against both values.
+The argument your actions and changes see is still the original one.
+
 ## See also
 
 - [Argument-Based Scope](argument-based-scope.md) — deep dive on

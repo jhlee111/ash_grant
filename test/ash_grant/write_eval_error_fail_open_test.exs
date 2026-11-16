@@ -78,9 +78,9 @@ defmodule AshGrant.WriteEvalErrorFailOpenTest do
     |> Ash.create!(authorize?: false)
   end
 
-  defp update_item(item, actor) do
+  defp update_item(item, actor, title \\ "Updated") do
     item
-    |> Ash.Changeset.for_update(:update, %{title: "Updated"})
+    |> Ash.Changeset.for_update(:update, %{title: title})
     |> Ash.update(actor: actor)
   end
 
@@ -119,13 +119,15 @@ defmodule AshGrant.WriteEvalErrorFailOpenTest do
       author = actor_with("own_numeric_title")
       item = create_item!(%{title: "1", author_id: author.id})
 
-      assert {:ok, %{title: "Updated"}} = update_item(item, author)
+      # The written title must satisfy the scope too, so it stays numeric.
+      assert {:ok, %{title: "01"}} = update_item(item, author, "01")
     end
 
     test "an `or` scope is allowed for a non-author when the cast matches" do
       item = create_item!(%{title: "1", author_id: Ash.UUID.generate()})
 
-      assert {:ok, %{title: "Updated"}} = update_item(item, actor_with("own_or_numeric_title"))
+      assert {:ok, %{title: "01"}} =
+               update_item(item, actor_with("own_or_numeric_title"), "01")
     end
   end
 end
