@@ -85,6 +85,9 @@ defmodule AshGrant.Permission do
   - Two-part: `resource:action` → `resource:*:action:`
   - Three-part: `resource:action:scope` → `resource:*:action:scope`
 
+  The two-part form parses to an RBAC grant with no scope, which authorizes no
+  records (see `diagnostics/1`, `:empty_rbac_scope`). Write the scope out.
+
   ## Usage
 
       # Parse from string (new format)
@@ -133,7 +136,8 @@ defmodule AshGrant.Permission do
             :deprecated_type_wildcard
             | :dead_instance_type_wildcard
             | :unknown_action_type
-            | :scoped_deny,
+            | :scoped_deny
+            | :empty_rbac_scope,
           permission: String.t(),
           message: String.t(),
           suggestion: String.t() | nil
@@ -497,6 +501,12 @@ defmodule AshGrant.Permission do
     * `:scoped_deny` — a deny carrying a scope other than `always`/`all`/`global`.
       Deny rules match on resource and action only, so the scope is ignored and
       `"!blog:*:update:own"` denies every update.
+    * `:empty_rbac_scope` — an RBAC allow (`instance_id` `*`) with no scope, such as
+      `"blog:*:update:"` or the legacy 2-part `"blog:update"`. It authorizes no
+      records, on reads and on writes, so the grant does nothing. Name a scope
+      (`always` for every record). Denies are not reported: a deny applies whatever
+      its scope. Instance grants are not reported either: there an empty scope means
+      the named record without conditions.
 
   ## Examples
 
@@ -519,6 +529,16 @@ defmodule AshGrant.Permission do
       iex> [d] = AshGrant.Permission.diagnostics("blog:post_abc123:@read:")
       iex> d.code
       :dead_instance_type_wildcard
+
+  An RBAC grant without a scope authorizes nothing:
+
+      iex> [d] = AshGrant.Permission.diagnostics("blog:*:update:")
+      iex> d.code
+      :empty_rbac_scope
+
+      iex> [d] = AshGrant.Permission.diagnostics("blog:update")
+      iex> d.code
+      :empty_rbac_scope
 
   `delete` is not an Ash action type, so this grant never matches:
 
@@ -546,8 +566,26 @@ defmodule AshGrant.Permission do
         {form, type_name} -> type_wildcard_diagnostics(perm, form, type_name)
       end
 
-    type_diagnostics ++ scoped_deny_diagnostic(perm)
+    type_diagnostics ++ scoped_deny_diagnostic(perm) ++ empty_rbac_scope_diagnostic(perm)
   end
+
+  # An RBAC allow with no scope authorizes no records (issue #215). A deny applies
+  # whatever its scope, and an instance grant's empty scope means "this record".
+  defp empty_rbac_scope_diagnostic(%__MODULE__{deny: false, instance_id: "*", scope: nil} = perm) do
+    [
+      %{
+        code: :empty_rbac_scope,
+        permission: __MODULE__.to_string(perm),
+        message:
+          "This grant has no scope, so it authorizes no records — on reads and on " <>
+            "writes. Name the scope it should grant, such as `always` for every record.",
+        # Which records to grant is the author's call; `always` would grant them all.
+        suggestion: nil
+      }
+    ]
+  end
+
+  defp empty_rbac_scope_diagnostic(_perm), do: []
 
   defp scoped_deny_diagnostic(perm) do
     if scoped_deny?(perm) do

@@ -258,9 +258,8 @@ defmodule AshGrant.PermissionCheckTest do
           "note:*:@update:own",
           "note:*:publish:own",
           "note:*:*:own",
-          # legacy 3-part and 2-part forms
-          "note:read:own",
-          "note:read"
+          # legacy 3-part form
+          "note:read:own"
         ] do
       test permission do
         assert issues_for(unquote(permission)) == []
@@ -467,6 +466,22 @@ defmodule AshGrant.PermissionCheckTest do
     test "a valid type with no action of that type on the resource is not an error" do
       # Ledger only has a read action; the grant is inert there, not misspelt.
       assert issues_for("ledger:*:@destroy:always") == []
+    end
+  end
+
+  describe "an RBAC grant with no scope (#215)" do
+    test "is an error on the scope segment, in either spelling" do
+      for permission <- ["note:*:update:", "note:update"] do
+        assert [%{code: :empty_rbac_scope, severity: :error, segment: :scope} = issue] =
+                 issues_for(permission)
+
+        assert issue.message =~ "authorizes no records"
+      end
+    end
+
+    test "an empty-scope deny or instance grant reports nothing" do
+      assert issues_for("!note:*:update:") == []
+      assert issues_for("note:9f1c:update:") == []
     end
   end
 

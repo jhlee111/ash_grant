@@ -48,6 +48,24 @@ defmodule Mix.Tasks.AshGrant.CheckPermissionsTest do
     end
   end
 
+  describe "an RBAC grant with no scope (#215)" do
+    test "is an error, so the task exits 1", %{tmp_dir: tmp_dir} do
+      path = write(tmp_dir, "grants.txt", "post:*:update:\npost:update\n")
+
+      assert {:error, output, 1} = CheckPermissions.run_cli([path], @check_opts)
+      assert output =~ "post:*:update:"
+      assert output =~ "authorizes no records"
+      assert output =~ "2 error(s), 0 warning(s)"
+    end
+
+    test "an empty-scope deny or instance grant is not reported", %{tmp_dir: tmp_dir} do
+      path = write(tmp_dir, "grants.txt", "!post:*:update:\npost:post_abc123:update:\n")
+
+      assert {:ok, output, 0} = CheckPermissions.run_cli([path], @check_opts)
+      assert output =~ "0 error(s), 0 warning(s)"
+    end
+  end
+
   describe "input" do
     test "a newline list skips blank lines and # comments", %{tmp_dir: tmp_dir} do
       path =

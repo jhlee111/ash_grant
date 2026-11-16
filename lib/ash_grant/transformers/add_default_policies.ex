@@ -21,7 +21,7 @@ defmodule AshGrant.Transformers.AddDefaultPolicies do
   | `false` | No policies generated (default) |
   | `true` or `:all` | Generate read, write, and generic action policies |
   | `:read` | Only generate `filter_check()` policy for read actions |
-  | `:write` | Only generate `check()` policy for write and generic actions |
+  | `:write` | Only generate `check()` policy for create, update and destroy actions (not generic actions) |
 
   ## Generated Policies
 
