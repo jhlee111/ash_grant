@@ -70,6 +70,37 @@ defmodule AshGrant.PolicyAuthorizerValidationTest do
                  fn -> defn.() end
   end
 
+  test "rejects Ash.Policy.Authorizer listed under extensions instead of authorizers" do
+    defn = fn ->
+      defmodule DefaultPoliciesAuthorizerAsExtension do
+        @moduledoc false
+        use Ash.Resource,
+          domain: nil,
+          validate_domain_inclusion?: false,
+          data_layer: Ash.DataLayer.Ets,
+          extensions: [AshGrant, Ash.Policy.Authorizer]
+
+        ash_grant do
+          resolver(fn _, _ -> [] end)
+          default_policies(true)
+          scope(:always, true)
+        end
+
+        attributes do
+          uuid_primary_key(:id)
+        end
+
+        actions do
+          defaults([:read])
+        end
+      end
+    end
+
+    assert_raise Spark.Error.DslError,
+                 ~r/sets `default_policies` but does not use Ash.Policy.Authorizer/,
+                 fn -> defn.() end
+  end
+
   test "accepts default_policies with Ash.Policy.Authorizer" do
     defmodule DefaultPoliciesWithAuthorizer do
       @moduledoc false
@@ -122,5 +153,32 @@ defmodule AshGrant.PolicyAuthorizerValidationTest do
     end
 
     assert AshGrant.Info.default_policies(NoGeneratedPoliciesNoAuthorizer) == false
+  end
+
+  test "accepts default_policies false without an authorizer" do
+    defmodule DefaultPoliciesFalseNoAuthorizer do
+      @moduledoc false
+      use Ash.Resource,
+        domain: nil,
+        validate_domain_inclusion?: false,
+        data_layer: Ash.DataLayer.Ets,
+        extensions: [AshGrant]
+
+      ash_grant do
+        resolver(fn _, _ -> [] end)
+        default_policies(false)
+        scope(:always, true)
+      end
+
+      attributes do
+        uuid_primary_key(:id)
+      end
+
+      actions do
+        defaults([:read])
+      end
+    end
+
+    assert AshGrant.Info.default_policies(DefaultPoliciesFalseNoAuthorizer) == false
   end
 end
