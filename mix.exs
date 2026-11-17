@@ -34,7 +34,7 @@ defmodule AshGrant.MixProject do
 
   defp deps do
     [
-      {:igniter, "~> 0.6", only: [:dev, :test]},
+      {:igniter, "~> 0.6", optional: true},
       # Security floor: every Ash below 3.33.4 has published advisories.
       {:ash, ash_version("~> 3.33 and >= 3.33.4")},
       {:spark, spark_version("~> 2.0")},

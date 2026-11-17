@@ -255,22 +255,38 @@ defmodule AshGrant.EvaluatorTest do
       assert Evaluator.get_write_scopes(permissions, "blog", "update") == :denied
     end
 
+    test "a scope-less deny still denies" do
+      permissions = ["blog:*:update:always", "!blog:*:update:"]
+      assert Evaluator.get_write_scopes(permissions, "blog", "update") == :denied
+    end
+
     test "returns an empty scope list when nothing matches" do
       permissions = ["blog:*:read:always"]
       assert Evaluator.get_write_scopes(permissions, "blog", "update") == {:scopes, []}
     end
 
-    test "a scope-less grant collapses the union to :unrestricted" do
-      # A grant with no scope (legacy 2-part, or 4-part with empty scope) applies
-      # to every record, so it dominates the union — mirrors the group-less
-      # collapse in get_all_field_groups/4 (#116).
+    test "a scope-less grant contributes nothing to the union (#215)" do
+      # A grant with no scope (legacy 2-part, or 4-part with empty scope)
+      # authorizes no records, on writes as on reads (get_all_scopes/4). It used
+      # to return :unrestricted and authorize every record.
       for permissions <- [
             ["blog:update", "blog:*:update:own"],
             ["blog:*:update:own", "blog:update"],
-            ["blog:*:update:"]
+            ["blog:*:update:own", "blog:*:update:"]
           ] do
-        assert Evaluator.get_write_scopes(permissions, "blog", "update") == :unrestricted
+        assert Evaluator.get_write_scopes(permissions, "blog", "update") == {:scopes, ["own"]}
       end
+
+      for permissions <- [["blog:update"], ["blog:*:update:"], ["blog:*:*:"]] do
+        assert Evaluator.get_write_scopes(permissions, "blog", "update") == {:scopes, []}
+      end
+    end
+
+    test "matches get_all_scopes/4 on scope-less grants (#215)" do
+      permissions = ["blog:*:update:", "blog:*:update:own"]
+
+      assert Evaluator.get_write_scopes(permissions, "blog", "update") ==
+               {:scopes, Evaluator.get_all_scopes(permissions, "blog", "update")}
     end
 
     test "instance permissions do not contribute (RBAC-only, like get_all_scopes)" do

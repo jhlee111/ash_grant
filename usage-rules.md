@@ -50,6 +50,25 @@ AshGrant only needs a resolver that returns permission strings for a given actor
 
 Instance permissions with an empty scope (trailing colon) mean unconditional access.
 Instance permissions with a scope name impose an attribute-based condition.
+On writes they authorize an update or destroy of the named record only — never a
+create or a generic action, which have no existing record.
+
+### DON'T: Leave the scope empty on an RBAC grant
+
+An empty scope means "no conditions" only on an **instance** grant. On an RBAC grant
+(`instance_id` `*`) it authorizes **no records**, on reads and on writes. The legacy
+2-part `"blog:update"` parses to the same thing.
+
+```elixir
+# DON'T — authorizes nothing; reported as :empty_rbac_scope (an error)
+"blog:*:update:"
+"blog:update"
+
+# DO — name the scope; `always` grants every record
+"blog:*:update:always"
+```
+
+Run `mix ash_grant.check_permissions` over stored grants to find these.
 
 ### DON'T: Use `read*` — it is a type wildcard, not a prefix glob
 
@@ -265,7 +284,7 @@ AshGrant generates policy checks, but Ash must be told to enforce them.
 | Option                 | Type              | Required | Default | Description                                                  |
 |------------------------|-------------------|----------|---------|--------------------------------------------------------------|
 | `resolver`             | module or fun/2   | Yes      | —       | Resolves permissions for actors                              |
-| `default_policies`     | bool/atom         | No       | `false` | `true`, `:always`, `:read`, or `:write`                        |
+| `default_policies`     | bool/atom         | No       | `false` | `true`, `:all`, `:read`, or `:write`                           |
 | `default_field_policies`| boolean          | No       | `false` | Auto-generate `field_policies` from `field_group` definitions|
 | `resource_name`        | string            | No       | derived | Override resource name for permission matching               |
 | `instance_key`         | atom              | No       | `:id`   | Field to match instance permission IDs against               |
@@ -696,15 +715,15 @@ Always return an empty list `[]` for unauthenticated or unknown actors.
 
 `default_policies` controls automatic policy generation:
 
-| Value    | Read policy | Write policy |
-|----------|-------------|--------------|
-| `false`  | No          | No           |
-| `true`   | Yes         | Yes          |
-| `:always`   | Yes         | Yes          |
-| `:read`  | Yes         | No           |
-| `:write` | No          | Yes          |
+| Value    | Read policy | Write policy (create/update/destroy) | Generic action policy |
+|----------|-------------|--------------------------------------|-----------------------|
+| `false`  | No          | No                                   | No                    |
+| `true`   | Yes         | Yes                                  | Yes                   |
+| `:all`   | Yes         | Yes                                  | Yes                   |
+| `:read`  | Yes         | No                                   | No                    |
+| `:write` | No          | Yes                                  | No                    |
 
-Generated policies are equivalent to:
+With `true` or `:all`, the generated policies are equivalent to:
 
 ```elixir
 policies do
@@ -715,11 +734,17 @@ policies do
   policy action_type([:create, :update, :destroy]) do
     authorize_if AshGrant.check()
   end
+
+  policy action_type(:action) do
+    authorize_if AshGrant.check()
+  end
 end
 ```
 
 Use `:read` or `:write` when you need auto-generation for one type and
-explicit control over the other.
+explicit control over the other. Neither generates the generic action policy:
+with `:read` or `:write`, write your own `policy action_type(:action)` if the
+resource has generic actions.
 
 ## Instance Permissions
 

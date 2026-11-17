@@ -76,7 +76,7 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ### Policy Checks
 
-- **`AshGrant.Check`** (`lib/ash_grant/checks/check.ex`) - SimpleCheck for write actions (returns true/false)
+- **`AshGrant.Check`** (`lib/ash_grant/checks/check.ex`) - SimpleCheck for write actions (returns true/false). Authorizes when ANY of these passes: an RBAC grant's scope, an instance grant naming the target record (update/destroy only, matched by action name — `@update` stays dead), a `scope_through` parent's instance grant. `Evaluator.get_write_scopes/4` sees RBAC grants only (`Permission.matches?/4` drops instance perms), so instance grants are matched separately in `instance_grants_write?/8`
 - **`AshGrant.FilterCheck`** (`lib/ash_grant/checks/filter_check.ex`) - FilterCheck for read actions (returns filter expression)
 - **`AshGrant.PermissionValidation`** (`lib/ash_grant/permission_validation.ex`) - Validates resolved permissions and signals invalid deny+field_group combinations per the `field_group_permissions` mode (`:off`/`:warn`/`:strict`); never changes the authorization outcome
   - Also the **static checker** (#162): `check/2` / `check_all/2` compare a stored permission string against the application's resources and return issues (`:unknown_resource`, `:unknown_action`, `:undeclared_scope`, `:scope_missing_on`, `:unverifiable_scope`, `:unknown_field_group`, `:field_group_missing_on`, `:deny_with_field_group`, `:parse_error`, plus `diagnostics/1`'s codes). Metadata comes from `AshGrant.PermissionValidation.ResourceIndex`, which also reads `action:`/`resource:` check overrides out of each resource's policies. **Pinned to the runtime by a property test** (`permission_check_test.exs`): the real `FilterCheck`/`Check` must raise the undeclared-scope error on exactly the resources a scope error names, except for an instance grant, whose `:undeclared_scope` is an `:error` that does not raise (it authorizes nothing and logs, #207) — so the builtin-scope set (`always`/`all`/`global`) has to change here whenever it changes in the checks
@@ -116,6 +116,7 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 Domain resolver/scope inheritance is resolved at runtime by `AshGrant.Info` (resolver falls back to the domain, then `config :ash_grant, resolver:`; scopes merge resource > domain > registry). There is no merge transformer since v0.20.0.
 
 - **`AshGrant.Transformers.ResolveFieldGroupFields`** / **`ValidateFieldGroups`** - Expand `:all` / `except:` field groups and validate them
+- **`AshGrant.Transformers.ValidatePolicyAuthorizer`** - Fails compilation when `default_policies` or `default_field_policies` is set but the resource does not use `Ash.Policy.Authorizer` (the generated policies would never run)
 - **`AshGrant.Transformers.AddDefaultPolicies`** - Auto-generates policies when `default_policies: true`
 - **`AshGrant.Transformers.AddFieldPolicies`** - Generates `field_policies` with `FieldFilterCheck` when `default_field_policies: true`
 - **`AshGrant.Transformers.AddMaskingPreparation`** - Adds the `ApplyMasking` preparation when a field group masks fields
