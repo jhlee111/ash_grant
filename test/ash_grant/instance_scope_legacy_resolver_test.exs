@@ -117,4 +117,41 @@ defmodule AshGrant.InstanceScopeLegacyResolverTest do
     assert [%{can_update?: false}] =
              LegacyScopeItem |> Ash.Query.load(:can_update?) |> Ash.read!(actor: actor)
   end
+
+  describe "on writes" do
+    defp update_title(item, actor) do
+      item |> Ash.Changeset.for_update(:update, %{title: "changed"}) |> Ash.update(actor: actor)
+    end
+
+    test "a scope the resolver handles narrows the instance grant" do
+      author_id = Ash.UUID.generate()
+      mine = item!(author_id)
+      other = item!(Ash.UUID.generate())
+
+      permissions = Enum.map([mine, other], &"legacy_scope_item:#{&1.id}:update:mine")
+      actor = %{id: author_id, permissions: ["legacy_scope_item:*:read:always" | permissions]}
+
+      assert {:ok, _} = update_title(mine, actor)
+      assert {:error, %Ash.Error.Forbidden{}} = update_title(other, actor)
+    end
+
+    # The read side already treated this as "authorizes nothing"; the write check
+    # used to call the resolver directly and fail the update with Ash.Error.Unknown.
+    test "a scope the resolver raises on authorizes nothing and does not fail the write" do
+      item = item!(Ash.UUID.generate())
+
+      actor = %{
+        id: Ash.UUID.generate(),
+        permissions: [
+          "legacy_scope_item:*:read:always",
+          "legacy_scope_item:#{item.id}:update:gone"
+        ]
+      }
+
+      assert {:error, %Ash.Error.Forbidden{}} = update_title(item, actor)
+
+      widened = %{actor | permissions: ["legacy_scope_item:*:update:always" | actor.permissions]}
+      assert {:ok, _} = update_title(item, widened)
+    end
+  end
 end
