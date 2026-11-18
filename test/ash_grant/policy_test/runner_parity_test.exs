@@ -253,6 +253,7 @@ defmodule AshGrant.PolicyTest.RunnerParityTest do
 
     assert {:ok, [result]} = YamlParser.run_yaml_tests(path)
     refute result.passed
-    assert result.message =~ "Actor :gust not defined. Available actors: [:guest]"
+    # The same text whether or not the VM already holds the `:guest` atom.
+    assert result.message =~ ~s(Actor "gust" not defined. Available actors: ["guest"])
   end
 end
