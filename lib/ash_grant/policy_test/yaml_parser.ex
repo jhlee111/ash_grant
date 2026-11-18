@@ -355,11 +355,18 @@ defmodule AshGrant.PolicyTest.YamlParser do
     raise AshGrant.PolicyTest.AssertionError, message: "The assertion has no `actor:` key"
   end
 
+  # An actor key stays a string unless its atom already exists (#143), so whether
+  # `guest` comes back as `:guest` depends on which modules the VM has loaded.
+  # The message names every actor as the YAML file spells it, whichever it is.
   defp fetch_actor!(actors, name) do
     case Map.get(actors, name) do
       nil ->
+        available = actors |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort()
+
         raise AshGrant.PolicyTest.AssertionError,
-          message: "Actor :#{name} not defined. Available actors: #{inspect(Map.keys(actors))}"
+          message:
+            "Actor #{inspect(to_string(name))} not defined. " <>
+              "Available actors: #{inspect(available)}"
 
       actor ->
         actor
