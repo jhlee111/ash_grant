@@ -252,7 +252,8 @@ Ash.update!(published_doc, %{title: "New"}, actor: user)
 ```
 
 Instance permissions work with both:
-- **Read actions** (`filter_check/1`) - Adds `WHERE id IN (instance_ids)` filter
+- **Read actions** (`filter_check/1`) - Adds `WHERE id IN (instance_ids)` for
+  grants with an empty or universal (`always`, `all`, `global`) scope, and `WHERE id IN (ids) AND <scope filter>` for each named scope
 - **Write actions** (`check/1`) - Authorizes an **update** or **destroy** of the named record
 
 ### Instance Permissions on Writes
@@ -289,6 +290,10 @@ Instance permissions work with both:
 > An instance deny (`!feed:<id>:update:`) would also cancel the children's `update`.
 > A narrower grant does not always help either: see
 > [Parent grants also reach the parent](#parent-grants-also-reach-the-parent).
+
+An instance grant whose scope the resource does not declare authorizes nothing.
+It does not raise, so a grant stored before a scope was removed cannot block
+reads of the resource. `mix ash_grant.check_permissions` reports such grants as errors.
 
 ### Instance Permission Read Example
 
@@ -560,7 +565,9 @@ and do not fail it.
   parent's instance permissions against the *child's* action, so
   `post:post_abc123:moderate:` is valid when a resource that `scope_through`s `post`
   has a `moderate` action, even if `post` itself does not.
-- **Deny and instance permissions** report an undeclared scope as a warning: the
-  framework never resolves those scopes, so they cannot raise.
+- **Deny permissions** report an undeclared scope as a warning, because a deny
+  applies whatever its scope. An **instance** grant with an undeclared scope is
+  an error. It does not raise, but it authorizes nothing and logs a warning on
+  each read.
 - **Syntax problems** from `AshGrant.Permission.diagnostics/1` (the deprecated
   `read*` spelling, a type Ash does not have) are included in the same list.

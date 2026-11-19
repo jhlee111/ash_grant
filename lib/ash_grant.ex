@@ -200,7 +200,8 @@ defmodule AshGrant do
       "doc:doc_123:read:business_hours"    # Read only during business hours
       "invoice:inv_456:approve:small"      # Approve only if amount is small
 
-  Use `AshGrant.Evaluator.get_instance_scope/3` to retrieve the scope condition.
+  On reads, the record must match the grant's scope as well as its id. An empty
+  scope is unconditional, and an undeclared scope authorizes nothing.
 
   ## Scope DSL
 

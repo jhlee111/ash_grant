@@ -418,9 +418,10 @@ defmodule AshGrant.Introspect do
       # Check for deny
       has_deny = has_deny_permission?(permissions, resource_name, action_name, action_type)
 
-      # Check instance permissions
-      instance_ids =
-        Evaluator.get_matching_instance_ids(permissions, resource_name, action_name, action_type)
+      instance_grants =
+        reachable_instance_grants(resource, permissions, resource_name, action_name, action_type)
+
+      instance_ids = instance_grant_ids(instance_grants)
 
       # Check field groups
       field_groups =
@@ -513,7 +514,10 @@ defmodule AshGrant.Introspect do
 
   Useful for debugging authorization issues. An `:allow` result carries
   `:denied_instance_ids` when instance denies (`!post:<id>:read:`) exclude
-  specific records from the grant.
+  specific records from the grant. When only instance grants allow the action,
+  `:instance_grants` lists each `{instance_id, scope}`: a record is reachable
+  only while its grant's scope holds. An instance grant whose scope the resource
+  does not declare reaches nothing and does not allow the action.
 
   ## Options
 
@@ -680,8 +684,10 @@ defmodule AshGrant.Introspect do
   defp evaluate_allow(resource, permissions, resource_name, action_name, action_type) do
     scopes = Evaluator.get_all_scopes(permissions, resource_name, action_name, action_type)
 
-    instance_ids =
-      Evaluator.get_matching_instance_ids(permissions, resource_name, action_name, action_type)
+    instance_grants =
+      reachable_instance_grants(resource, permissions, resource_name, action_name, action_type)
+
+    instance_ids = instance_grant_ids(instance_grants)
 
     field_groups =
       Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
@@ -698,7 +704,13 @@ defmodule AshGrant.Introspect do
          %{scope: hd(scopes), scopes: scopes, instance_ids: nil, field_groups: field_groups}}
 
       instance_ids != [] ->
-        {:allow, %{scope: nil, instance_ids: instance_ids, field_groups: field_groups}}
+        {:allow,
+         %{
+           scope: nil,
+           instance_ids: instance_ids,
+           instance_grants: instance_grants,
+           field_groups: field_groups
+         }}
 
       has_parent_instance ->
         {:allow,
@@ -715,23 +727,27 @@ defmodule AshGrant.Introspect do
     |> Enum.any?(fn scope_through ->
       parent_resource = scope_through_parent_resource(resource, scope_through)
 
-      if parent_resource do
-        parent_resource_name = Info.resource_name(parent_resource)
-
-        parent_ids =
-          Evaluator.get_matching_instance_ids(
-            permissions,
-            parent_resource_name,
-            action_name,
-            action_type
-          )
-
-        parent_ids != []
-      else
-        false
-      end
+      parent_resource != nil and
+        reachable_instance_grants(
+          parent_resource,
+          permissions,
+          Info.resource_name(parent_resource),
+          action_name,
+          action_type
+        ) != []
     end)
   end
+
+  # Instance grants that can reach some record: an undeclared scope reaches none
+  # (#207). A declared scope still counts, since the action is allowed on the
+  # records where it holds; `:instance_grants` says which scope each id needs.
+  defp reachable_instance_grants(resource, permissions, resource_name, action_name, action_type) do
+    permissions
+    |> Evaluator.get_matching_instance_grants(resource_name, action_name, action_type)
+    |> Enum.filter(fn {_id, scope} -> AshGrant.InstanceFilter.reachable?(scope, resource) end)
+  end
+
+  defp instance_grant_ids(grants), do: grants |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
 
   @doc false
   @spec scope_through_parent_resource(module(), struct()) :: module() | nil

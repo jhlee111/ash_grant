@@ -282,33 +282,26 @@ defmodule AshGrant.FilterCheck do
     scopes =
       AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action_name, action_type)
 
-    # Get instance permission IDs
-    instance_ids =
-      AshGrant.Evaluator.get_matching_instance_ids(
-        permissions,
-        resource_name,
-        action_name,
-        action_type
-      )
-
-    # Get the instance key field (defaults to :id)
-    instance_key = AshGrant.Info.instance_key(resource_module)
+    instance_filter =
+      permissions
+      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action_name, action_type)
+      |> AshGrant.InstanceFilter.build(resource_module, context)
 
     # Get parent instance filters from scope_through entities
     parent_filters =
-      build_parent_instance_filters(resource_module, permissions, action_name, action_type)
+      build_parent_instance_filters(
+        resource_module,
+        permissions,
+        action_name,
+        action_type,
+        context
+      )
 
     deny_summary =
       AshGrant.Evaluator.deny_summary(permissions, resource_name, action_name, action_type)
 
     scopes
-    |> build_filter_with_instances(
-      instance_ids,
-      instance_key,
-      parent_filters,
-      scope_resolver,
-      context
-    )
+    |> build_filter_with_instances(instance_filter, parent_filters, scope_resolver, context)
     |> AshGrant.Evaluator.restrict_filter(deny_summary, resource_module)
   end
 
@@ -317,8 +310,7 @@ defmodule AshGrant.FilterCheck do
 
   defp build_filter_with_instances(
          scopes,
-         instance_ids,
-         instance_key,
+         instance_filter,
          parent_filters,
          scope_resolver,
          context
@@ -331,8 +323,7 @@ defmodule AshGrant.FilterCheck do
     else
       combine_filter_components(
         scopes,
-        instance_ids,
-        instance_key,
+        instance_filter,
         parent_filters,
         scope_resolver,
         context
@@ -342,21 +333,14 @@ defmodule AshGrant.FilterCheck do
 
   defp combine_filter_components(
          scopes,
-         instance_ids,
-         instance_key,
+         instance_filter,
          parent_filters,
          scope_resolver,
          context
        ) do
-    # Collect all OR-able filter components
     rbac_filter =
       if scopes != [] do
         build_combined_filter(scopes, scope_resolver, context)
-      end
-
-    instance_filter =
-      if instance_ids != [] do
-        build_instance_filter(instance_ids, instance_key)
       end
 
     # Combine all filters with OR
@@ -371,57 +355,50 @@ defmodule AshGrant.FilterCheck do
     end
   end
 
-  defp build_instance_filter(instance_ids, :id) do
-    # Default: match against primary key
-    Ash.Expr.expr(id in ^instance_ids)
-  end
-
-  defp build_instance_filter(instance_ids, instance_key) do
-    # Custom instance key: match against specified field
-    Ash.Expr.expr(^ref(instance_key) in ^instance_ids)
-  end
-
   @doc false
   # The `scope_through` part of the read filter: one expression per parent whose
-  # instance grants reach this resource. Public so `AshGrant.Explainer` reports
-  # the filter this check applies instead of rebuilding it.
-  def build_parent_instance_filters(resource_module, permissions, action_name, action_type) do
+  # instance grants reach this resource. A parent grant's scope must hold on the
+  # parent row, as on the parent's own read (#207). Public so `AshGrant.Explainer`
+  # and `AshGrant.Calculation.CanPerform` apply the filter this check applies.
+  def build_parent_instance_filters(
+        resource_module,
+        permissions,
+        action_name,
+        action_type,
+        context \\ %{}
+      ) do
     AshGrant.Info.scope_throughs(resource_module)
     |> Enum.filter(&AshGrant.Info.scope_through_allows_action?(&1, action_name, action_type))
     |> Enum.flat_map(fn scope_through ->
       parent_resource = resolve_parent_resource(resource_module, scope_through)
-      parent_resource_name = AshGrant.Info.resource_name(parent_resource)
 
-      parent_ids =
-        AshGrant.Evaluator.get_matching_instance_ids(
-          permissions,
-          parent_resource_name,
-          action_name,
-          action_type
-        )
-
-      if parent_ids != [] do
-        [parent_instance_expr(resource_module, scope_through, parent_resource, parent_ids)]
-      else
-        []
-      end
+      permissions
+      |> AshGrant.Evaluator.get_matching_instance_grants(
+        AshGrant.Info.resource_name(parent_resource),
+        action_name,
+        action_type
+      )
+      |> parent_instance_expr(resource_module, scope_through, parent_resource, context)
+      |> List.wrap()
     end)
   end
 
-  defp parent_instance_expr(resource_module, scope_through, parent_resource, parent_ids) do
-    relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
-    fk_field = relationship.source_attribute
-    parent_dest_field = relationship.destination_attribute
-    parent_instance_key = AshGrant.Info.instance_key(parent_resource)
+  defp parent_instance_expr([], _resource_module, _scope_through, _parent_resource, _context),
+    do: nil
 
-    if parent_instance_key == parent_dest_field do
-      # Simple case: parent's instance_key matches the FK destination (usually :id)
-      Ash.Expr.expr(^ref(fk_field) in ^parent_ids)
+  defp parent_instance_expr(grants, resource_module, scope_through, parent_resource, context) do
+    relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
+
+    if AshGrant.Info.instance_key(parent_resource) == relationship.destination_attribute and
+         Enum.all?(grants, &AshGrant.InstanceFilter.unconditional?(elem(&1, 1))) do
+      # The foreign key holds the parent's instance key, so no join is needed.
+      parent_ids = grants |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+      Ash.Expr.expr(^ref(relationship.source_attribute) in ^parent_ids)
     else
-      # Complex case: parent's instance_key differs from PK, need a join
-      Ash.Expr.expr(
-        exists(^[scope_through.relationship], ^ref(parent_instance_key) in ^parent_ids)
-      )
+      case AshGrant.InstanceFilter.build(grants, parent_resource, context) do
+        nil -> nil
+        parent_filter -> Ash.Expr.expr(exists(^[scope_through.relationship], ^parent_filter))
+      end
     end
   end
 

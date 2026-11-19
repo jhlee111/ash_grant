@@ -69,10 +69,10 @@ defmodule AshGrant.PermissionValidation do
   | `:field_group_missing_on` | `:field_group` | error | some of the resources the grant applies to lack the field group — listed in `:resources` |
   | `:deny_with_field_group` | `:field_group` | error | the rule `validate/3` enforces at request time |
 
-  ¹ A warning on a **deny** or an **instance** permission: neither can raise. A
-  deny applies whatever its scope, so the scope is never resolved. An undeclared
-  instance scope never passes on a write (`AshGrant.Check` treats it as failing
-  rather than raising), so the grant authorizes nothing there.
+  ¹ A warning on a **deny**, because a deny applies whatever its scope. An error
+  on an allow **instance** permission too, although it does not raise: the grant
+  authorizes nothing, on reads or writes, and each read logs a warning, so the
+  string is still broken.
 
   ### What "the resources the grant applies to" means
 
@@ -376,7 +376,7 @@ defmodule AshGrant.PermissionValidation do
     statuses = Enum.group_by(readers, &scope_status(&1, perm), & &1.resource)
     missing = Map.get(statuses, :missing, [])
     unverifiable = Map.get(statuses, :unverifiable, [])
-    severity = if runtime_resolves_scope?(perm), do: :error, else: :warning
+    severity = if perm.deny, do: :warning, else: :error
 
     missing_scope_issues(perm, string, readers, missing, Map.has_key?(statuses, :ok), severity) ++
       unverifiable_scope_issues(perm, string, unverifiable)
@@ -390,11 +390,6 @@ defmodule AshGrant.PermissionValidation do
       true -> :missing
     end
   end
-
-  # The framework resolves a scope only for an allow RBAC grant. A deny applies
-  # whatever its scope, and an instance grant contributes its id alone.
-  defp runtime_resolves_scope?(perm),
-    do: not perm.deny and not Permission.instance_permission?(perm)
 
   defp missing_scope_issues(_perm, _string, _readers, [], _any_ok?, _severity), do: []
 
@@ -422,9 +417,8 @@ defmodule AshGrant.PermissionValidation do
         "A deny applies whatever its scope, so the scope is never read."
 
       Permission.instance_permission?(perm) ->
-        "Nothing raises, but the grant authorizes no write: `AshGrant.Check` treats an " <>
-          "undeclared instance scope as failing, and `AshGrant.Evaluator.get_instance_scope/3` " <>
-          "hands back a name with no definition."
+        "An instance grant with an undeclared scope authorizes nothing, on reads or " <>
+          "writes. It does not raise."
 
       true ->
         "The check raises when it resolves this scope."

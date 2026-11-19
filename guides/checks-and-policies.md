@@ -144,13 +144,16 @@ At load time, `expression/2` runs **once** with the actor in context:
    permission strings.
 2. Get matching RBAC scopes via `AshGrant.Evaluator.get_all_scopes/4`,
    resolve each to its filter expression, and combine with `OR`.
-3. Get matching instance IDs and build
+3. Get matching instance grants and build
    `expr(id in ^instance_ids)` — or `^ref(instance_key) in ^instance_ids`
-   if the resource declares a non-default `instance_key`.
+   if the resource declares a non-default `instance_key`. A grant with a
+   named scope adds that scope's filter (`id in ^ids and <scope>`), and a
+   grant with an undeclared scope adds nothing.
 4. For each `scope_through`, add
-   `expr(fk in ^parent_instance_ids)` (or an `exists()` subquery when
-   the parent's `instance_key` differs from the relationship's
-   destination attribute).
+   `expr(fk in ^parent_instance_ids)`, or an `exists()` subquery on the
+   parent when the parent's `instance_key` differs from the relationship's
+   destination attribute or a parent grant carries a named scope. The
+   subquery applies the parent grant's scope to the parent row.
 5. Combine everything with `OR`. Shortcuts:
    - Any scope's expression resolves to `true` → the calculation is
      literally `expr(true)` and collapses to a `SELECT true`. This is a
