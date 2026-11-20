@@ -84,9 +84,10 @@ elsewhere — in the same result set:
 For field group `G`, visibility on a row is the OR of the row predicate of every
 allow grant that reaches `G` (directly or via inheritance): the scope expression
 for RBAC grants (`employee:*:read:own:G`), `id in [...]` for instance grants
-(`employee:emp_123:read::G`). A **trivial scope** (`always`) yields a constant
+(`employee:emp_123:read::G`). A **universal scope** (`always`) yields a constant
 `true` — visible on every row, identical to action-wide behavior. A group-less
-(4-part) grant with a scope grants *all* fields on the rows matching that scope.
+(4-part) grant with a scope grants *all* fields on the rows matching that scope,
+unless the resource sets `deny_fields_by_default` (see below).
 
 > #### Caveat: ordering by a per-record-hidden field {: .warning}
 >
@@ -141,7 +142,44 @@ field_group :public, :all, except: [:salary, :ssn]
 field_group :full, [:salary, :ssn], inherits: [:public]
 ```
 
-Auto-generates equivalent field policies with a catch-all `field_policy :*` that allows non-grouped fields.
+Auto-generates equivalent field policies. Fields in no group get their own field policy, checked by `AshGrant.UngroupedFieldCheck`, which shows them unless `deny_fields_by_default` is on. A catch-all `field_policy :*` that always passes keeps Ash's field coverage check satisfied.
+
+## Deny Fields by Default
+
+By default a group-less (4-part) grant shows every field, and fields in no group are visible to anyone with row access. `deny_fields_by_default true` closes both:
+
+```elixir
+ash_grant do
+  default_policies true
+  default_field_policies true
+  deny_fields_by_default true
+
+  scope :always, true
+
+  field_group :public, [:name, :department]
+  field_group :sensitive, [:phone], inherits: [:public]
+end
+```
+
+| Grant | Row | `:name` | `:phone` | Field in no group |
+|-------|-----|---------|----------|-------------------|
+| `employee:*:read:always` | readable | forbidden | forbidden | forbidden |
+| `employee:*:read:always:public` | readable | visible | forbidden | forbidden |
+| `employee:*:read:always:sensitive` | readable | visible | visible | forbidden |
+
+The primary key is never a field-policy target, so it stays visible. A grant can still only add access: a 4-part grant beside a 5-part grant adds no field.
+
+The option can be set at three levels. The first one set wins:
+
+1. The resource's `ash_grant` block.
+2. The domain's `ash_grant` block (`AshGrant.Domain` extension).
+3. `config :ash_grant, deny_fields_by_default: true`.
+
+`AshGrant.Info.deny_fields_by_default?/1` returns the effective value. It is resolved at runtime, like the domain resolver, because a resource cannot read its domain at compile time. To opt one resource out of a domain or app-wide setting, set `deny_fields_by_default false` on it.
+
+The option requires `default_field_policies true`. Set that on the resource, or app-wide with `config :ash_grant, default_field_policies: true` in `config/config.exs`. The app value is read when the resource compiles, so `runtime.exs` cannot set it, and the domain cannot set it either. A resource's own `default_field_policies false` overrides the app value, and a resource without a `field_group` gets no generated field policy. Without it no field policy is generated, so `AshGrant.Info.deny_fields_by_default?/1` returns `false` and the resource is reported at compile time. A non-boolean `config :ash_grant, :deny_fields_by_default` value, such as `"true"`, raises `ArgumentError`.
+
+A resource with the option in effect and no `field_group` could never show a field. Setting it on such a resource is a compile error. Inheriting it from the domain or app config gives a compile warning. Add a group such as `field_group :public, :all`, or opt the resource out.
 
 ## Field Group Inheritance
 

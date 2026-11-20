@@ -317,12 +317,15 @@ defmodule AshGrant.PolicyTest.Assertions do
     # Without the action type, a type wildcard (`@read`) grant is skipped.
     action_type = action_type_of(resource, action_name)
 
+    deny_fields_by_default? = AshGrant.Info.deny_fields_by_default?(resource)
+
     field_groups =
       AshGrant.Evaluator.get_all_field_groups(
         permissions,
         resource_name,
         action_name,
-        action_type
+        action_type,
+        deny_fields_by_default: deny_fields_by_default?
       )
 
     has_any_permission =
@@ -330,7 +333,7 @@ defmodule AshGrant.PolicyTest.Assertions do
 
     cond do
       not has_any_permission -> :no_access
-      field_groups == [] -> :all_fields
+      field_groups == [] and not deny_fields_by_default? -> :all_fields
       true -> resolve_field_groups_to_fields(resource, field_groups)
     end
   end

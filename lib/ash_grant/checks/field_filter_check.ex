@@ -84,7 +84,8 @@ defmodule AshGrant.FieldFilterCheck do
         resource,
         action_name,
         required_group,
-        action_type
+        action_type,
+        deny_fields_by_default: Info.deny_fields_by_default?(resource)
       )
 
     {scopes, instance_ids} = partition_grants(grants)
@@ -105,7 +106,8 @@ defmodule AshGrant.FieldFilterCheck do
 
   # RBAC grants (instance_id "*") contribute their scope; instance grants
   # contribute their instance_id. A group-less grant keeps its scope/instance and
-  # is already included by field_group_grants/5 for every group.
+  # is already included by field_group_grants/6 for every group (none under
+  # deny_fields_by_default).
   defp partition_grants(grants) do
     {rbac, instance} = Enum.split_with(grants, &(&1.instance_id == "*"))
 
