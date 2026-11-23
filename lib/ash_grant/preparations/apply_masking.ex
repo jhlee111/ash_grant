@@ -13,7 +13,9 @@ defmodule AshGrant.Preparations.ApplyMasking do
 
   1. The preparation adds an `after_action` hook to the query
   2. After records are fetched (but before field restriction), the hook:
-     - Resolves the actor's field groups on each record, from RBAC and instance grants
+     - Resolves the actor's field groups on each record, from RBAC and instance grants.
+       An instance grant's groups unmask a field only on a record where its scope
+       holds; elsewhere they can only add masking
      - Determines which fields should be masked (allow-wins)
      - Replaces visible field values with masked values
   3. Ash's `restrict_field_access` then runs, hiding truly forbidden fields
@@ -56,7 +58,7 @@ defmodule AshGrant.Preparations.ApplyMasking do
     }
 
     grants = resolve_permissions(resolver, actor, context)
-    match = match_context(resource, query.action)
+    match = match_context(resource, query, actor)
 
     group_sets =
       resolver
@@ -80,14 +82,17 @@ defmodule AshGrant.Preparations.ApplyMasking do
     masked
   end
 
-  defp match_context(resource, action) do
+  defp match_context(resource, query, actor) do
     %{
       resource: resource,
       resource_name: AshGrant.Info.resource_name(resource),
-      action_name: to_string(action.name),
-      action_type: action.type,
+      action_name: to_string(query.action.name),
+      action_type: query.action.type,
       instance_key: AshGrant.Info.instance_key(resource),
-      deny_fields_by_default?: AshGrant.Info.deny_fields_by_default?(resource)
+      deny_fields_by_default?: AshGrant.Info.deny_fields_by_default?(resource),
+      actor: actor,
+      tenant: query.tenant,
+      query_context: query.context
     }
   end
 
@@ -119,7 +124,34 @@ defmodule AshGrant.Preparations.ApplyMasking do
         do: [],
         else: Enum.filter(permissions, &instance_match?(&1, match))
 
-    %{rbac_groups: rbac_groups, unrestricted?: rbac_unrestricted?, instance: instance_grants}
+    conditions =
+      instance_grants
+      |> Enum.reject(&AshGrant.Permission.deny?/1)
+      |> Enum.map(& &1.scope)
+      |> Enum.uniq()
+      |> Map.new(&{&1, scope_condition(&1, match)})
+
+    %{
+      rbac_groups: rbac_groups,
+      unrestricted?: rbac_unrestricted?,
+      instance: instance_grants,
+      conditions: conditions
+    }
+  end
+
+  # Computed once per scope, so an undeclared scope logs once per read.
+  defp scope_condition(scope, match) do
+    case AshGrant.InstanceFilter.condition(scope, match.resource, %{}) do
+      condition when is_boolean(condition) ->
+        condition
+
+      filter ->
+        Ash.Expr.fill_template(filter,
+          actor: match.actor,
+          tenant: match.tenant,
+          context: match.query_context
+        )
+    end
   end
 
   defp rbac_match?(perm, match) do
@@ -132,29 +164,46 @@ defmodule AshGrant.Preparations.ApplyMasking do
       AshGrant.Permission.matches_action?(perm.action, match.action_name, match.action_type)
   end
 
-  # `:unrestricted` when the set shows every field on the record, else the
-  # field groups it opens there.
+  # `:unrestricted` when the set shows every field on the record, else
+  # `{groups, mask_only_groups}`. A group from an instance grant whose scope is not
+  # known to hold on the record goes in `mask_only_groups`: FieldFilterCheck shows
+  # its fields only where the scope holds, so it may mask a field but never unmask one.
   defp record_groups(%{unrestricted?: true}, _record, _match), do: :unrestricted
 
   defp record_groups(source, record, match) do
     record_id = record |> Map.get(match.instance_key) |> to_string()
     on_record = Enum.filter(source.instance, &(&1.instance_id == record_id))
 
-    cond do
-      Enum.any?(on_record, &AshGrant.Permission.deny?/1) ->
-        Enum.sort(source.rbac_groups)
+    if Enum.any?(on_record, &AshGrant.Permission.deny?/1) do
+      {Enum.sort(source.rbac_groups), []}
+    else
+      {held, unsettled} =
+        Enum.split_with(on_record, &scope_holds?(source.conditions[&1.scope], record, match))
 
-      not match.deny_fields_by_default? and Enum.any?(on_record, &is_nil(&1.field_group)) ->
+      if not match.deny_fields_by_default? and Enum.any?(held, &is_nil(&1.field_group)) do
         :unrestricted
-
-      true ->
-        on_record
-        |> Enum.map(& &1.field_group)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.concat(source.rbac_groups)
-        |> Enum.uniq()
-        |> Enum.sort()
+      else
+        groups = held |> grant_groups() |> Enum.concat(source.rbac_groups) |> Enum.uniq()
+        {Enum.sort(groups), unsettled |> grant_groups() |> Enum.uniq() |> Enum.sort()}
+      end
     end
+  end
+
+  defp grant_groups(grants), do: grants |> Enum.map(& &1.field_group) |> Enum.reject(&is_nil/1)
+
+  defp scope_holds?(condition, _record, _match) when is_boolean(condition), do: condition
+
+  defp scope_holds?(condition, record, match) do
+    match?(
+      {:ok, true},
+      Ash.Expr.eval(condition,
+        record: record,
+        resource: match.resource,
+        actor: match.actor,
+        tenant: match.tenant,
+        unknown_on_unknown_refs?: true
+      )
+    )
   end
 
   # A field masked by either the grants or the ceiling stays masked. A set that
@@ -162,20 +211,22 @@ defmodule AshGrant.Preparations.ApplyMasking do
   # deny_fields_by_default) has no field to mask.
   defp masked_fields_for(groups_per_set, resource) do
     groups_per_set
-    |> Enum.reject(&(&1 in [:unrestricted, []]))
+    |> Enum.reject(&(&1 in [:unrestricted, {[], []}]))
     |> Enum.map(&resolve_masking(resource, &1))
     |> Enum.reduce(%{}, &Map.merge(&2, &1))
   end
 
   # Determines which fields should be masked based on allow-wins semantics.
   # A field is masked only if ALL actor field groups that include it also mask it.
-  # If ANY group provides unmasked access, the field is not masked.
-  defp resolve_masking(resource, actor_groups) do
+  # If ANY group provides unmasked access, the field is not masked. Mask-only
+  # groups add masked fields but never provide unmasked access.
+  defp resolve_masking(resource, {actor_groups, mask_only_groups}) do
     resolved_groups = Enum.flat_map(actor_groups, &resolve_group(resource, &1))
+    resolved_mask_only = Enum.flat_map(mask_only_groups, &resolve_group(resource, &1))
 
     # Collect all masked fields from all groups
     all_masked =
-      resolved_groups
+      (resolved_groups ++ resolved_mask_only)
       |> Enum.flat_map(fn {_name, resolved} -> Map.to_list(resolved.masked_fields) end)
       |> Map.new()
 
