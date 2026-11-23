@@ -125,7 +125,9 @@ every post in the workspace — without copying the grant onto each post.
 
 **Solution.** Declare `scope_through :workspace` on the child. AshGrant
 propagates the parent's instance permissions through the FK automatically
-for reads, writes, and `CanPerform` calculations.
+for reads, writes, and `CanPerform` calculations. A parent grant with a
+named scope (`workspace:ws_abc123:read:active`) reaches the child only while
+the scope holds on the parent row.
 
 ```elixir
 defmodule MyApp.Workspaces.Post do

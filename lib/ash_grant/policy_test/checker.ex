@@ -15,8 +15,8 @@ defmodule AshGrant.PolicyTest.Checker do
 
   Without a record this is `AshGrant.Introspect.can?/3`. With one, the action
   must be allowed and the record must be admitted by the union the runtime
-  builds: any matching grant's scope, a matching instance ID, or a scope_through
-  parent's instance ID. A scope is evaluated as the runtime check for that
+  builds: any matching grant's scope, a matching instance ID whose own scope holds,
+  or a scope_through parent's instance ID. A scope is evaluated as the runtime check for that
   action evaluates it — the read filter for a read, and for any other action the
   scope's `write:` override when it has one (`AshGrant.Check`).
 
@@ -151,7 +151,7 @@ defmodule AshGrant.PolicyTest.Checker do
           {:indeterminate, reason} -> {:indeterminate, "scope `#{scope}` #{reason}"}
           verdict -> verdict
         end
-      end) ++ instance_verdicts(resource, action, permissions, record)
+      end) ++ instance_verdicts(resource, action, context, permissions, record, arguments)
 
     undecided = for {:indeterminate, reason} <- verdicts, do: reason
 
@@ -204,44 +204,83 @@ defmodule AshGrant.PolicyTest.Checker do
   defp scope_filter(resource, scope, context),
     do: Info.resolve_write_scope_filter(resource, scope, context)
 
-  defp instance_verdicts(resource, action, permissions, record) do
+  defp instance_verdicts(resource, action, context, permissions, record, arguments) do
     action_name = to_string(action)
     action_type = Introspect.resolve_action_type(resource, action)
 
-    ids_for = fn resource_name ->
-      Evaluator.get_matching_instance_ids(permissions, resource_name, action_name, action_type)
+    grants_for = fn parent ->
+      permissions
+      |> Evaluator.get_matching_instance_grants(
+        Info.resource_name(parent),
+        action_name,
+        action_type
+      )
+      |> Enum.filter(fn {_id, scope} -> AshGrant.InstanceFilter.reachable?(scope, parent) end)
     end
 
     parents =
       for scope_through <- Info.scope_throughs(resource),
           Info.scope_through_allows_action?(scope_through, action_name, action_type),
-          do: parent_admits?(resource, scope_through, record, ids_for)
+          do: parent_admits?(resource, scope_through, record, grants_for)
 
-    [
-      id_in?(record, Info.instance_key(resource), ids_for.(Info.resource_name(resource)))
-      | parents
-    ]
+    own =
+      permissions
+      |> Evaluator.get_matching_instance_grants(
+        Info.resource_name(resource),
+        action_name,
+        action_type
+      )
+      |> Enum.filter(fn {id, _scope} -> id_in?(record, Info.instance_key(resource), [id]) end)
+      |> Enum.map(&instance_grant_admits?(&1, resource, context, record, arguments))
+
+    own ++ parents
+  end
+
+  # A named scope on an instance grant must also hold for the record, as on the
+  # runtime read filter; an undeclared one admits nothing (#207).
+  defp instance_grant_admits?({_id, nil}, _resource, _context, _record, _arguments), do: true
+
+  defp instance_grant_admits?({id, scope}, resource, context, record, arguments) do
+    case scope_admits?(resource, context, record, scope, arguments) do
+      {:indeterminate, reason} -> {:indeterminate, "scope `#{scope}` on instance #{id} #{reason}"}
+      verdict -> verdict
+    end
   end
 
   # Decidable from the record only when the foreign key points at the parent's
   # instance_key. Otherwise the runtime joins to the parent row, which a policy
   # test does not have: with a parent grant in play that is undecided, not a deny.
-  defp parent_admits?(resource, scope_through, record, ids_for) do
+  # The same holds for a parent grant with a scope, which must hold on the parent
+  # row (#207). An undeclared parent scope admits nothing.
+  defp parent_admits?(resource, scope_through, record, grants_for) do
     relationship = Ash.Resource.Info.relationship(resource, scope_through.relationship)
     parent = Introspect.scope_through_parent_resource(resource, scope_through)
-    parent_ids = ids_for.(Info.resource_name(parent))
+    grants = grants_for.(parent)
+
+    {unconditional, conditional} =
+      Enum.split_with(grants, fn {_id, scope} -> AshGrant.InstanceFilter.unconditional?(scope) end)
+
+    ids = fn grants -> Enum.map(grants, &elem(&1, 0)) end
 
     cond do
-      Info.instance_key(parent) == relationship.destination_attribute ->
-        id_in?(record, relationship.source_attribute, parent_ids)
-
-      parent_ids == [] ->
+      grants == [] ->
         false
 
-      true ->
+      Info.instance_key(parent) != relationship.destination_attribute ->
         {:indeterminate,
          "scope_through `#{scope_through.relationship}` matches the parent by " <>
            "`#{Info.instance_key(parent)}`, which only a join to the parent row can check"}
+
+      id_in?(record, relationship.source_attribute, ids.(unconditional)) ->
+        true
+
+      id_in?(record, relationship.source_attribute, ids.(conditional)) ->
+        {:indeterminate,
+         "scope_through `#{scope_through.relationship}` grant's scope must hold on the " <>
+           "parent row, which a policy test does not have"}
+
+      true ->
+        false
     end
   end
 

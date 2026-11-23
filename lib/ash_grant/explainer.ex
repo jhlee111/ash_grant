@@ -140,8 +140,15 @@ defmodule AshGrant.Explainer do
 
     # The verdict is the one `AshGrant.Introspect.can?/4` gives, so explain agrees
     # with the runtime on instance grants, scope_through and deny rules.
-    {decision, reason} = decide(resource, action, permissions)
     matching_allows = Enum.filter(evaluated, &(&1.matched and not &1.is_deny))
+
+    # `Introspect` answers per action and counts an instance grant whatever its
+    # scope, so an allow with no grant that reaches a record is a refusal at runtime.
+    {decision, reason} =
+      case decide(resource, action, permissions) do
+        {:allow, _} when matching_allows == [] -> {:deny, :no_matching_permissions}
+        verdict -> verdict
+      end
 
     scope_filter =
       resolve_explain_scope_filter(decision, matching_allows, permissions, match, context)
@@ -304,16 +311,21 @@ defmodule AshGrant.Explainer do
         {false, mismatch_reason(perm, match)}
 
       Permission.matches_resource?(perm.resource, match.resource_name) ->
-        instance_verdict(perm, is_deny, match.resource_name, "instance", match)
+        perm
+        |> instance_verdict(is_deny, match.resource_name, "instance", match)
+        |> with_instance_scope(perm, is_deny, match.resource)
 
-      relationship = parent_relationship(perm, match.parents) ->
-        instance_verdict(
-          perm,
+      through = parent_relationship(perm, match.parents) ->
+        {relationship, parent} = through
+
+        perm
+        |> instance_verdict(
           is_deny,
           perm.resource,
           "#{perm.resource} via scope_through :#{relationship}",
           match
         )
+        |> with_instance_scope(perm, is_deny, parent)
 
       true ->
         {false, mismatch_reason(perm, match)}
@@ -331,6 +343,25 @@ defmodule AshGrant.Explainer do
     end
   end
 
+  # An instance grant reaches a record only while its scope holds on the granted
+  # resource (the parent, for scope_through), and not at all when that resource
+  # does not declare the scope (#207), as in `AshGrant.InstanceFilter`.
+  defp with_instance_scope({true, reason}, %Permission{scope: scope}, false, resource)
+       when scope not in [nil, ""] do
+    cond do
+      AshGrant.Scope.universal?(scope) ->
+        {true, reason}
+
+      AshGrant.InstanceFilter.reachable?(scope, resource) ->
+        {true, "#{reason} while scope `#{scope}` holds"}
+
+      true ->
+        {false, "Scope `#{scope}` is not declared: this instance grant authorizes nothing"}
+    end
+  end
+
+  defp with_instance_scope(verdict, _perm, _is_deny, _resource), do: verdict
+
   defp instance_denied?(match, resource_name, instance_id) do
     Enum.any?(match.permissions, fn perm ->
       Permission.deny?(perm) and perm.instance_id == instance_id and
@@ -340,18 +371,18 @@ defmodule AshGrant.Explainer do
   end
 
   defp parent_relationship(perm, parents) do
-    Enum.find_value(parents, fn {parent_name, relationship} ->
-      if Permission.matches_resource?(perm.resource, parent_name), do: relationship
+    Enum.find_value(parents, fn {parent_name, relationship, parent} ->
+      if Permission.matches_resource?(perm.resource, parent_name), do: {relationship, parent}
     end)
   end
 
-  # `{parent resource name, relationship}` for each scope_through that applies
-  # to this action.
+  # `{parent resource name, relationship, parent resource}` for each scope_through
+  # that applies to this action.
   defp scope_through_parents(resource, action_str, action_type) do
     for scope_through <- Info.scope_throughs(resource),
         Info.scope_through_allows_action?(scope_through, action_str, action_type),
         parent = Introspect.scope_through_parent_resource(resource, scope_through) do
-      {Info.resource_name(parent), scope_through.relationship}
+      {Info.resource_name(parent), scope_through.relationship, parent}
     end
   end
 
@@ -380,7 +411,7 @@ defmodule AshGrant.Explainer do
 
   # The filter `AshGrant.FilterCheck` applies: the RBAC scopes ORed (a filter
   # resolving to `true` absorbs the union whatever the scope is named, #149/#151),
-  # ORed with the resource's own instance ids and the scope_through parents, then
+  # ORed with the resource's own instance grants and the scope_through parents, then
   # narrowed by the deny rules.
   defp resolve_explain_scope_filter(:allow, matching_allows, permissions, match, context) do
     %{resource: resource, action: action, action_type: action_type} = match
@@ -389,20 +420,18 @@ defmodule AshGrant.Explainer do
       for %{instance_id: "*"} = allow <- matching_allows,
           do: resolve_allow_filter(allow, resource, context)
 
-    instance_ids =
-      Evaluator.get_matching_instance_ids(permissions, match.resource_name, action, action_type)
-
     instance_filter =
-      if instance_ids != [] do
-        Ash.Expr.expr(^Ash.Expr.ref(Info.instance_key(resource)) in ^instance_ids)
-      end
+      permissions
+      |> Evaluator.get_matching_instance_grants(match.resource_name, action, action_type)
+      |> AshGrant.InstanceFilter.build(resource, context)
 
     parent_filters =
       AshGrant.FilterCheck.build_parent_instance_filters(
         resource,
         permissions,
         action,
-        action_type
+        action_type,
+        context
       )
 
     deny_summary = Evaluator.deny_summary(permissions, match.resource_name, action, action_type)
