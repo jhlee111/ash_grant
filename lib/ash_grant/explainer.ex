@@ -144,16 +144,18 @@ defmodule AshGrant.Explainer do
 
     # `Introspect` answers per action and counts an instance grant whatever its
     # scope, so an allow with no grant that reaches a record is a refusal at runtime.
-    {decision, reason} =
+    {decision, reason, allowed_field_groups} =
       case decide(resource, action, permissions) do
-        {:allow, _} when matching_allows == [] -> {:deny, :no_matching_permissions}
+        {:allow, _, _} when matching_allows == [] -> {:deny, :no_matching_permissions, nil}
         verdict -> verdict
       end
 
     scope_filter =
       resolve_explain_scope_filter(decision, matching_allows, permissions, match, context)
 
-    field_groups = extract_field_groups(matching_allows)
+    # On an allow, the field groups are the ones `Introspect.can?/4` and the runtime
+    # use: a group-less grant collapses the union to `[]` (unrestricted, #116), #223.
+    field_groups = allowed_field_groups || extract_field_groups(matching_allows)
     resolve_arguments = build_resolve_arguments(resource, action)
 
     reason_code = reason_to_code(decision, reason)
@@ -401,9 +403,9 @@ defmodule AshGrant.Explainer do
 
   defp decide(resource, action, permissions) do
     case Introspect.decide(resource, action, permissions) do
-      {:allow, _details} -> {:allow, nil}
-      {:deny, %{reason: :denied_by_rule}} -> {:deny, :denied_by_rule}
-      {:deny, _details} -> {:deny, :no_matching_permissions}
+      {:allow, details} -> {:allow, nil, Map.get(details, :field_groups, [])}
+      {:deny, %{reason: :denied_by_rule}} -> {:deny, :denied_by_rule, nil}
+      {:deny, _details} -> {:deny, :no_matching_permissions, nil}
     end
   end
 
