@@ -24,14 +24,16 @@ defmodule AshGrant.Introspect do
   Every function that reports a decision intersects the actor's grants with the
   resolver's ceiling (`c:AshGrant.PermissionResolver.ceiling/2`), as the runtime checks do.
 
-  A `field_groups: []` result means every field is visible, except on a resource
-  with `deny_fields_by_default`, where it means no field group is visible.
+  `:field_access` says how to read `:field_groups`: `:all` when every field is
+  visible, `:groups` when only the fields of the listed groups are. Under
+  `deny_fields_by_default`, `field_groups: []` with `field_access: :groups` means
+  no field group is visible.
 
   ## Examples
 
       # Admin UI: What can this user do?
       Introspect.actor_permissions(Post, current_user)
-      # => [%{action: "read", allowed: true, scope: "always", field_groups: []}, ...]
+      # => [%{action: "read", allowed: true, scope: "always", field_groups: [], field_access: :all}, ...]
 
       # Permission management: What permissions exist?
       Introspect.available_permissions(Post)
@@ -39,7 +41,7 @@ defmodule AshGrant.Introspect do
 
       # Debugging: Can user do this?
       Introspect.can?(Post, :update, user)
-      # => {:allow, %{scope: "own", scopes: ["own"], instance_ids: nil, field_groups: []}}
+      # => {:allow, %{scope: "own", scopes: ["own"], instance_ids: nil, field_groups: [], field_access: :all}}
 
       # API: What actions are available?
       Introspect.allowed_actions(Post, user)
@@ -54,8 +56,11 @@ defmodule AshGrant.Introspect do
           denied: boolean(),
           scope: String.t() | nil,
           instance_ids: [String.t()] | nil,
-          field_groups: [String.t()]
+          field_groups: [String.t()],
+          field_access: field_access()
         }
+
+  @type field_access :: :all | :groups
 
   @type resource_summary :: %{
           resource: module(),
@@ -226,7 +231,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> AshGrant.Introspect.can_by_identifier("user_1", "post", :read)
-      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: []}}
+      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: [], field_access: :all}}
 
   """
   @spec can_by_identifier(term(), String.t(), atom(), keyword()) ::
@@ -397,9 +402,9 @@ defmodule AshGrant.Introspect do
 
       iex> Introspect.actor_permissions(Post, %{role: :editor})
       [
-        %{action: "read", allowed: true, scope: "always", denied: false, instance_ids: nil, field_groups: []},
-        %{action: "update", allowed: true, scope: "own", denied: false, instance_ids: nil, field_groups: []},
-        %{action: "destroy", allowed: false, scope: nil, denied: false, instance_ids: nil, field_groups: []}
+        %{action: "read", allowed: true, scope: "always", denied: false, instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: "update", allowed: true, scope: "own", denied: false, instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: "destroy", allowed: false, scope: nil, denied: false, instance_ids: nil, field_groups: [], field_access: :all}
       ]
 
   """
@@ -444,7 +449,8 @@ defmodule AshGrant.Introspect do
         denied: has_deny,
         scope: scope,
         instance_ids: if(instance_ids != [], do: instance_ids, else: nil),
-        field_groups: field_groups
+        field_groups: field_groups,
+        field_access: field_access(resource, field_groups)
       }
     end)
   end
@@ -531,7 +537,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> Introspect.can?(Post, :read, %{role: :editor})
-      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: []}}
+      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: [], field_access: :all}}
 
       iex> Introspect.can?(Post, :destroy, %{role: :viewer})
       {:deny, %{reason: :no_permission}}
@@ -553,13 +559,26 @@ defmodule AshGrant.Introspect do
 
     grants_decision = decide(resource, action, permissions_for(resource, actor, context: context))
 
-    within_ceiling(
-      grants_decision,
+    grants_decision
+    |> within_ceiling(
       ceiling_for(resource, actor, context: context),
       &decide(resource, action, &1),
       resource
     )
+    |> put_field_access(resource)
   end
+
+  defp put_field_access({:allow, details}, resource) do
+    {:allow, Map.put(details, :field_access, field_access(resource, details.field_groups))}
+  end
+
+  defp put_field_access(result, _resource), do: result
+
+  defp field_access(resource, []) do
+    if Info.deny_fields_by_default?(resource), do: :groups, else: :all
+  end
+
+  defp field_access(_resource, _field_groups), do: :groups
 
   @doc false
   # Intersects a decision on the grants with the same decision on the ceiling,
@@ -801,9 +820,9 @@ defmodule AshGrant.Introspect do
 
       iex> Introspect.allowed_actions(Post, %{role: :editor}, detailed: true)
       [
-        %{action: :read, scope: "always", instance_ids: nil, field_groups: []},
-        %{action: :create, scope: "always", instance_ids: nil, field_groups: []},
-        %{action: :update, scope: "own", instance_ids: nil, field_groups: []}
+        %{action: :read, scope: "always", instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: :create, scope: "always", instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: :update, scope: "own", instance_ids: nil, field_groups: [], field_access: :all}
       ]
 
   """
@@ -826,7 +845,8 @@ defmodule AshGrant.Introspect do
         action: String.to_existing_atom(p.action),
         scope: p.scope,
         instance_ids: p.instance_ids,
-        field_groups: p.field_groups
+        field_groups: p.field_groups,
+        field_access: p.field_access
       }
     end)
   end

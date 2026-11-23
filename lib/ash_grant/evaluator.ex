@@ -509,7 +509,10 @@ defmodule AshGrant.Evaluator do
 
   Pass `deny_fields_by_default: true` (see `AshGrant.Info.deny_fields_by_default?/1`)
   for a resource that hides ungranted fields. A group-less grant then opens no group
-  and is left out, so `[]` means "no field group", never "unrestricted".
+  and is left out, so `[]` means "no field group", never "unrestricted". The option
+  defaults to `false` because this function takes a resource name, not the module,
+  so it cannot read the resource's setting. `field_group_grants/6` takes the module
+  and defaults to the resource's setting.
 
   ## Examples
 

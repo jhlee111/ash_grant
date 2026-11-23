@@ -293,12 +293,12 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
 
   describe "Introspect" do
     test "can?/4 allows the row and reports only the 5-part groups" do
-      assert {:allow, %{field_groups: []}} =
+      assert {:allow, %{field_groups: [], field_access: :groups}} =
                Introspect.can?(DenyFieldsRecord, :read, %{
                  permissions: ["denyfieldsrecord:*:read:always"]
                })
 
-      assert {:allow, %{field_groups: ["public"]}} =
+      assert {:allow, %{field_groups: ["public"], field_access: :groups}} =
                Introspect.can?(DenyFieldsRecord, :read, %{
                  permissions: [
                    "denyfieldsrecord:*:read:always",
@@ -317,6 +317,29 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
 
       assert read.allowed
       assert read.field_groups == ["public"]
+      assert read.field_access == :groups
+    end
+
+    test "field_access is :all for a group-less grant with the flag off" do
+      actor = %{permissions: ["sensitiverecord:*:read:always"]}
+
+      assert {:allow, %{field_groups: [], field_access: :all}} =
+               Introspect.can?(SensitiveRecord, :read, actor)
+
+      read =
+        Enum.find(Introspect.actor_permissions(SensitiveRecord, actor), &(&1.action == "read"))
+
+      assert read.field_access == :all
+
+      assert [%{action: :read, field_access: :all} | _] =
+               Introspect.allowed_actions(SensitiveRecord, actor, detailed: true)
+    end
+
+    test "field_access is :groups for a 5-part grant with the flag off" do
+      assert {:allow, %{field_groups: ["public"], field_access: :groups}} =
+               Introspect.can?(SensitiveRecord, :read, %{
+                 permissions: ["sensitiverecord:*:read:always:public"]
+               })
     end
 
     test "intersect_field_groups reads [] as no group under the flag" do
