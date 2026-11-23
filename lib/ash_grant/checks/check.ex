@@ -459,18 +459,29 @@ defmodule AshGrant.Check do
 
   # An empty scope is unconditional for the record. A named scope is an
   # authorization condition evaluated against the record, like an RBAC scope.
-  # `AshGrant.InstanceFilter.condition/3` decides first, as on reads (#207): an
+  # A declared scope goes straight to `check_scope_access/5`, which honours its
+  # `write:` filter; `InstanceFilter.condition/3` resolves the read filter only.
+  # For any other scope `condition/3` decides first, as on reads (#207): an
   # undeclared scope, or one a legacy `scope_resolver` raises on, authorizes
   # nothing and logs a warning instead of failing the write.
   defp instance_scope_passes?(nil, _scope_resolver, _context, _authorizer, _opts), do: true
   defp instance_scope_passes?("", _scope_resolver, _context, _authorizer, _opts), do: true
 
   defp instance_scope_passes?(scope, scope_resolver, context, authorizer, opts) do
-    case AshGrant.InstanceFilter.condition(scope, context.resource, context) do
-      false -> false
-      true -> true
-      _read_filter -> check_scope_access(scope, scope_resolver, context, authorizer, opts)
+    resource = context.resource
+
+    if instance_scope_declared?(resource, scope) or
+         AshGrant.InstanceFilter.condition(scope, resource, context) != false do
+      check_scope_access(scope, scope_resolver, context, authorizer, opts)
+    else
+      false
     end
+  end
+
+  defp instance_scope_declared?(resource, scope) do
+    AshGrant.Info.get_scope(resource, String.to_existing_atom(scope)) != nil
+  rescue
+    ArgumentError -> false
   end
 
   # Creates and generic actions have no existing record an instance deny could name.
