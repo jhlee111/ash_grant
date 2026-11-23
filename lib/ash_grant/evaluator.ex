@@ -106,9 +106,9 @@ defmodule AshGrant.Evaluator do
       Evaluator.has_instance_access?(permissions, "doc_123", "update")
       # => true
 
-      # Get the scope condition for further evaluation
+      # Get the scope condition; the read filter requires it to hold for the record
       Evaluator.get_instance_scope(permissions, "doc_123", "update")
-      # => "draft" (the application can then verify if the document is in draft status)
+      # => "draft"
 
       # Get all scopes for an action
       Evaluator.get_all_instance_scopes(permissions, "doc_123", "read")
@@ -125,8 +125,9 @@ defmodule AshGrant.Evaluator do
   | `get_write_scopes/4` | Union of matching grant scopes (for Check) |
   | `get_field_group/3` | Get first matching field group from 5-part permissions |
   | `get_all_field_groups/3` | Get all matching field groups (union for field access) |
-  | `get_instance_scope/3` | Get scope from instance permission (for ABAC conditions) |
+  | `get_instance_scope/3` | Get scope from the first matching instance permission |
   | `get_all_instance_scopes/3` | Get all scopes from instance permissions |
+  | `get_matching_instance_grants/4` | Get `{instance_id, scope}` for each instance grant (for read filters) |
   | `get_matching_instance_ids/3` | Get all instance IDs for a resource/action |
   | `deny_summary/4` | RBAC and instance denies for a resource/action (for every check) |
   | `find_matching/3` | Get all matching permissions (debug/introspection) |
@@ -234,8 +235,9 @@ defmodule AshGrant.Evaluator do
   Returns the scope from the first matching allow permission for the given instance.
   Returns nil if no matching permission is found, if denied, or if the scope is empty.
 
-  This enables ABAC-style conditions on instance permissions, where the scope
-  represents an authorization condition (e.g., "draft", "business_hours", "small_amount").
+  The scope is an authorization condition on the instance (e.g., "draft",
+  "business_hours", "small_amount"). Read filters apply it through
+  `get_matching_instance_grants/4`.
 
   ## Examples
 
@@ -415,12 +417,15 @@ defmodule AshGrant.Evaluator do
   Returns:
 
   - `:denied` — a deny rule matches (deny-wins)
-  - `:unrestricted` — a matching allow grant has no scope (legacy 2-part
-    format, or an empty 4th part); such a grant applies to every record and
-    dominates the union
   - `{:scopes, scopes}` — the deduplicated scopes of all matching allow
     permissions, in permission-list order (`{:scopes, []}` when nothing
     matches)
+
+  An allow grant with no scope (an empty 4th part, or the legacy 2-part
+  format, which parses to the same thing) contributes nothing: it authorizes
+  no records, on writes as on reads (`get_all_scopes/4`). It used to return
+  `:unrestricted` and authorize every record (issue #215).
+  `AshGrant.Permission.diagnostics/1` reports such grants as `:empty_rbac_scope`.
 
   ## Examples
 
@@ -432,12 +437,12 @@ defmodule AshGrant.Evaluator do
       iex> AshGrant.Evaluator.get_write_scopes(permissions, "blog", "delete")
       :denied
 
-      iex> AshGrant.Evaluator.get_write_scopes(["blog:update"], "blog", "update")
-      :unrestricted
+      iex> AshGrant.Evaluator.get_write_scopes(["blog:*:update:"], "blog", "update")
+      {:scopes, []}
 
   """
   @spec get_write_scopes(permissions(), String.t(), String.t(), atom() | nil) ::
-          :denied | :unrestricted | {:scopes, [String.t()]}
+          :denied | {:scopes, [String.t()]}
   def get_write_scopes(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
     match = &Permission.matches?(&1, resource, action, action_type)
@@ -450,15 +455,16 @@ defmodule AshGrant.Evaluator do
     if denied?(permissions, match) do
       :denied
     else
-      matching_allows = Enum.filter(permissions, &(not Permission.deny?(&1) and match.(&1)))
+      # A scope-less RBAC allow authorizes no records, so it contributes nothing to
+      # the union — the same as get_all_scopes/4 on reads (issue #215).
+      scopes =
+        permissions
+        |> Enum.filter(&(not Permission.deny?(&1) and match.(&1)))
+        |> Enum.map(& &1.scope)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
 
-      # A scope-less grant applies to every record and dominates the union (the
-      # write-path analogue of get_all_field_groups/4's group-less collapse, issue #116).
-      if Enum.any?(matching_allows, &is_nil(&1.scope)) do
-        :unrestricted
-      else
-        {:scopes, matching_allows |> Enum.map(& &1.scope) |> Enum.uniq()}
-      end
+      {:scopes, scopes}
     end
   end
 
@@ -685,8 +691,8 @@ defmodule AshGrant.Evaluator do
   Returns a list of instance IDs from all matching instance permissions
   (where instance_id != "*") for the given resource and action.
 
-  This is used by FilterCheck to build a `WHERE id IN (...)` filter
-  for instance-based access control.
+  Each grant's scope is dropped. Use `get_matching_instance_grants/4` when the
+  scope matters, as it does for the read filter.
 
   ## Examples
 
@@ -706,6 +712,34 @@ defmodule AshGrant.Evaluator do
   @spec get_matching_instance_ids(permissions(), String.t(), String.t(), atom() | nil) ::
           [String.t()]
   def get_matching_instance_ids(permissions, resource, action, action_type \\ nil) do
+    permissions
+    |> get_matching_instance_grants(resource, action, action_type)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.uniq()
+  end
+
+  @doc """
+  Gets the `{instance_id, scope}` pair of every instance permission that grants access.
+
+  Like `get_matching_instance_ids/4`, but keeps each grant's scope. `scope` is
+  `nil` for an empty scope (`doc:doc_abc:read:`), which is unconditional. A named
+  scope is a condition the record must also meet. An instance deny removes every
+  grant on its id, whatever the scope.
+
+  ## Examples
+
+      iex> permissions = ["shareddoc:doc_abc:read:", "shareddoc:doc_xyz:read:draft"]
+      iex> AshGrant.Evaluator.get_matching_instance_grants(permissions, "shareddoc", "read")
+      [{"doc_abc", nil}, {"doc_xyz", "draft"}]
+
+      iex> permissions = ["shareddoc:doc_abc:read:draft", "!shareddoc:doc_abc:read:"]
+      iex> AshGrant.Evaluator.get_matching_instance_grants(permissions, "shareddoc", "read")
+      []
+
+  """
+  @spec get_matching_instance_grants(permissions(), String.t(), String.t(), atom() | nil) ::
+          [{String.t(), String.t() | nil}]
+  def get_matching_instance_grants(permissions, resource, action, action_type \\ nil) do
     # No IndeterminateMatch guard: this considers only instance permissions
     # (instance_id != "*"), and a type wildcard on an instance permission is dead, not
     # indeterminate — `AshGrant.Permission.diagnostics/1` reports it. RBAC wildcards
@@ -728,13 +762,17 @@ defmodule AshGrant.Evaluator do
       |> Enum.map(& &1.instance_id)
       |> MapSet.new()
 
-    # Get allowed instance IDs (excluding denied ones)
+    # Every deny's own id is in denied_ids, so this also drops the denies.
     instance_perms
-    |> Enum.reject(&Permission.deny?/1)
-    |> Enum.map(& &1.instance_id)
-    |> Enum.reject(&MapSet.member?(denied_ids, &1))
+    |> Enum.reject(&MapSet.member?(denied_ids, &1.instance_id))
+    |> Enum.map(&{&1.instance_id, blank_to_nil(&1.scope)})
     |> Enum.uniq()
   end
+
+  @doc false
+  @spec blank_to_nil(String.t() | nil) :: String.t() | nil
+  def blank_to_nil(""), do: nil
+  def blank_to_nil(scope), do: scope
 
   @doc """
   Summarises the deny rules that apply to a resource and action, across both tiers.

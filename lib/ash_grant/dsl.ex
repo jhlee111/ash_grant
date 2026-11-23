@@ -525,9 +525,10 @@ defmodule AshGrant.Dsl do
 
         Options:
         - `false` - No policies are generated (default, explicit policies required)
-        - `true` or `:all` - Generate policies for both read and write actions
+        - `true` or `:all` - Generate policies for read, write and generic actions
         - `:read` - Only generate policy for read actions (filter_check)
-        - `:write` - Only generate policy for write actions (check)
+        - `:write` - Only generate policy for create, update and destroy actions (check);
+          generic actions need their own policy
 
         Generated policies:
         ```elixir
@@ -539,11 +540,15 @@ defmodule AshGrant.Dsl do
           policy action_type([:create, :update, :destroy]) do
             authorize_if AshGrant.check()
           end
+
+          policy action_type(:action) do
+            authorize_if AshGrant.check()
+          end
         end
         ```
 
-        Note: When using `default_policies`, you should still add
-        `authorizers: [Ash.Policy.Authorizer]` to your resource options.
+        The resource must also set `authorizers: [Ash.Policy.Authorizer]`.
+        Compilation fails without it, because the generated policies would never run.
         """
       ],
       default_field_policies: [

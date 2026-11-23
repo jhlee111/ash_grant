@@ -36,7 +36,15 @@ permission strings in your resolver.
 
 ## Installation
 
-Add `ash_grant` to your list of dependencies in `mix.exs`:
+With [Igniter](https://hexdocs.pm/igniter):
+
+```bash
+mix igniter.install ash_grant
+```
+
+The installer adds the dependency and imports the `ash_grant` formatter rules into `.formatter.exs`.
+
+Without Igniter, add `ash_grant` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -152,28 +160,19 @@ Post |> Ash.read!(actor: viewer)
             +-----------------------+
 ```
 
-## Disclosure
+## Background
 
-  I've been a developer for about six years. I became interested in Elixir, Phoenix, and Ash a couple of years ago, but only started actually building with
-  them about four months ago. This library was born out of my own needs, and honestly, my skills in this ecosystem aren't at the level where I'd normally
-  attempt building something like this.
+I started AshGrant at the end of 2025 for my own production app. Most of it was
+built with Claude Code through TDD: I described the behaviour I needed, the agent
+wrote the tests and the implementation, and I reviewed the results.
 
-  Most of AshGrant was developed through TDD with Claude Code—I described what I needed, Claude Code wrote the tests and implementation, and I reviewed the
-  results. I treated it like any third-party library: if the tests pass and the code looks reasonable, I use it. I haven't read every line of code in detail,
-  so I can't guarantee everything works perfectly.
+In November 2026, [Conor Sinclair (@C-Sinclair)](https://github.com/C-Sinclair)
+stepped in as a co-maintainer. I'm grateful to him for that.
 
-  I'm using this in production because I need it now, but please consider this more as a **proof of concept**—a proposal for how authorization could be handled
-   in Ash. I'm sharing this publicly in hopes that it can be a starting point. If others find it useful and want to contribute, we could build something better
-   together.
+Issues and PRs are welcome.
 
-  If you have suggestions or find issues, please feel free to open an issue or submit a PR—contributions are very welcome.
-
-  What made this possible is how exceptionally well-documented Elixir and Ash are. The clear abstractions—DSLs, Domains, Resources, Extensions—gave me a
-  precise vocabulary to communicate my requirements to an LLM. These well-defined concepts provided both the courage to start and the foundation to actually
-  ship something I use in production.
-
-  I'm deeply grateful to Zach for creating Ash Framework, the Ash Core Team, all the contributors, and the broader Elixir community. We have something special
-  here.
+Thanks to Zach Daniel, the Ash core team, and the Elixir community. Ash's
+well-documented abstractions are what made this project possible.
 
 ## License
 

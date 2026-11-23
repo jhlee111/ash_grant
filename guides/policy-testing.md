@@ -78,6 +78,8 @@ admitted by the same union the runtime builds — any one of:
   admits `%{id: "post_123"}` and nothing else;
 - through `scope_through`, the record's foreign key is in the parent's instance
   permissions — `post:post_123:read:` admits a comment with `post_id: "post_123"`.
+  A parent grant with a named scope (`post:post_123:read:draft`) needs the parent
+  row to decide, so it is undecided.
 
 So give the record the fields that decide it: an instance grant cannot admit a record
 that has no ID. DSL and YAML tests share this check.

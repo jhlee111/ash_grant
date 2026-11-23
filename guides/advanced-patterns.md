@@ -125,7 +125,9 @@ every post in the workspace — without copying the grant onto each post.
 
 **Solution.** Declare `scope_through :workspace` on the child. AshGrant
 propagates the parent's instance permissions through the FK automatically
-for reads, writes, and `CanPerform` calculations.
+for reads, writes, and `CanPerform` calculations. A parent grant with a
+named scope (`workspace:ws_abc123:read:active`) reaches the child only while
+the scope holds on the parent row.
 
 ```elixir
 defmodule MyApp.Workspaces.Post do
@@ -159,6 +161,10 @@ With permissions `["workspace:ws_abc:read:", "post:*:read:own"]`:
 - **Writes** — `check/1` succeeds when either the RBAC scope matches or
   the parent instance is in the actor's set.
 - **`can_read?` calculation** — same OR filter, compiled to SQL.
+
+A write grant on the parent also authorizes that action on the parent itself:
+`workspace:ws_abc:update:` lets the actor update the workspace as well as its posts.
+See [Parent grants also reach the parent](permissions.md#parent-grants-also-reach-the-parent).
 
 ### Narrowing to specific actions
 

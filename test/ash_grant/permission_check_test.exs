@@ -6,7 +6,9 @@ defmodule AshGrant.PermissionCheckTest do
 
   The last describe block pins the checker to the runtime: the real checks are
   run with each generated string, and must raise the undeclared-scope error on
-  exactly the resources the checker names.
+  exactly the resources the checker names. An instance grant is the exception:
+  its scope error names resources that do not raise, because the grant
+  authorizes nothing there (#207).
   """
   use ExUnit.Case, async: true
   use ExUnitProperties
@@ -258,9 +260,8 @@ defmodule AshGrant.PermissionCheckTest do
           "note:*:@update:own",
           "note:*:publish:own",
           "note:*:*:own",
-          # legacy 3-part and 2-part forms
-          "note:read:own",
-          "note:read"
+          # legacy 3-part form
+          "note:read:own"
         ] do
       test permission do
         assert issues_for(unquote(permission)) == []
@@ -424,7 +425,7 @@ defmodule AshGrant.PermissionCheckTest do
   end
 
   describe "deny and instance permissions" do
-    test "an undeclared scope is a warning: the framework never reads it" do
+    test "an undeclared scope is a warning on a deny and an error on an instance grant" do
       deny_issues = issues_for("!note:*:read:owm")
       assert Enum.map(deny_issues, & &1.code) |> Enum.sort() == [:scoped_deny, :undeclared_scope]
       deny = Enum.find(deny_issues, &(&1.code == :undeclared_scope))
@@ -432,10 +433,10 @@ defmodule AshGrant.PermissionCheckTest do
 
       assert deny.message =~ "deny applies whatever its scope"
 
-      assert [%{code: :undeclared_scope, severity: :warning} = instance] =
+      assert [%{code: :undeclared_scope, severity: :error} = instance] =
                issues_for("note:9f1c:read:business_hours")
 
-      assert instance.message =~ "get_instance_scope"
+      assert instance.message =~ "authorizes nothing"
     end
 
     test "deny + field_group is the #117 rule, as a code" do
@@ -467,6 +468,22 @@ defmodule AshGrant.PermissionCheckTest do
     test "a valid type with no action of that type on the resource is not an error" do
       # Ledger only has a read action; the grant is inert there, not misspelt.
       assert issues_for("ledger:*:@destroy:always") == []
+    end
+  end
+
+  describe "an RBAC grant with no scope (#215)" do
+    test "is an error on the scope segment, in either spelling" do
+      for permission <- ["note:*:update:", "note:update"] do
+        assert [%{code: :empty_rbac_scope, severity: :error, segment: :scope} = issue] =
+                 issues_for(permission)
+
+        assert issue.message =~ "authorizes no records"
+      end
+    end
+
+    test "an empty-scope deny or instance grant reports nothing" do
+      assert issues_for("!note:*:update:") == []
+      assert issues_for("note:9f1c:update:") == []
     end
   end
 
@@ -602,6 +619,19 @@ defmodule AshGrant.PermissionCheckTest do
         do: resource
   end
 
+  # An instance grant with an undeclared scope is an error that does not raise:
+  # `AshGrant.InstanceFilter` drops it and logs (#207).
+  defp resources_expected_to_raise(permission, issues) do
+    if instance_permission?(permission), do: [], else: resources_with_scope_error(issues)
+  end
+
+  defp instance_permission?(permission) do
+    case AshGrant.Permission.parse(permission) do
+      {:ok, perm} -> AshGrant.Permission.instance_permission?(perm)
+      _ -> false
+    end
+  end
+
   defp resources_with_scope_error(issues) do
     for %{code: code, severity: :error, resources: resources} <- issues,
         code in [:undeclared_scope, :scope_missing_on],
@@ -634,11 +664,12 @@ defmodule AshGrant.PermissionCheckTest do
       end
     end
 
-    property "the runtime raises on exactly the resources a scope error names" do
+    property "the runtime raises on exactly the resources a non-instance scope error names" do
       check all(permission <- permission_string(), max_runs: 500) do
-        named = permission |> issues_for(@property_resources) |> resources_with_scope_error()
+        expected =
+          resources_expected_to_raise(permission, issues_for(permission, @property_resources))
 
-        assert Enum.sort(resources_that_raise(permission)) == Enum.sort(named)
+        assert Enum.sort(resources_that_raise(permission)) == Enum.sort(expected)
       end
     end
   end
