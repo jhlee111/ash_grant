@@ -198,10 +198,13 @@ defmodule AshGrant.Evaluator do
   Instance permissions use the format `resource:instance_id:action:scope` where
   the scope can be empty (backward compatible) or contain a scope condition.
 
-  A type wildcard (`doc:doc_123:@update:`) matches only when `action_type` is given,
-  as everywhere else. This function, `get_instance_scope/4` and
+  A type-wildcard allow (`doc:doc_123:@update:`) matches only when `action_type` is
+  given, as everywhere else. This function, `get_instance_scope/4` and
   `get_all_instance_scopes/4` match on the instance id alone, so they take no
-  resource and are not checked by `AshGrant.IndeterminateMatch`.
+  resource and are not checked by `AshGrant.IndeterminateMatch`. In their place,
+  without an `action_type` a type-wildcard **deny** for the instance counts as
+  matching, whatever action type it names: deny-wins holds, and the call fails
+  closed rather than dropping the deny.
 
   ## Examples
 
@@ -218,12 +221,7 @@ defmodule AshGrant.Evaluator do
   def has_instance_access?(permissions, instance_id, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
 
-    # Check for deny rules first
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and
-          Permission.matches_instance?(perm, instance_id, action, action_type)
-      end)
+    has_deny = instance_denied?(permissions, instance_id, action, action_type)
 
     if has_deny do
       false
@@ -266,12 +264,7 @@ defmodule AshGrant.Evaluator do
   def get_instance_scope(permissions, instance_id, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
 
-    # Check for deny first
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and
-          Permission.matches_instance?(perm, instance_id, action, action_type)
-      end)
+    has_deny = instance_denied?(permissions, instance_id, action, action_type)
 
     if has_deny do
       nil
@@ -311,12 +304,7 @@ defmodule AshGrant.Evaluator do
   def get_all_instance_scopes(permissions, instance_id, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
 
-    # Check for deny first
-    has_deny =
-      Enum.any?(permissions, fn perm ->
-        Permission.deny?(perm) and
-          Permission.matches_instance?(perm, instance_id, action, action_type)
-      end)
+    has_deny = instance_denied?(permissions, instance_id, action, action_type)
 
     if has_deny do
       []
@@ -330,6 +318,19 @@ defmodule AshGrant.Evaluator do
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
     end
+  end
+
+  # Deny-wins for the instance trio. Without an `action_type` a type-wildcard deny
+  # cannot be evaluated, and these functions are not guarded by
+  # `AshGrant.IndeterminateMatch`, so it counts as matching: an untyped call fails
+  # closed instead of silently dropping the deny. Allows are not widened.
+  defp instance_denied?(permissions, instance_id, action, action_type) do
+    Enum.any?(permissions, fn perm ->
+      Permission.deny?(perm) and
+        (Permission.matches_instance?(perm, instance_id, action, action_type) or
+           (is_nil(action_type) and Permission.instance_permission?(perm) and
+              perm.instance_id == instance_id and Permission.type_wildcard?(perm)))
+    end)
   end
 
   @doc """

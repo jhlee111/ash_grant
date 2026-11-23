@@ -694,5 +694,22 @@ defmodule AshGrant.EvaluatorTest do
       refute Evaluator.has_instance_access?(perms, "d1", "publish", :update)
       assert Evaluator.has_instance_access?(perms, "d1", "read", :read)
     end
+
+    test "an untyped call fails closed on a type-wildcard deny" do
+      perms = ["post:abc:*:draft", "!post:abc:@update:"]
+
+      refute Evaluator.has_instance_access?(perms, "abc", "update")
+      assert Evaluator.get_instance_scope(perms, "abc", "update") == nil
+      assert Evaluator.get_all_instance_scopes(perms, "abc", "update") == []
+
+      # The type is unknown, so a deny for another type also wins.
+      refute Evaluator.has_instance_access?(perms, "abc", "read")
+    end
+
+    test "a type-wildcard deny on another instance does not apply untyped" do
+      perms = ["post:abc:*:", "!post:other:@update:", "!post:*:@update:always"]
+
+      assert Evaluator.has_instance_access?(perms, "abc", "update")
+    end
   end
 end

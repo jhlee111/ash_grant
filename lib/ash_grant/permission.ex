@@ -414,8 +414,9 @@ defmodule AshGrant.Permission do
   Checks if a permission matches a specific resource instance.
 
   A type wildcard (`"@read"`) matches by Ash action type, so it needs
-  `action_type`. Without one it matches nothing, as on every other entry point
-  (#131). The framework checks always know the type.
+  `action_type`. Without one it matches nothing (#131). The framework checks
+  always know the type. `AshGrant.Evaluator.has_instance_access?/4` and its two
+  siblings still honor an untyped type-wildcard deny, so deny-wins holds there.
 
   ## Examples
 
