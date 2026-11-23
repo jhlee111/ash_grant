@@ -14,8 +14,8 @@ defmodule AshGrant.Preparations.ApplyMasking do
   1. The preparation adds an `after_action` hook to the query
   2. After records are fetched (but before field restriction), the hook:
      - Resolves the actor's field groups on each record, from RBAC and instance grants.
-       An instance grant's groups unmask a field only on a record where its scope
-       holds; elsewhere they can only add masking
+       A grant's groups unmask a field only on a record where its scope holds;
+       elsewhere they can only add masking
      - Determines which fields should be masked (allow-wins)
      - Replaces visible field values with masked values
   3. Ash's `restrict_field_access` then runs, hiding truly forbidden fields
@@ -96,47 +96,26 @@ defmodule AshGrant.Preparations.ApplyMasking do
     }
   end
 
-  # The per-set inputs that do not depend on the record: the RBAC field groups,
-  # and the instance grants that may add groups on individual records.
+  # The per-set inputs that do not depend on the record: the RBAC and instance
+  # allow grants that may open groups on a record, and each of their scopes'
+  # conditions. A matching RBAC deny settles the set: no group is open.
   defp group_source(permissions, match) do
     permissions = AshGrant.Evaluator.normalize_permissions(permissions)
-
-    # Pass the action type: without it a type wildcard (`@read`) grant is
-    # skipped, and the fields its group masks come back unmasked.
-    rbac_groups =
-      AshGrant.Evaluator.get_all_field_groups(
-        permissions,
-        match.resource_name,
-        match.action_name,
-        match.action_type,
-        deny_fields_by_default: match.deny_fields_by_default?
-      )
-
     rbac_matches = Enum.filter(permissions, &rbac_match?(&1, match))
-    denied? = Enum.any?(rbac_matches, &AshGrant.Permission.deny?/1)
 
-    rbac_unrestricted? =
-      not match.deny_fields_by_default? and
-        Enum.any?(rbac_matches, &(not AshGrant.Permission.deny?(&1) and is_nil(&1.field_group)))
+    if Enum.any?(rbac_matches, &AshGrant.Permission.deny?/1) do
+      %{denied?: true}
+    else
+      instance_grants = Enum.filter(permissions, &instance_match?(&1, match))
 
-    instance_grants =
-      if denied? or rbac_unrestricted?,
-        do: [],
-        else: Enum.filter(permissions, &instance_match?(&1, match))
+      conditions =
+        (rbac_matches ++ Enum.reject(instance_grants, &AshGrant.Permission.deny?/1))
+        |> Enum.map(& &1.scope)
+        |> Enum.uniq()
+        |> Map.new(&{&1, scope_condition(&1, match)})
 
-    conditions =
-      instance_grants
-      |> Enum.reject(&AshGrant.Permission.deny?/1)
-      |> Enum.map(& &1.scope)
-      |> Enum.uniq()
-      |> Map.new(&{&1, scope_condition(&1, match)})
-
-    %{
-      rbac_groups: rbac_groups,
-      unrestricted?: rbac_unrestricted?,
-      instance: instance_grants,
-      conditions: conditions
-    }
+      %{denied?: false, rbac: rbac_matches, instance: instance_grants, conditions: conditions}
+    end
   end
 
   # Computed once per scope, so an undeclared scope logs once per read.
@@ -165,27 +144,28 @@ defmodule AshGrant.Preparations.ApplyMasking do
   end
 
   # `:unrestricted` when the set shows every field on the record, else
-  # `{groups, mask_only_groups}`. A group from an instance grant whose scope is not
-  # known to hold on the record goes in `mask_only_groups`: FieldFilterCheck shows
-  # its fields only where the scope holds, so it may mask a field but never unmask one.
-  defp record_groups(%{unrestricted?: true}, _record, _match), do: :unrestricted
+  # `{groups, mask_only_groups}`. A group from a grant whose scope is not known to
+  # hold on the record goes in `mask_only_groups`: FieldFilterCheck shows its fields
+  # only where the scope holds, so it may mask a field but never unmask one.
+  defp record_groups(%{denied?: true}, _record, _match), do: {[], []}
 
   defp record_groups(source, record, match) do
     record_id = record |> Map.get(match.instance_key) |> to_string()
     on_record = Enum.filter(source.instance, &(&1.instance_id == record_id))
 
-    if Enum.any?(on_record, &AshGrant.Permission.deny?/1) do
-      {Enum.sort(source.rbac_groups), []}
-    else
-      {held, unsettled} =
-        Enum.split_with(on_record, &scope_holds?(source.conditions[&1.scope], record, match))
+    grants =
+      if Enum.any?(on_record, &AshGrant.Permission.deny?/1),
+        do: source.rbac,
+        else: source.rbac ++ on_record
 
-      if not match.deny_fields_by_default? and Enum.any?(held, &is_nil(&1.field_group)) do
-        :unrestricted
-      else
-        groups = held |> grant_groups() |> Enum.concat(source.rbac_groups) |> Enum.uniq()
-        {Enum.sort(groups), unsettled |> grant_groups() |> Enum.uniq() |> Enum.sort()}
-      end
+    {held, unsettled} =
+      Enum.split_with(grants, &scope_holds?(source.conditions[&1.scope], record, match))
+
+    if not match.deny_fields_by_default? and Enum.any?(held, &is_nil(&1.field_group)) do
+      :unrestricted
+    else
+      {held |> grant_groups() |> Enum.uniq() |> Enum.sort(),
+       unsettled |> grant_groups() |> Enum.uniq() |> Enum.sort()}
     end
   end
 
