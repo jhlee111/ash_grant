@@ -672,4 +672,27 @@ defmodule AshGrant.EvaluatorTest do
       assert Evaluator.has_instance_access?(combined, "post_abc123xyz789ab", "write")
     end
   end
+
+  describe "instance trio with an action type (#131)" do
+    test "a type wildcard matches only when the type is given" do
+      perms = ["doc:d1:@update:draft"]
+
+      assert Evaluator.has_instance_access?(perms, "d1", "publish", :update)
+      refute Evaluator.has_instance_access?(perms, "d1", "publish")
+      refute Evaluator.has_instance_access?(perms, "d1", "publish", :destroy)
+
+      assert Evaluator.get_instance_scope(perms, "d1", "publish", :update) == "draft"
+      assert Evaluator.get_instance_scope(perms, "d1", "publish") == nil
+
+      assert Evaluator.get_all_instance_scopes(perms, "d1", "publish", :update) == ["draft"]
+      assert Evaluator.get_all_instance_scopes(perms, "d1", "publish") == []
+    end
+
+    test "a typed instance deny wins" do
+      perms = ["doc:d1:*:", "!doc:d1:@update:"]
+
+      refute Evaluator.has_instance_access?(perms, "d1", "publish", :update)
+      assert Evaluator.has_instance_access?(perms, "d1", "read", :read)
+    end
+  end
 end

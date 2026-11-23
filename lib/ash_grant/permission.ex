@@ -134,7 +134,6 @@ defmodule AshGrant.Permission do
   @type diagnostic :: %{
           code:
             :deprecated_type_wildcard
-            | :dead_instance_type_wildcard
             | :unknown_action_type
             | :scoped_deny
             | :empty_rbac_scope,
@@ -337,7 +336,7 @@ defmodule AshGrant.Permission do
   Checks if a permission matches a resource and action.
 
   This only matches RBAC-style permissions (where instance_id is "*").
-  For instance-level matching, use `matches_instance?/3`.
+  For instance-level matching, use `matches_instance?/4`.
 
   Does not consider scope - that's handled by the ScopeResolver.
 
@@ -414,9 +413,9 @@ defmodule AshGrant.Permission do
   @doc """
   Checks if a permission matches a specific resource instance.
 
-  Instance matching never has an Ash action type available, so **type wildcards
-  (`"read*"`) can never match an instance permission** — such a grant is dead: it
-  matches nothing, ever. Use `"*"` or an exact action name instead.
+  A type wildcard (`"@read"`) matches by Ash action type, so it needs
+  `action_type`. Without one it matches nothing, as on every other entry point
+  (#131). The framework checks always know the type.
 
   ## Examples
 
@@ -428,22 +427,25 @@ defmodule AshGrant.Permission do
       iex> AshGrant.Permission.matches_instance?(perm, "post_abc123xyz789ab", "write")
       true
 
-  A type wildcard on an instance permission is always `false` — this grant can never
-  authorize anything:
+  A type wildcard matches by action type:
 
-      iex> perm = AshGrant.Permission.parse!("blog:post_abc123xyz789ab:read*:")
+      iex> perm = AshGrant.Permission.parse!("blog:post_abc123xyz789ab:@read:")
+      iex> AshGrant.Permission.matches_instance?(perm, "post_abc123xyz789ab", "list", :read)
+      true
       iex> AshGrant.Permission.matches_instance?(perm, "post_abc123xyz789ab", "list")
       false
 
   """
-  @spec matches_instance?(t(), String.t(), String.t()) :: boolean()
-  def matches_instance?(%__MODULE__{instance_id: "*"}, _instance_id, _action) do
+  @spec matches_instance?(t(), String.t(), String.t(), atom() | nil) :: boolean()
+  def matches_instance?(perm, instance_id, action, action_type \\ nil)
+
+  def matches_instance?(%__MODULE__{instance_id: "*"}, _instance_id, _action, _action_type) do
     # RBAC permissions don't match instance queries
     false
   end
 
-  def matches_instance?(%__MODULE__{} = perm, instance_id, action) do
-    perm.instance_id == instance_id and matches_action?(perm.action, action)
+  def matches_instance?(%__MODULE__{} = perm, instance_id, action, action_type) do
+    perm.instance_id == instance_id and matches_action?(perm.action, action, action_type)
   end
 
   @doc """
@@ -491,10 +493,6 @@ defmodule AshGrant.Permission do
 
     * `:deprecated_type_wildcard` — the `"read*"` spelling. Prefer `"@read"`; the
       trailing-`*` form is slated for removal in v1.0.0.
-    * `:dead_instance_type_wildcard` — a type wildcard on an instance allow.
-      Instance matching has no action type available, so the grant never matches
-      anything. See `matches_instance?/3`. Instance denies are not reported: they
-      are matched with the action type, so `"!blog:post_abc123:@read:"` takes effect.
     * `:unknown_action_type` — a type wildcard naming something that is not an Ash
       action type (`:action`, `:read`, `:create`, `:update`, `:destroy`), so it never
       matches. `"delete*"` is the common case — Ash calls that type `:destroy`.
@@ -524,11 +522,10 @@ defmodule AshGrant.Permission do
       iex> {d.code, d.suggestion}
       {:deprecated_type_wildcard, "blog:*:@read:always"}
 
-  A type wildcard on an instance permission is dead, in either spelling:
+  A type wildcard on an instance permission matches by action type, like an RBAC one:
 
-      iex> [d] = AshGrant.Permission.diagnostics("blog:post_abc123:@read:")
-      iex> d.code
-      :dead_instance_type_wildcard
+      iex> AshGrant.Permission.diagnostics("blog:post_abc123:@read:")
+      []
 
   An RBAC grant without a scope authorizes nothing:
 
@@ -787,7 +784,6 @@ defmodule AshGrant.Permission do
     string = __MODULE__.to_string(perm)
 
     deprecated_diagnostic(perm, form, type_name, string) ++
-      dead_instance_diagnostic(perm, string) ++
       unknown_type_diagnostic(perm, type_name, string)
   end
 
@@ -795,11 +791,11 @@ defmodule AshGrant.Permission do
 
   defp deprecated_diagnostic(perm, :deprecated, type_name, string) do
     # Only suggest the spelling swap when it actually yields a working grant. If the
-    # permission has a deeper problem (dead instance grant, or a type Ash doesn't have),
+    # permission has a deeper problem (a type Ash doesn't have),
     # that diagnostic carries the real fix — suggesting `@#{type_name}` here would point
     # at a grant that still never matches.
     suggestion =
-      if type_name in @valid_action_types and not instance_permission?(perm) do
+      if type_name in @valid_action_types do
         __MODULE__.to_string(%{without_scoped_deny(perm) | action: "@" <> type_name})
       end
 
@@ -815,26 +811,6 @@ defmodule AshGrant.Permission do
         suggestion: suggestion
       }
     ]
-  end
-
-  # Instance denies are matched with the action type by `AshGrant.Evaluator.deny_summary/4`,
-  # so a type wildcard there takes effect.
-  defp dead_instance_diagnostic(perm, string) do
-    if instance_permission?(perm) and not perm.deny do
-      [
-        %{
-          code: :dead_instance_type_wildcard,
-          permission: string,
-          message:
-            "Type wildcard `#{perm.action}` on an instance permission never matches: " <>
-              "instance matching has no action type to compare against. Use `*` or an " <>
-              "exact action name.",
-          suggestion: nil
-        }
-      ]
-    else
-      []
-    end
   end
 
   defp unknown_type_diagnostic(perm, type_name, string) do

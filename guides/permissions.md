@@ -89,8 +89,8 @@ things that exist, see [Checking Stored Permission Strings](#checking-stored-per
 
 #### Type wildcards on instance permissions
 
-A type wildcard on an instance permission matches by action type wherever the type is
-known: the read filter, the write check and instance denies.
+A type wildcard on an instance permission matches by action type, like an RBAC one: the
+read filter, the write check, instance denies, `CanPerform` and `explain/4` all match it.
 
 ```elixir
 "post:post_abc123:@update:"   # every update action on this post
@@ -98,10 +98,9 @@ known: the read filter, the write check and instance denies.
 "post:post_abc123:*:"         # every action on this post
 ```
 
-Not everything agrees yet ([#131](https://github.com/jhlee111/ash_grant/issues/131)):
-`CanPerform` looks up instance grants without the action type, so `can_update?` misses
-`post:<id>:@update:`, and `AshGrant.Permission.diagnostics/1` still reports these grants
-as `:dead_instance_type_wildcard`. Prefer an exact action name or `*` until then.
+Until [#131](https://github.com/jhlee111/ash_grant/issues/131), `CanPerform` looked these
+grants up without the action type and `AshGrant.Permission.diagnostics/1` reported them as
+`:dead_instance_type_wildcard`. Both now agree with the checks, and that code is retired.
 
 #### Type wildcards need the action type at check time
 
