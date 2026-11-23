@@ -411,7 +411,8 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
                          domain: nil,
                          validate_domain_inclusion?: false,
                          data_layer: Ash.DataLayer.Ets,
-                         extensions: [AshGrant]
+                         extensions: [AshGrant],
+                         authorizers: [Ash.Policy.Authorizer]
 
                        ash_grant do
                          resolver(fn _, _ -> [] end)
@@ -457,7 +458,8 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
               domain: AshGrant.DenyFieldsByDefaultTest.FlagDomain3,
               validate_domain_inclusion?: false,
               data_layer: Ash.DataLayer.Ets,
-              extensions: [AshGrant]
+              extensions: [AshGrant],
+              authorizers: [Ash.Policy.Authorizer]
 
             ash_grant do
               resolver(fn _, _ -> [] end)
@@ -491,7 +493,8 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
             domain: nil,
             validate_domain_inclusion?: false,
             data_layer: Ash.DataLayer.Ets,
-            extensions: [AshGrant]
+            extensions: [AshGrant],
+            authorizers: [Ash.Policy.Authorizer]
 
           ash_grant do
             resolver(fn _, _ -> [] end)
@@ -537,7 +540,8 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
               domain: AshGrant.DenyFieldsByDefaultTest.FlagDomain,
               validate_domain_inclusion?: false,
               data_layer: Ash.DataLayer.Ets,
-              extensions: [AshGrant]
+              extensions: [AshGrant],
+              authorizers: [Ash.Policy.Authorizer]
 
             ash_grant do
               resolver(fn _, _ -> [] end)
@@ -586,7 +590,8 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
               domain: AshGrant.DenyFieldsByDefaultTest.FlagDomain2,
               validate_domain_inclusion?: false,
               data_layer: Ash.DataLayer.Ets,
-              extensions: [AshGrant]
+              extensions: [AshGrant],
+              authorizers: [Ash.Policy.Authorizer]
 
             ash_grant do
               resolver(fn _, _ -> [] end)
@@ -644,7 +649,8 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
           validate_domain_inclusion?: false,
           data_layer: Ash.DataLayer.Ets,
           authorizers: [Ash.Policy.Authorizer],
-          extensions: [AshGrant]
+          extensions: [AshGrant],
+          authorizers: [Ash.Policy.Authorizer]
 
         ash_grant do
           resolver(fn actor, _ -> actor.permissions end)
