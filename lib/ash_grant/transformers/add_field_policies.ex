@@ -108,9 +108,12 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     # Ungrouped fields get an explicit policy so deny_fields_by_default, which is
     # resolved at runtime through the domain, can forbid them. It must name the
     # fields: Ash may expand a `:*` policy to every field, grouped ones included.
+    # A CanPerform calculation reports only the actor's own permission on a row it
+    # can already read, so it stays under the `:*` allow-all.
     ungrouped =
       valid_fields
       |> MapSet.difference(grouped)
+      |> MapSet.difference(can_perform_calculations(dsl_state))
       |> Enum.sort()
 
     dsl_state =
@@ -274,6 +277,13 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
       |> Enum.map(& &1.name)
 
     MapSet.new(attrs ++ calcs ++ aggs)
+  end
+
+  defp can_perform_calculations(dsl_state) do
+    dsl_state
+    |> Ash.Resource.Info.calculations()
+    |> Enum.filter(&match?({AshGrant.Calculation.CanPerform, _opts}, &1.calculation))
+    |> MapSet.new(& &1.name)
   end
 
   defp get_field_group_entities(dsl_state) do

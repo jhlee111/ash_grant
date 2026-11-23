@@ -153,7 +153,39 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
           Enum.any?(policy.policies, &(&1.check_module == AshGrant.UngroupedFieldCheck))
         end)
 
-      assert [%{fields: [:notes]}] = ungrouped
+      assert [%{fields: [:notes, :shouted]}] = ungrouped
+    end
+
+    test "a calculation follows the field group that names it" do
+      record = record!()
+
+      result =
+        DenyFieldsRecord
+        |> Ash.Query.load([:display_name, :shouted])
+        |> Ash.read!(actor: %{permissions: ["denyfieldsrecord:*:read:always:public"]})
+        |> Enum.find(&(&1.id == record.id))
+
+      assert result.display_name == "Ada (Eng)"
+      assert forbidden?(result.shouted)
+    end
+
+    test "a CanPerform calculation is visible without a field group" do
+      record = record!()
+
+      result =
+        DenyFieldsRecord
+        |> Ash.Query.load(:can_update?)
+        |> Ash.read!(
+          actor: %{
+            permissions: [
+              "denyfieldsrecord:*:read:always:public",
+              "denyfieldsrecord:*:update:always"
+            ]
+          }
+        )
+        |> Enum.find(&(&1.id == record.id))
+
+      assert result.can_update? == true
     end
 
     test "a resource whose fields are all grouped gets no ungrouped policy" do

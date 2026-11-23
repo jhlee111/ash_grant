@@ -8,7 +8,9 @@ defmodule AshGrant.Test.DenyFieldsRecord do
   | :sensitive | phone | :public | phone |
   | :confidential | salary | :sensitive | none |
 
-  `notes` is in no group.
+  `notes` and the `shouted` calculation are in no group. The `display_name`
+  calculation is in `:public`, and `can_update?` is a generated CanPerform
+  calculation.
   """
   use Ash.Resource,
     domain: AshGrant.Test.Domain,
@@ -31,7 +33,9 @@ defmodule AshGrant.Test.DenyFieldsRecord do
 
     scope(:always, true)
 
-    field_group(:public, [:name, :department])
+    can_perform_actions([:update])
+
+    field_group(:public, [:name, :department, :display_name])
 
     field_group(:sensitive, [:phone],
       inherits: [:public],
@@ -49,6 +53,11 @@ defmodule AshGrant.Test.DenyFieldsRecord do
     attribute(:phone, :string, public?: true)
     attribute(:salary, :integer, public?: true)
     attribute(:notes, :string, public?: true)
+  end
+
+  calculations do
+    calculate(:display_name, :string, expr(name <> " (" <> department <> ")"), public?: true)
+    calculate(:shouted, :string, expr(name <> "!"), public?: true)
   end
 
   actions do
