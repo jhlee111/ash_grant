@@ -10,8 +10,9 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
   be visible on the rows a grant's scope or instance ids reach and
   `%Ash.ForbiddenField{}` on the others. Fields in no group get a policy checked by
   `AshGrant.UngroupedFieldCheck`, which shows them unless `deny_fields_by_default`
-  is on. A `:*` catch-all that always passes keeps Ash's field coverage check
-  satisfied.
+  is on. A resource with no field group gets this policy too, so an inherited
+  `deny_fields_by_default` hides its fields. A `:*` catch-all that always passes
+  keeps Ash's field coverage check satisfied.
 
   The action-wide `AshGrant.FieldCheck` (`AshGrant.field_check/1`) is no longer
   generated. It remains available for hand-written `field_policies`.
@@ -67,10 +68,8 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     dsl_state =
       Spark.Dsl.Transformer.persist(dsl_state, :ash_grant_default_field_policies, default_fp)
 
-    field_groups = get_field_group_entities(dsl_state)
-
-    if default_fp and field_groups != [] do
-      add_field_policies(dsl_state, field_groups)
+    if default_fp do
+      add_field_policies(dsl_state, get_field_group_entities(dsl_state))
     else
       {:ok, dsl_state}
     end

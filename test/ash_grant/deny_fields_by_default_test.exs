@@ -649,8 +649,7 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
           validate_domain_inclusion?: false,
           data_layer: Ash.DataLayer.Ets,
           authorizers: [Ash.Policy.Authorizer],
-          extensions: [AshGrant],
-          authorizers: [Ash.Policy.Authorizer]
+          extensions: [AshGrant]
 
         ash_grant do
           resolver(fn actor, _ -> actor.permissions end)
@@ -725,11 +724,37 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
       end
     end
 
+    test "app true rejects a resource without Ash.Policy.Authorizer" do
+      Application.put_env(:ash_grant, :default_field_policies, true)
+
+      assert_raise Spark.Error.DslError,
+                   ~r/inherits `default_field_policies` from `config :ash_grant`/,
+                   fn ->
+                     Code.compile_string("""
+                     defmodule #{inspect(__MODULE__)}.AppFpNoAuthorizer do
+                       @moduledoc false
+                       use Ash.Resource,
+                         domain: nil,
+                         validate_domain_inclusion?: false,
+                         data_layer: Ash.DataLayer.Ets,
+                         extensions: [AshGrant]
+
+                       ash_grant do
+                         resolver(fn actor, _ -> actor.permissions end)
+                         scope(:always, true)
+                       end
+
+                       attributes do
+                         uuid_primary_key(:id)
+                       end
+                     end
+                     """)
+                   end
+    end
+
     test "app true leaves a resource without field groups fully visible" do
       Application.put_env(:ash_grant, :default_field_policies, true)
       module = compile_app_config_resource!(AppFpNoGroups, "")
-
-      assert Ash.Policy.Info.field_policies(module) == []
 
       {record, result} =
         read_app_config_record!(module, ["#{Info.resource_name(module)}:*:read:always"])
@@ -747,6 +772,23 @@ defmodule AshGrant.DenyFieldsByDefaultTest do
         capture_io(:stderr, fn -> compile_app_config_resource!(AppFpDenyNoGroups, "") end)
 
       assert output =~ "defines no field_group"
+    end
+
+    test "app true with deny on forbids every field of a resource without field groups" do
+      Application.put_env(:ash_grant, :default_field_policies, true)
+      Application.put_env(:ash_grant, :deny_fields_by_default, true)
+
+      {module, _warning} =
+        with_io(:stderr, fn -> compile_app_config_resource!(AppFpDenyNoGroupsRead, "") end)
+
+      assert Info.deny_fields_by_default?(module)
+
+      {record, result} =
+        read_app_config_record!(module, ["#{Info.resource_name(module)}:*:read:always"])
+
+      assert result.id == record.id
+      assert forbidden?(result.name)
+      assert forbidden?(result.notes)
     end
   end
 end
