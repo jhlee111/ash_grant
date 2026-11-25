@@ -6,6 +6,7 @@ spark_locals_without_parens = [
   can_perform_actions: 1,
   default_field_policies: 1,
   default_policies: 1,
+  deny_fields_by_default: 1,
   description: 1,
   except: 1,
   field_group: 2,

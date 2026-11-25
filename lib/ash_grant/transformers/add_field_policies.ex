@@ -8,8 +8,11 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
   Each field group's **direct fields** (not inherited) get a `field_policy` with
   the corresponding `AshGrant.FieldFilterCheck`, a per-record check: a field can
   be visible on the rows a grant's scope or instance ids reach and
-  `%Ash.ForbiddenField{}` on the others. A catch-all policy ensures fields not in
-  any group remain accessible.
+  `%Ash.ForbiddenField{}` on the others. Fields in no group get a policy checked by
+  `AshGrant.UngroupedFieldCheck`, which shows them unless `deny_fields_by_default`
+  is on. A resource with no field group gets this policy too, so an inherited
+  `deny_fields_by_default` hides its fields. A `:*` catch-all that always passes
+  keeps Ash's field coverage check satisfied.
 
   The action-wide `AshGrant.FieldCheck` (`AshGrant.field_check/1`) is no longer
   generated. It remains available for hand-written `field_policies`.
@@ -37,6 +40,11 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
           authorize_if AshGrant.FieldFilterCheck.field_filter_check(:confidential)
         end
 
+        # only when some public, non-key field is in no group, e.g. :notes
+        field_policy [:notes] do
+          authorize_if {AshGrant.UngroupedFieldCheck, resource: __MODULE__}
+        end
+
         field_policy :* do
           authorize_if always()
         end
@@ -55,11 +63,13 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
 
   @impl true
   def transform(dsl_state) do
-    default_fp = Transformer.get_option(dsl_state, [:ash_grant], :default_field_policies, false)
-    field_groups = get_field_group_entities(dsl_state)
+    default_fp = AshGrant.Info.dsl_default_field_policies(dsl_state)
 
-    if default_fp and field_groups != [] do
-      add_field_policies(dsl_state, field_groups)
+    dsl_state =
+      Spark.Dsl.Transformer.persist(dsl_state, :ash_grant_default_field_policies, default_fp)
+
+    if default_fp do
+      add_field_policies(dsl_state, get_field_group_entities(dsl_state))
     else
       {:ok, dsl_state}
     end
@@ -78,7 +88,7 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     valid_fields = valid_field_policy_targets(dsl_state)
     resource = Transformer.get_persisted(dsl_state, :module)
 
-    {dsl_state, _seen} =
+    {dsl_state, grouped} =
       Enum.reduce(field_groups, {dsl_state, MapSet.new()}, fn fg, {acc, seen} ->
         all_fields = fg.fields || []
         all_fields = Enum.filter(all_fields, &(&1 in valid_fields))
@@ -95,8 +105,30 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
         end
       end)
 
-    # Add catch-all: field_policy :* -> authorize_if always(). rebuild_field_policy_cache/1
-    # expands the :* into the concrete ungrouped fields so they stay visible.
+    # Ungrouped fields get an explicit policy so deny_fields_by_default, which is
+    # resolved at runtime through the domain, can forbid them. It must name the
+    # fields: Ash may expand a `:*` policy to every field, grouped ones included.
+    # A CanPerform calculation reports only the actor's own permission on a row it
+    # can already read, so it stays under the `:*` allow-all.
+    ungrouped =
+      valid_fields
+      |> MapSet.difference(grouped)
+      |> MapSet.difference(can_perform_calculations(dsl_state))
+      |> Enum.sort()
+
+    dsl_state =
+      if ungrouped == [] do
+        dsl_state
+      else
+        Transformer.add_entity(
+          dsl_state,
+          [:field_policies],
+          build_ungrouped_policy(ungrouped, resource)
+        )
+      end
+
+    # Keep the `:*` allow-all so Ash's field coverage check passes. All policies
+    # on a field must pass, so it never widens access.
     catch_all = build_catch_all([:*])
     dsl_state = Transformer.add_entity(dsl_state, [:field_policies], catch_all)
 
@@ -153,8 +185,27 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
     }
   end
 
-  # Catch-all policy: the given ungrouped fields are visible to anyone with row
-  # access (authorize_if always()).
+  defp build_ungrouped_policy(fields, resource) do
+    opts = [resource: resource]
+
+    %Ash.Policy.FieldPolicy{
+      __identifier__: System.unique_integer(),
+      fields: fields,
+      bypass?: false,
+      condition: [],
+      policies: [
+        %Ash.Policy.Check{
+          type: :authorize_if,
+          check_module: AshGrant.UngroupedFieldCheck,
+          check: {AshGrant.UngroupedFieldCheck, opts},
+          check_opts: opts
+        }
+      ]
+    }
+  end
+
+  # Catch-all policy: the given fields pass for anyone with row access
+  # (authorize_if always()).
   defp build_catch_all(fields) do
     %Ash.Policy.FieldPolicy{
       __identifier__: System.unique_integer(),
@@ -226,6 +277,13 @@ defmodule AshGrant.Transformers.AddFieldPolicies do
       |> Enum.map(& &1.name)
 
     MapSet.new(attrs ++ calcs ++ aggs)
+  end
+
+  defp can_perform_calculations(dsl_state) do
+    dsl_state
+    |> Ash.Resource.Info.calculations()
+    |> Enum.filter(&match?({AshGrant.Calculation.CanPerform, _opts}, &1.calculation))
+    |> MapSet.new(& &1.name)
   end
 
   defp get_field_group_entities(dsl_state) do

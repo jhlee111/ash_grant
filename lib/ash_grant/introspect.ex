@@ -24,11 +24,16 @@ defmodule AshGrant.Introspect do
   Every function that reports a decision intersects the actor's grants with the
   resolver's ceiling (`c:AshGrant.PermissionResolver.ceiling/2`), as the runtime checks do.
 
+  `:field_access` says how to read `:field_groups`: `:all` when every field is
+  visible, `:groups` when only the fields of the listed groups are. Under
+  `deny_fields_by_default`, `field_groups: []` with `field_access: :groups` means
+  no field group is visible.
+
   ## Examples
 
       # Admin UI: What can this user do?
       Introspect.actor_permissions(Post, current_user)
-      # => [%{action: "read", allowed: true, scope: "always", field_groups: []}, ...]
+      # => [%{action: "read", allowed: true, scope: "always", field_groups: [], field_access: :all}, ...]
 
       # Permission management: What permissions exist?
       Introspect.available_permissions(Post)
@@ -36,7 +41,7 @@ defmodule AshGrant.Introspect do
 
       # Debugging: Can user do this?
       Introspect.can?(Post, :update, user)
-      # => {:allow, %{scope: "own", scopes: ["own"], instance_ids: nil, field_groups: []}}
+      # => {:allow, %{scope: "own", scopes: ["own"], instance_ids: nil, field_groups: [], field_access: :all}}
 
       # API: What actions are available?
       Introspect.allowed_actions(Post, user)
@@ -51,8 +56,11 @@ defmodule AshGrant.Introspect do
           denied: boolean(),
           scope: String.t() | nil,
           instance_ids: [String.t()] | nil,
-          field_groups: [String.t()]
+          field_groups: [String.t()],
+          field_access: field_access()
         }
+
+  @type field_access :: :all | :groups
 
   @type resource_summary :: %{
           resource: module(),
@@ -223,7 +231,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> AshGrant.Introspect.can_by_identifier("user_1", "post", :read)
-      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: []}}
+      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: [], field_access: :all}}
 
   """
   @spec can_by_identifier(term(), String.t(), atom(), keyword()) ::
@@ -394,9 +402,9 @@ defmodule AshGrant.Introspect do
 
       iex> Introspect.actor_permissions(Post, %{role: :editor})
       [
-        %{action: "read", allowed: true, scope: "always", denied: false, instance_ids: nil, field_groups: []},
-        %{action: "update", allowed: true, scope: "own", denied: false, instance_ids: nil, field_groups: []},
-        %{action: "destroy", allowed: false, scope: nil, denied: false, instance_ids: nil, field_groups: []}
+        %{action: "read", allowed: true, scope: "always", denied: false, instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: "update", allowed: true, scope: "own", denied: false, instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: "destroy", allowed: false, scope: nil, denied: false, instance_ids: nil, field_groups: [], field_access: :all}
       ]
 
   """
@@ -423,9 +431,7 @@ defmodule AshGrant.Introspect do
 
       instance_ids = instance_grant_ids(instance_grants)
 
-      # Check field groups
-      field_groups =
-        Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
+      field_groups = actor_field_groups(resource, permissions, action_name, action_type)
 
       grants_allow =
         (scopes != [] or instance_ids != [] or
@@ -443,7 +449,8 @@ defmodule AshGrant.Introspect do
         denied: has_deny,
         scope: scope,
         instance_ids: if(instance_ids != [], do: instance_ids, else: nil),
-        field_groups: field_groups
+        field_groups: field_groups,
+        field_access: field_access(resource, field_groups)
       }
     end)
   end
@@ -530,7 +537,7 @@ defmodule AshGrant.Introspect do
   ## Examples
 
       iex> Introspect.can?(Post, :read, %{role: :editor})
-      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: []}}
+      {:allow, %{scope: "always", scopes: ["always"], instance_ids: nil, field_groups: [], field_access: :all}}
 
       iex> Introspect.can?(Post, :destroy, %{role: :viewer})
       {:deny, %{reason: :no_permission}}
@@ -552,13 +559,26 @@ defmodule AshGrant.Introspect do
 
     grants_decision = decide(resource, action, permissions_for(resource, actor, context: context))
 
-    within_ceiling(
-      grants_decision,
+    grants_decision
+    |> within_ceiling(
       ceiling_for(resource, actor, context: context),
       &decide(resource, action, &1),
       resource
     )
+    |> put_field_access(resource)
   end
+
+  defp put_field_access({:allow, details}, resource) do
+    {:allow, Map.put(details, :field_access, field_access(resource, details.field_groups))}
+  end
+
+  defp put_field_access(result, _resource), do: result
+
+  defp field_access(resource, []) do
+    if Info.deny_fields_by_default?(resource), do: :groups, else: :all
+  end
+
+  defp field_access(_resource, _field_groups), do: :groups
 
   @doc false
   # Intersects a decision on the grants with the same decision on the ceiling,
@@ -600,12 +620,20 @@ defmodule AshGrant.Introspect do
 
   @doc false
   # The field groups two permission lists both show, where `[]` means every
-  # field. A group is kept when all of its fields are visible under both lists.
-  # When no group fits, the narrower list's groups are reported: `[]` would
-  # claim every field is visible.
+  # field, or no field when the resource sets deny_fields_by_default. A group is
+  # kept when all of its fields are visible under both lists. When no group
+  # fits, deny_fields_by_default reports `[]` (no group), since the runtime
+  # shows none of them; otherwise the narrower list's groups are reported,
+  # because `[]` would claim every field is visible.
   @spec intersect_field_groups(module(), [String.t()], [String.t()]) :: [String.t()]
-  def intersect_field_groups(_resource, [], ceiling_groups), do: ceiling_groups
-  def intersect_field_groups(_resource, grants_groups, []), do: grants_groups
+  def intersect_field_groups(resource, grants_groups, ceiling_groups)
+      when grants_groups == [] or ceiling_groups == [] do
+    cond do
+      Info.deny_fields_by_default?(resource) -> []
+      grants_groups == [] -> ceiling_groups
+      true -> grants_groups
+    end
+  end
 
   def intersect_field_groups(resource, grants_groups, ceiling_groups) do
     grants_fields = field_group_fields(resource, grants_groups)
@@ -619,6 +647,7 @@ defmodule AshGrant.Introspect do
 
     cond do
       fitting != [] -> fitting
+      Info.deny_fields_by_default?(resource) -> []
       MapSet.size(ceiling_fields) <= MapSet.size(grants_fields) -> ceiling_groups
       true -> grants_groups
     end
@@ -689,8 +718,7 @@ defmodule AshGrant.Introspect do
 
     instance_ids = instance_grant_ids(instance_grants)
 
-    field_groups =
-      Evaluator.get_all_field_groups(permissions, resource_name, action_name, action_type)
+    field_groups = actor_field_groups(resource, permissions, action_name, action_type)
 
     # Check parent instance permissions via scope_through
     has_parent_instance =
@@ -719,6 +747,17 @@ defmodule AshGrant.Introspect do
       true ->
         {:deny, %{reason: :no_permission}}
     end
+  end
+
+  # `[]` means every field, or no field when the resource sets deny_fields_by_default.
+  defp actor_field_groups(resource, permissions, action_name, action_type) do
+    Evaluator.get_all_field_groups(
+      permissions,
+      Info.resource_name(resource),
+      action_name,
+      action_type,
+      deny_fields_by_default: Info.deny_fields_by_default?(resource)
+    )
   end
 
   defp has_parent_instance_access?(resource, permissions, action_name, action_type) do
@@ -781,9 +820,9 @@ defmodule AshGrant.Introspect do
 
       iex> Introspect.allowed_actions(Post, %{role: :editor}, detailed: true)
       [
-        %{action: :read, scope: "always", instance_ids: nil, field_groups: []},
-        %{action: :create, scope: "always", instance_ids: nil, field_groups: []},
-        %{action: :update, scope: "own", instance_ids: nil, field_groups: []}
+        %{action: :read, scope: "always", instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: :create, scope: "always", instance_ids: nil, field_groups: [], field_access: :all},
+        %{action: :update, scope: "own", instance_ids: nil, field_groups: [], field_access: :all}
       ]
 
   """
@@ -806,7 +845,8 @@ defmodule AshGrant.Introspect do
         action: String.to_existing_atom(p.action),
         scope: p.scope,
         instance_ids: p.instance_ids,
-        field_groups: p.field_groups
+        field_groups: p.field_groups,
+        field_access: p.field_access
       }
     end)
   end

@@ -23,7 +23,8 @@ defmodule AshGrant.FieldCheck do
 
   The check passes if the actor's permission string has a field_group that
   equals or inherits from the required group. If the actor's permissions
-  have no field_group (4-part format), all fields are visible.
+  have no field_group (4-part format), all fields are visible, unless the
+  resource sets `deny_fields_by_default`.
   """
 
   use Ash.Policy.SimpleCheck
@@ -97,20 +98,28 @@ defmodule AshGrant.FieldCheck do
       resource: resource_module
     )
 
+    deny_fields_by_default? = AshGrant.Info.deny_fields_by_default?(resource_module)
+
     actor_field_groups =
       AshGrant.Evaluator.get_all_field_groups(
         permissions,
         resource_name,
         action_name,
-        action_type
+        action_type,
+        deny_fields_by_default: deny_fields_by_default?
       )
 
-    # If no field groups specified in permissions, actor has unrestricted field access
-    if actor_field_groups == [] do
-      # Check if the actor has any matching permissions at all (for read access)
-      AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type)
-    else
-      field_group_grants_access?(resource_module, actor_field_groups, required_group)
+    cond do
+      actor_field_groups != [] ->
+        field_group_grants_access?(resource_module, actor_field_groups, required_group)
+
+      # Under deny_fields_by_default, [] means the actor holds no field group.
+      deny_fields_by_default? ->
+        false
+
+      # Otherwise [] means no field restriction: any matching grant shows every field.
+      true ->
+        AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type)
     end
   end
 
