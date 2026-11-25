@@ -63,8 +63,8 @@ Check ALL of these before creating release branch:
 - Changed modules have accurate `@moduledoc`?
 
 **CLAUDE.md:**
-- Architecture section reflects new modules?
-- Any new commands, patterns, or test structures?
+- Invariants still true (call-site lists, function names, pinning tests)?
+- Any new commands, workflows, or toolchain changes?
 
 **usage-rules.md:**
 - AI-agent-facing rulebook — audit as seriously as README.
