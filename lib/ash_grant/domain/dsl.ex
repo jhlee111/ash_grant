@@ -5,7 +5,8 @@ defmodule AshGrant.Domain.Dsl do
   This module defines the `ash_grant` DSL section that can be added to
   Ash domains to configure shared permission settings inherited by resources.
 
-  Only `resolver` and `scope` entities are supported at the domain level.
+  Only `resolver`, `deny_fields_by_default` and `scope` entities are supported
+  at the domain level.
   Resource-specific options like `resource_name`, `default_policies`, and
   `field_group` must be configured on each resource.
 
@@ -51,6 +52,13 @@ defmodule AshGrant.Domain.Dsl do
     ],
     entities: [AshGrant.Dsl.scope_entity()],
     schema: [
+      deny_fields_by_default: [
+        type: :boolean,
+        doc: """
+        Default for the resource option of the same name, for every resource in
+        this domain that does not set it.
+        """
+      ],
       resolver: [
         type: {:or, [{:behaviour, AshGrant.PermissionResolver}, {:fun, 2}]},
         required: false,
