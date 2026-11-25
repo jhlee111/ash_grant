@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AshGrant is a permission-based authorization extension for Ash Framework. It provides an Apache Shiro-inspired permission system with deny-wins semantics, supporting both RBAC and resource-instance permissions.
 
+User-facing docs: `README.md`, `guides/`, and `usage-rules.md` (the rulebook AI agents in consumer apps follow).
+
 ## Language Policy
 
 **All repository content must be written in English**, including:
@@ -67,70 +69,77 @@ mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
 
 ## Architecture
 
-### Core Modules
+Each module's `@moduledoc` is the reference. This file does not describe modules one by
+one; it keeps the map below and the rules that span modules (Invariants).
 
-- **`AshGrant`** (`lib/ash_grant.ex`) - Main extension module, exports `check/1` and `filter_check/1`
-- **`AshGrant.Dsl`** (`lib/ash_grant/dsl.ex`) - Spark DSL definition for the `ash_grant` block
-- **`AshGrant.Permission`** (`lib/ash_grant/permission.ex`) - Parses and matches permission strings (`resource:instance_id:action:scope`). Also exposes `diagnostics/1`, which reports deprecated/dead grant syntax for offline auditing (never affects authorization)
-- **`AshGrant.Evaluator`** (`lib/ash_grant/evaluator.ex`) - Implements deny-wins evaluation logic
+- `AshGrant.Permission` parses `[!]resource:instance_id:action:scope`; `AshGrant.Evaluator`
+  applies deny-wins over a permission list.
+- Policy checks live in `lib/ash_grant/checks/`: `Check` (writes, true/false),
+  `FilterCheck` (reads, a filter), `FieldFilterCheck` (per-record field visibility,
+  generated into `field_policies`), `UngroupedFieldCheck` (`deny_fields_by_default`).
+  `FieldCheck` is the legacy action-wide field check, no longer generated.
+- Compile time: `lib/ash_grant/transformers/` generate policies, field policies,
+  masking, `can_perform` calculations and `resolve_argument` wiring;
+  `lib/ash_grant/verifiers/` run post-compile, so their errors surface as compile warnings.
+- Domain inheritance is resolved at runtime by `AshGrant.Info`: the resolver falls back
+  resource > domain > `config :ash_grant, resolver:`, and scopes merge resource > domain >
+  `ScopeRegistry`. There is no merge transformer (removed in v0.20.0).
+- Offline tooling never affects authorization: `Permission.diagnostics/1`,
+  `PermissionValidation.check/2` (+ `Validations.PermissionStrings`,
+  `mix ash_grant.check_permissions`), `mix ash_grant.verify`.
 
-### Policy Checks
+## Invariants
 
-- **`AshGrant.Check`** (`lib/ash_grant/checks/check.ex`) - SimpleCheck for write actions (returns true/false). Authorizes when ANY of these passes: an RBAC grant's scope, an instance grant naming the target record (update/destroy only, matched by action name — `@update` stays dead), a `scope_through` parent's instance grant. `Evaluator.get_write_scopes/4` sees RBAC grants only (`Permission.matches?/4` drops instance perms), so instance grants are matched separately in `instance_grants_write?/8`
-- **`AshGrant.FilterCheck`** (`lib/ash_grant/checks/filter_check.ex`) - FilterCheck for read actions (returns filter expression)
-- **`AshGrant.PermissionValidation`** (`lib/ash_grant/permission_validation.ex`) - Validates resolved permissions and signals invalid deny+field_group combinations per the `field_group_permissions` mode (`:off`/`:warn`/`:strict`); never changes the authorization outcome
-  - Also the **static checker** (#162): `check/2` / `check_all/2` compare a stored permission string against the application's resources and return issues (`:unknown_resource`, `:unknown_action`, `:undeclared_scope`, `:scope_missing_on`, `:unverifiable_scope`, `:unknown_field_group`, `:field_group_missing_on`, `:deny_with_field_group`, `:parse_error`, plus `diagnostics/1`'s codes). Metadata comes from `AshGrant.PermissionValidation.ResourceIndex`, which also reads `action:`/`resource:` check overrides out of each resource's policies. **Pinned to the runtime by a property test** (`permission_check_test.exs`): the real `FilterCheck`/`Check` must raise the undeclared-scope error on exactly the resources a scope error names, except for an instance grant, whose `:undeclared_scope` is an `:error` that does not raise (it authorizes nothing and logs, #207) — so the builtin-scope set (`always`/`all`/`global`) has to change here whenever it changes in the checks
-- **`AshGrant.Validations.PermissionStrings`** (`lib/ash_grant/validations/permission_strings.ex`) - Ash validation wrapping `check_all/2` for the attribute that stores grants; one field error per bad string, only when the attribute is being changed
-- **`AshGrant.IndeterminateMatch`** (`lib/ash_grant/indeterminate_match.ex`) - Signals when an `Evaluator` entry point returns a value that couldn't actually be determined: a type wildcard evaluated with no `action_type` is silently skipped, so the answer may be wrong (#126, layer 2). Wraps every nil-defaulting entry point (`has_access?`, `get_scope`, `get_all_scopes`, `get_write_scopes`, `get_field_group`, `get_all_field_groups`, `find_matching`, `field_group_grants`). Mode `:off`/`:warn`/`:strict` via `config :ash_grant, indeterminate_type_wildcard:`; never changes the outcome. **Sound by construction**: `guard/6` recomputes the result with the skipped wildcards forced to match and signals only if it differs — so a scope-less/group-less wildcard or a concrete-deny-settled query stays silent (no false positives, which would break `:strict`). `get_matching_instance_ids` is unguarded on purpose (it sees only instance perms, where type wildcards are dead per `diagnostics/1`, not indeterminate)
-- **`AshGrant.FieldFilterCheck`** (`lib/ash_grant/checks/field_filter_check.ex`) - FilterCheck for **per-record** field-group visibility; generated into `field_policies` by `AddFieldPolicies`. Builds a per-row predicate from `Evaluator.field_group_grants/6` (a field is visible on some records, `%Ash.ForbiddenField{}` on others)
-- **`deny_fields_by_default`** (resource > domain > `config :ash_grant` > `false`, resolved at runtime by `Info.deny_fields_by_default?/1` because a transformer cannot read the domain) - a group-less grant opens no field group, and ungrouped fields are forbidden via `AshGrant.UngroupedFieldCheck`. **The `[]` sentinel is mode-dependent**: `Evaluator.get_all_field_groups/5` returns `[]` for "unrestricted" when the flag is off and for "no group" when it is on, so every caller (`FieldCheck`, `ApplyMasking`, `Introspect`, `PolicyTest.Assertions`) must pass `deny_fields_by_default:` and branch on it. `AddFieldPolicies` names ungrouped fields in an explicit policy, never `:*`: Ash may expand `:*` to every field, and all policies on a field must pass. `ValidateFieldGroups` raises on a resource-level `true` with no field group; `Verifiers.ValidateDenyFieldsByDefault` warns for an inherited one. `default_field_policies` itself resolves resource > `config :ash_grant` > `false` at compile time via `Info.resolve_default_field_policies/2` (no domain level). Without `default_field_policies true` the flag resolves to `false` and is reported the same way; a non-boolean app config value raises `ArgumentError`
-- **`AshGrant.InstanceFilter`** (`lib/ash_grant/instance_filter.ex`) - Builds the instance-permission part of a read filter from `Evaluator.get_matching_instance_grants/4`: `key in ^ids` for empty or universal scopes, `key in ^ids and <scope>` for a named one, nothing for an undeclared one (never raises, #207). Shared by `FilterCheck`, `CanPerform`, `FieldFilterCheck` and `Explainer` so they cannot drift
-- **`AshGrant.FieldCheck`** (`lib/ash_grant/checks/field_check.ex`) - legacy action-wide SimpleCheck for field groups (superseded by `FieldFilterCheck` in generation; still present)
+Rules that span modules, so no single file shows them. When a change creates or moves
+one, update it here in the same PR.
 
-### Calculations
-
-- **`AshGrant.Calculation.CanPerform`** (`lib/ash_grant/calculations/can_perform.ex`) - Per-record boolean calculation for UI visibility (mirrors FilterCheck logic, compiles to SQL)
-
-### Policy Testing
-
-- **`AshGrant.PolicyTest.Checker`** (`lib/ash_grant/policy_test/checker.ex`) - The one permission check behind both policy test runners (DSL `assert_can`/`assert_cannot` in `Assertions`, and `YamlParser`). With a record it mirrors the runtime's read union: any grant's scope, an instance ID, a scope_through parent ID — minus any record an instance deny names (ids cast to the instance key's type, as `Evaluator.cast_instance_ids/2` does at runtime). The union is three-valued: a scope `Assertions.evaluate_filter_against_record/5` cannot evaluate in memory (`fragment()`, `exists()`, an eval error, a non-boolean) is `{:indeterminate, reason}`, and an undecided assertion fails in BOTH directions — never guess `true` or `false` there. Keep record evaluation here only — each runner used to carry a copy, and the copies drifted (#143)
-
-### Argument-Based Scope Support
-
-- **`AshGrant.ArgumentAnalyzer`** (`lib/ash_grant/argument_analyzer.ex`) - Compile-time AST walker that maps `%{arg_name => [scopes_using_it]}` for a resource's scopes
-- **`AshGrant.Changes.ResolveArgument`** (`lib/ash_grant/changes/resolve_argument.ex`) - Runtime change that lazily loads a relationship path and sets an action argument, but only when an in-play permission uses a scope that references the argument
-
-### Behaviours
-
-- **`AshGrant.PermissionResolver`** - Behaviour for fetching actor permissions. Optional `ceiling/2` returns a second list (e.g. an API key's permissions) that caps the grants
-- **`AshGrant.Ceiling`** (`lib/ash_grant/ceiling.ex`) - Reads `ceiling/2` from a resolver (`nil` = none; function resolvers have none) and AND-combines filters. Every call site that resolves permissions (`Check`, `FilterCheck`, `FieldFilterCheck`, `FieldCheck`, `CanPerform`, `ApplyMasking`, `ResolveArgument`, `Explainer`, `Introspect`, `PolicyTest.Checker`) evaluates the grants and the ceiling as **separate** permission lists and intersects the results, so a deny in either wins. Never merge the two lists into one: a concatenation is a union. `ceiling_property_test.exs` pins reads, `Introspect.can?/4` and the write check to the intersection
-- **`AshGrant.ScopeResolver`** - Legacy behaviour for custom scope resolution
-
-### Domain-Level Extension
-
-- **`AshGrant.Domain`** (`lib/ash_grant/domain.ex`) - Domain extension for shared resolver/scope inheritance
-- **`AshGrant.Domain.Dsl`** (`lib/ash_grant/domain/dsl.ex`) - Domain DSL section (resolver + scope entities)
-- **`AshGrant.Domain.Info`** (`lib/ash_grant/domain/info.ex`) - Domain introspection helpers
-
-### Transformers
-
-Domain resolver/scope inheritance is resolved at runtime by `AshGrant.Info` (resolver falls back to the domain, then `config :ash_grant, resolver:`; scopes merge resource > domain > registry). There is no merge transformer since v0.20.0.
-
-- **`AshGrant.Transformers.ResolveFieldGroupFields`** / **`ValidateFieldGroups`** - Expand `:all` / `except:` field groups and validate them
-- **`AshGrant.Transformers.ValidatePolicyAuthorizer`** - Fails compilation when `default_policies` or `default_field_policies` is set but the resource does not use `Ash.Policy.Authorizer` (the generated policies would never run)
-- **`AshGrant.Transformers.AddDefaultPolicies`** - Auto-generates policies when `default_policies: true`
-- **`AshGrant.Transformers.AddFieldPolicies`** - Generates `field_policies` with `FieldFilterCheck` when `default_field_policies: true`, plus an `UngroupedFieldCheck` policy naming the ungrouped fields and a `:*` allow-all for Ash's coverage check
-- **`AshGrant.Transformers.AddMaskingPreparation`** - Adds the `ApplyMasking` preparation when a field group masks fields
-- **`AshGrant.Transformers.AddCanPerformCalculations`** - Generates CanPerform calculations from `can_perform` entities and `can_perform_actions` option
-- **`AshGrant.Transformers.AddArgumentResolvers`** - For each `resolve_argument` declaration: validates path, checks at least one scope references the arg, injects `argument :name` + `change AshGrant.Changes.ResolveArgument` on every targeted write action
-- **`AshGrant.Transformers.ValidateScopeThroughs`** - Validates scope_through entities reference valid belongs_to relationships
-
-### Verifiers (post-compile; an error surfaces as a compile warning)
-
-- **`AshGrant.Verifiers.ValidateResolverPresent`** - Warns when no resolver is configured at resource, domain or app level (the request then raises)
-- **`AshGrant.Verifiers.ValidateScopes`** - Warns on deprecated `owner_field`/`scope_resolver`; reports a `DslError` if `instance_key` isn't an attribute
-- **`AshGrant.Verifiers.ValidateArgumentResolvers`** - Checks, domain-aware, that some scope references each `resolve_argument`
-- **`AshGrant.Verifiers.ValidateDenyFieldsByDefault`** - Reports, domain-aware, a resource with `deny_fields_by_default` in effect and no `field_group`
+- **Ceiling is an intersection, never a union.** Every call site that resolves
+  permissions (`Check`, `FilterCheck`, `FieldFilterCheck`, `FieldCheck`, `CanPerform`,
+  `ApplyMasking`, `ResolveArgument`, `Explainer`, `Introspect`, `PolicyTest.Checker`)
+  evaluates the grants and the resolver's `ceiling/2` list separately and intersects the
+  results, so a deny in either wins. Concatenating the two lists makes a union.
+  `ceiling_property_test.exs` pins reads, `Introspect.can?/4` and the write check.
+- **What a scoped instance grant reaches is decided in `AshGrant.InstanceFilter` only.**
+  `FilterCheck`, `CanPerform`, `FieldFilterCheck` and `Explainer` build their filter with
+  it; `Check`, `Introspect` and `PolicyTest.Checker` use its `condition/3`,
+  `unconditional?/1` and `reachable?/2`. An undeclared instance scope authorizes nothing
+  and logs; it never raises (#207).
+- **`Evaluator.get_write_scopes/4` sees RBAC grants only** (`Permission.matches?/4` drops
+  instance permissions). `Check` matches instance grants and `scope_through` parents
+  itself; any passing grant authorizes (#123).
+- **The builtin-scope set (`always`/`all`/`global`) lives in the checks and in
+  `PermissionValidation`.** `permission_check_test.exs` pins them together: the real
+  `FilterCheck`/`Check` must raise the undeclared-scope error on exactly the resources a
+  static-checker scope error names, except an instance grant, whose `:undeclared_scope` is
+  an `:error` that does not raise. Change both sides together.
+- **`deny_fields_by_default` flips the meaning of `[]`.** `Evaluator.get_all_field_groups/5`
+  returns `[]` for "unrestricted" with the flag off and for "no group" with it on, so every
+  caller (`FieldCheck`, `ApplyMasking`, `Introspect`, `PolicyTest.Assertions`) must pass
+  `deny_fields_by_default:` and branch on it. The flag resolves at runtime
+  (`Info.deny_fields_by_default?/1`: resource > domain > `config :ash_grant` > `false`)
+  because a transformer cannot read the domain. `default_field_policies` resolves at
+  compile time (`Info.resolve_default_field_policies/2`: resource > `config :ash_grant` >
+  `false`, no domain level); without it the flag resolves to `false`.
+- **Generated field policies name ungrouped fields explicitly, never as `:*`.** Ash may
+  expand `:*` to every field, and every policy on a field must pass. `AddFieldPolicies`
+  adds a `:*` allow-all only for Ash's coverage check.
+- **Policy-test record evaluation lives in `PolicyTest.Checker` only.** The DSL runner
+  (`Assertions`) and `YamlParser` both call it; their copies drifted before (#143). It
+  mirrors the runtime read union (any grant's scope, an instance ID, a `scope_through`
+  parent ID) minus records an instance deny names, with IDs cast as
+  `Evaluator.cast_instance_ids/2` does. A scope it cannot evaluate in memory
+  (`fragment()`, `exists()`, an eval error, a non-boolean) is `{:indeterminate, reason}`
+  and fails the assertion in both directions; never guess `true` or `false`.
+- **Signals never change an authorization result.** `IndeterminateMatch`,
+  `PermissionValidation`'s `field_group_permissions` mode and `diagnostics/1` only report.
+  `IndeterminateMatch` must stay sound: it recomputes a result with the skipped type
+  wildcards forced to match and signals only when the answer differs, because a false
+  positive breaks `:strict`.
+- **Transformer order needs explicit edges.** A transformer that reads actions declares
+  `after?(Ash.Resource.Transformers.SetPrimaryActions)`; without it Spark's tie-break
+  shifts between Ash versions and `AddArgumentResolvers` once ran before `defaults [...]`
+  actions existed. Two transformers that both return `after?(_) -> true` have no edge
+  between them (see `AddCanPerformCalculations`).
 
 ## Permission Format
 
@@ -141,7 +150,7 @@ Domain resolver/scope inheritance is resolved at runtime by `AshGrant.Info` (res
 - `!` prefix = deny rule
 - `instance_id` = `*` for RBAC, specific ID for instance permissions
 - Deny rules always override allow rules
-- `instance_key` option: changes which field instance IDs match against (default `:id`)
+- `instance_key` option: changes which field instance IDs match against (default: the primary key)
 - `scope_through` entity: propagates parent instance permissions to child resources via FK
 - `action` = exact name, `*` (any action), or a **type wildcard** matching by Ash action
   type: `@read` / `@create` / `@update` / `@destroy` / `@action`. A type wildcard never
@@ -159,37 +168,19 @@ Domain resolver/scope inheritance is resolved at runtime by `AshGrant.Info` (res
   scope, field group) is checked the same way: `AshGrant.PermissionValidation.check/2`,
   `AshGrant.Validations.PermissionStrings`, `mix ash_grant.check_permissions` (#162).
 
-## Key Patterns
-
-### Scope DSL
-
-Scopes are defined inline with `expr()` expressions:
-
-```elixir
-ash_grant do
-  scope :always, true
-  scope :own, expr(author_id == ^actor(:id))
-  scope :own_draft, [:own], expr(status == :draft)  # Inherits from :own
-end
-```
-
-### Multi-tenancy
-
-Use `^tenant()` in scope expressions:
-
-```elixir
-scope :same_tenant, expr(tenant_id == ^tenant())
-```
-
 ## Test Structure
 
 - **Unit tests**: `test/ash_grant/permission_test.exs`, `evaluator_test.exs`
-- **Property tests**: `permission_property_test.exs`, `evaluator_property_test.exs`
+- **Property tests**: `permission_property_test.exs`, `evaluator_property_test.exs`, plus
+  the pins named under Invariants
 - **DB integration**: `db_integration_test.exs` (requires PostgreSQL)
-- **Business scenarios**: `business_scenarios_test.exs` (8 authorization patterns)
+- **Business scenarios**: `business_scenarios_test.exs`
 - **Support files**: `test/support/` contains test resources, domain, repo, and generators
 
 Tests require PostgreSQL. The test alias auto-runs `ecto.create` and `ecto.migrate`.
+CI compiles with `MIX_ENV=test --warnings-as-errors`, so `test/support` must compile
+without warnings: a resource that uses a deprecated DSL option (a compile-time warning)
+belongs inline in the `.exs` test that needs it.
 
 ## Dependencies
 
@@ -225,4 +216,4 @@ Use these instead of manual steps:
 - **`/pr <description>`** — Full PR workflow: code verification → doc gate → branch → commit → push → create PR
 - **`/release <version>`** — Full release workflow: change analysis → docs + CHANGELOG → version bump → verify → PR → merge → tag
 
-Both commands include a **documentation gate** that checks README, CHANGELOG, @moduledoc, and CLAUDE.md before proceeding.
+Both commands include a **documentation gate** that checks README, CHANGELOG, @moduledoc, and CLAUDE.md's Invariants before proceeding.

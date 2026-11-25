@@ -48,9 +48,10 @@ Based on the change analysis, check EACH of these. Ask the user for confirmation
 - Version in Installation section current?
 
 **CLAUDE.md:**
-- New module → Architecture section needs update?
+- New rule that spans modules (a call-site list that must stay in sync, a value whose meaning depends on config, a test that pins two places together) → add it to Invariants?
+- An invariant's call sites, functions or pinning test changed → update it?
 - New command or workflow → Common Commands needs update?
-- New test pattern → Test Structure needs update?
+- Do NOT add per-module descriptions: `@moduledoc` is the reference.
 
 **usage-rules.md:**
 - This file is the AI-agent-facing rulebook consumers of AshGrant follow — treat it with the same seriousness as README.
