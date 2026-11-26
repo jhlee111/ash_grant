@@ -729,6 +729,15 @@ defmodule AshGrant.Evaluator do
   scope is a condition the record must also meet. An instance deny removes every
   grant on its id, whatever the scope.
 
+  ## Options
+
+  - `:resource_module` - the resource whose `instance_key` the ids name. A deny
+    then also removes a grant whose id casts to the same value
+    (`cast_instance_ids/2`), so `"ABC…"` and `"abc…"` name the same UUID, as they
+    do on the read filter and the write check. Without it, ids compare as strings.
+    Every runtime caller passes it: a `scope_through` read sees a parent deny only
+    through this function.
+
   ## Examples
 
       iex> permissions = ["shareddoc:doc_abc:read:", "shareddoc:doc_xyz:read:draft"]
@@ -740,9 +749,14 @@ defmodule AshGrant.Evaluator do
       []
 
   """
-  @spec get_matching_instance_grants(permissions(), String.t(), String.t(), atom() | nil) ::
-          [{String.t(), String.t() | nil}]
-  def get_matching_instance_grants(permissions, resource, action, action_type \\ nil) do
+  @spec get_matching_instance_grants(
+          permissions(),
+          String.t(),
+          String.t(),
+          atom() | nil,
+          keyword()
+        ) :: [{String.t(), String.t() | nil}]
+  def get_matching_instance_grants(permissions, resource, action, action_type \\ nil, opts \\ []) do
     # No IndeterminateMatch guard: this considers only instance permissions
     # (instance_id != "*"), and a type wildcard on an instance permission is dead, not
     # indeterminate — `AshGrant.Permission.diagnostics/1` reports it. RBAC wildcards
@@ -758,18 +772,59 @@ defmodule AshGrant.Evaluator do
           Permission.matches_action?(perm.action, action, action_type)
       end)
 
-    # Get denied instance IDs
-    denied_ids =
-      instance_perms
-      |> Enum.filter(&Permission.deny?/1)
-      |> Enum.map(& &1.instance_id)
-      |> MapSet.new()
+    {denies, allows} = Enum.split_with(instance_perms, &Permission.deny?/1)
+    denied? = denied_instance_matcher(denies, Keyword.get(opts, :resource_module))
 
-    # Every deny's own id is in denied_ids, so this also drops the denies.
-    instance_perms
-    |> Enum.reject(&MapSet.member?(denied_ids, &1.instance_id))
+    allows
+    |> Enum.reject(&denied?.(&1.instance_id))
     |> Enum.map(&{&1.instance_id, blank_to_nil(&1.scope)})
     |> Enum.uniq()
+  end
+
+  # A deny names the record its id names: the same string, or, with the resource
+  # module, the same value once both ids are cast to the instance key's type.
+  defp denied_instance_matcher(denies, resource_module) do
+    raw = MapSet.new(denies, & &1.instance_id)
+
+    cast =
+      if resource_module, do: cast_instance_ids(MapSet.to_list(raw), resource_module), else: []
+
+    fn instance_id ->
+      MapSet.member?(raw, instance_id) or
+        (cast != [] and cast_id_member?(instance_id, cast, resource_module))
+    end
+  end
+
+  defp cast_id_member?(instance_id, cast_ids, resource_module) do
+    case cast_instance_ids([instance_id], resource_module) do
+      [value] -> Enum.any?(cast_ids, &instance_value_equal?(resource_module, &1, value))
+      [] -> false
+    end
+  end
+
+  @doc false
+  # Whether an instance id from a permission string names the record whose
+  # instance key holds `value`: equal strings, or equal once both are cast to the
+  # key's type. Shared by the write check, field masking and the policy test checker.
+  @spec instance_id_names?(Ash.Resource.t(), String.t(), term()) :: boolean()
+  def instance_id_names?(_resource, _instance_id, nil), do: false
+
+  def instance_id_names?(resource, instance_id, value) do
+    # A YAML policy test record holds an id as an atom.
+    value = if is_atom(value), do: Atom.to_string(value), else: value
+    values = if is_binary(value), do: cast_instance_ids([value], resource), else: [value]
+
+    value == instance_id or
+      Enum.any?(cast_instance_ids([instance_id], resource), fn id ->
+        Enum.any?(values, &instance_value_equal?(resource, id, &1))
+      end)
+  end
+
+  defp instance_value_equal?(resource, a, b) do
+    case Ash.Resource.Info.attribute(resource, AshGrant.Info.instance_key(resource)) do
+      nil -> to_string(a) == to_string(b)
+      %{type: type} -> Ash.Type.equal?(type, a, b)
+    end
   end
 
   @doc false

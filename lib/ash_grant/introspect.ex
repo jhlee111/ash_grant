@@ -782,7 +782,9 @@ defmodule AshGrant.Introspect do
   # records where it holds; `:instance_grants` says which scope each id needs.
   defp reachable_instance_grants(resource, permissions, resource_name, action_name, action_type) do
     permissions
-    |> Evaluator.get_matching_instance_grants(resource_name, action_name, action_type)
+    |> Evaluator.get_matching_instance_grants(resource_name, action_name, action_type,
+      resource_module: resource
+    )
     |> Enum.filter(fn {_id, scope} -> AshGrant.InstanceFilter.reachable?(scope, resource) end)
   end
 

@@ -9,6 +9,7 @@ defmodule AshGrant.DenyAcrossTiersTest do
   import AshGrant.Test.Generator
 
   alias AshGrant.Introspect
+  alias AshGrant.PolicyTest.Checker
   alias AshGrant.Test.{ChildComment, Post}
 
   defp actor(permissions), do: %{id: Ash.UUID.generate(), permissions: permissions}
@@ -198,6 +199,106 @@ defmodule AshGrant.DenyAcrossTiersTest do
                post
                |> Ash.Changeset.for_update(:update, %{title: "changed"}, actor: actor)
                |> Ash.update()
+    end
+  end
+
+  describe "parent instance deny id spelling (scope_through)" do
+    # A parent instance deny cancels the parent's instance grants, so the children
+    # they reach through scope_through go with them. Ids that differ only in case
+    # name the same UUID, as they do on the parent's own read and write.
+    setup do
+      post = generate(post())
+      comment = create_child_comment!(post.id)
+
+      %{
+        comment: comment,
+        spellings: [
+          {String.downcase(post.id), String.upcase(post.id)},
+          {String.upcase(post.id), String.downcase(post.id)}
+        ]
+      }
+    end
+
+    test "hides the children on read", %{spellings: spellings} do
+      for {allow, deny} <- spellings do
+        actor = actor(["post:#{allow}:read:", "!post:#{deny}:read:"])
+
+        assert read_ids(ChildComment, actor) == [], "allow #{allow}, deny #{deny}"
+      end
+    end
+
+    test "forbids updating the children", %{comment: comment, spellings: spellings} do
+      for {allow, deny} <- spellings do
+        actor = actor(["post:#{allow}:update:", "!post:#{deny}:update:"])
+
+        assert {:error, %Ash.Error.Forbidden{}} =
+                 comment
+                 |> Ash.Changeset.for_update(:update, %{body: "changed"}, actor: actor)
+                 |> Ash.update(),
+               "allow #{allow}, deny #{deny}"
+      end
+    end
+
+    test "makes can_update? false on the children", %{comment: comment, spellings: spellings} do
+      for {allow, deny} <- spellings do
+        actor =
+          actor(["child_comment:*:read:always", "post:#{allow}:update:", "!post:#{deny}:update:"])
+
+        loaded =
+          ChildComment
+          |> Ash.Query.load(:can_update?)
+          |> Ash.read!(actor: actor)
+          |> Enum.find(&(&1.id == comment.id))
+
+        assert loaded.can_update? == false, "allow #{allow}, deny #{deny}"
+      end
+    end
+
+    test "Introspect.can?/4 and explain/4 deny the child action", %{spellings: spellings} do
+      for {allow, deny} <- spellings do
+        actor = actor(["post:#{allow}:read:", "!post:#{deny}:read:"])
+
+        assert {:deny, _} = Introspect.can?(ChildComment, :read, actor),
+               "allow #{allow}, deny #{deny}"
+
+        assert AshGrant.explain(ChildComment, :read, actor).decision == :deny,
+               "allow #{allow}, deny #{deny}"
+      end
+    end
+
+    test "the policy test checker denies the child", %{comment: comment, spellings: spellings} do
+      for {allow, deny} <- spellings do
+        actor = actor(["post:#{allow}:read:", "!post:#{deny}:read:"])
+
+        assert {:deny, _} = Checker.check(ChildComment, actor, :read, comment),
+               "allow #{allow}, deny #{deny}"
+      end
+    end
+  end
+
+  describe "parent instance grant id spelling (scope_through)" do
+    test "an uppercase UUID lets the children be updated, as it lets them be read" do
+      post = generate(post())
+      comment = create_child_comment!(post.id)
+      upper_id = String.upcase(post.id)
+
+      assert comment.id in read_ids(ChildComment, actor(["post:#{upper_id}:read:"]))
+
+      assert {:ok, _} =
+               comment
+               |> Ash.Changeset.for_update(:update, %{body: "changed"},
+                 actor: actor(["post:#{upper_id}:update:"])
+               )
+               |> Ash.update()
+    end
+
+    test "an uppercase UUID admits the child in the policy test checker" do
+      post = generate(post())
+      comment = create_child_comment!(post.id)
+
+      actor = actor(["post:#{String.upcase(post.id)}:read:"])
+
+      assert {:allow, _} = Checker.check(ChildComment, actor, :read, comment)
     end
   end
 

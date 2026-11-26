@@ -284,7 +284,9 @@ defmodule AshGrant.FilterCheck do
 
     instance_filter =
       permissions
-      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action_name, action_type)
+      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action_name, action_type,
+        resource_module: resource_module
+      )
       |> AshGrant.InstanceFilter.build(resource_module, context)
 
     # Get parent instance filters from scope_through entities
@@ -376,7 +378,8 @@ defmodule AshGrant.FilterCheck do
       |> AshGrant.Evaluator.get_matching_instance_grants(
         AshGrant.Info.resource_name(parent_resource),
         action_name,
-        action_type
+        action_type,
+        resource_module: parent_resource
       )
       |> parent_instance_expr(resource_module, scope_through, parent_resource, context)
       |> List.wrap()

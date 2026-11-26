@@ -424,7 +424,9 @@ defmodule AshGrant.Explainer do
 
     instance_filter =
       permissions
-      |> Evaluator.get_matching_instance_grants(match.resource_name, action, action_type)
+      |> Evaluator.get_matching_instance_grants(match.resource_name, action, action_type,
+        resource_module: resource
+      )
       |> AshGrant.InstanceFilter.build(resource, context)
 
     parent_filters =

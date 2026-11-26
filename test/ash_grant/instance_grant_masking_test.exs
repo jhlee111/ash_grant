@@ -108,4 +108,17 @@ defmodule AshGrant.InstanceGrantMaskingTest do
     assert result.phone == "555"
     assert result.salary == 100
   end
+
+  test "an instance grant spelled in uppercase applies its group on the record, as the field policy does" do
+    record = create!("me")
+
+    result =
+      read(record, [
+        "igmrecord:*:read:always:sensitive",
+        "igmrecord:#{String.upcase(record.id)}:read::confidential"
+      ])
+
+    assert result.salary == 100
+    assert result.phone == "555"
+  end
 end
