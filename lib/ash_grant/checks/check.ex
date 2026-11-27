@@ -442,17 +442,7 @@ defmodule AshGrant.Check do
       AshGrant.Permission.instance_permission?(perm) and
       AshGrant.Permission.matches_resource?(perm.resource, resource_name) and
       AshGrant.Permission.matches_action?(perm.action, action_name, action_type) and
-      instance_id_matches?(resource, perm.instance_id, record_id)
-  end
-
-  # Cast and compared like an instance deny, so one rule decides both: an id
-  # the key's type cannot cast names no record.
-  defp instance_id_matches?(_resource, _instance_id, nil), do: false
-
-  defp instance_id_matches?(resource, instance_id, record_id) do
-    [instance_id]
-    |> AshGrant.Evaluator.cast_instance_ids(resource)
-    |> Enum.any?(&instance_id_equal?(resource, &1, record_id))
+      AshGrant.Evaluator.instance_id_names?(resource, perm.instance_id, record_id)
   end
 
   # An empty scope is unconditional for the record. A named scope is an
@@ -498,17 +488,7 @@ defmodule AshGrant.Check do
 
       record ->
         record_id = Map.get(record, AshGrant.Info.instance_key(resource_module))
-
-        ids
-        |> AshGrant.Evaluator.cast_instance_ids(resource_module)
-        |> Enum.any?(&instance_id_equal?(resource_module, &1, record_id))
-    end
-  end
-
-  defp instance_id_equal?(resource_module, denied_id, record_id) do
-    case Ash.Resource.Info.attribute(resource_module, AshGrant.Info.instance_key(resource_module)) do
-      nil -> to_string(denied_id) == to_string(record_id)
-      %{type: type} -> Ash.Type.equal?(type, denied_id, record_id)
+        Enum.any?(ids, &AshGrant.Evaluator.instance_id_names?(resource_module, &1, record_id))
     end
   end
 
@@ -573,17 +553,20 @@ defmodule AshGrant.Check do
          AshGrant.Info.scope_through_allows_action?(scope_through, action_name, action_type) do
       parent_resource = resolve_parent_resource(resource_module, scope_through)
       relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
-      fk_value = to_string(Map.get(record, relationship.source_attribute))
+      fk = Map.get(record, relationship.source_attribute)
+      fk_value = to_string(fk)
 
+      # Ids compare as the parent's instance key values, as on the read filter.
       scopes =
         for {id, scope} <-
               AshGrant.Evaluator.get_matching_instance_grants(
                 permissions,
                 AshGrant.Info.resource_name(parent_resource),
                 action_name,
-                action_type
+                action_type,
+                resource_module: parent_resource
               ),
-            id == fk_value,
+            AshGrant.Evaluator.instance_id_names?(parent_resource, id, fk),
             do: scope
 
       Enum.any?(scopes, &AshGrant.InstanceFilter.unconditional?/1) or

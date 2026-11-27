@@ -213,7 +213,8 @@ defmodule AshGrant.PolicyTest.Checker do
       |> Evaluator.get_matching_instance_grants(
         Info.resource_name(parent),
         action_name,
-        action_type
+        action_type,
+        resource_module: parent
       )
       |> Enum.filter(fn {_id, scope} -> AshGrant.InstanceFilter.reachable?(scope, parent) end)
     end
@@ -228,9 +229,12 @@ defmodule AshGrant.PolicyTest.Checker do
       |> Evaluator.get_matching_instance_grants(
         Info.resource_name(resource),
         action_name,
-        action_type
+        action_type,
+        resource_module: resource
       )
-      |> Enum.filter(fn {id, _scope} -> id_in?(record, Info.instance_key(resource), [id]) end)
+      |> Enum.filter(fn {id, _scope} ->
+        id_in?(resource, record, Info.instance_key(resource), [id])
+      end)
       |> Enum.map(&instance_grant_admits?(&1, resource, context, record, arguments))
 
     own ++ parents
@@ -271,10 +275,10 @@ defmodule AshGrant.PolicyTest.Checker do
          "scope_through `#{scope_through.relationship}` matches the parent by " <>
            "`#{Info.instance_key(parent)}`, which only a join to the parent row can check"}
 
-      id_in?(record, relationship.source_attribute, ids.(unconditional)) ->
+      id_in?(parent, record, relationship.source_attribute, ids.(unconditional)) ->
         true
 
-      id_in?(record, relationship.source_attribute, ids.(conditional)) ->
+      id_in?(parent, record, relationship.source_attribute, ids.(conditional)) ->
         {:indeterminate,
          "scope_through `#{scope_through.relationship}` grant's scope must hold on the " <>
            "parent row, which a policy test does not have"}
@@ -285,12 +289,15 @@ defmodule AshGrant.PolicyTest.Checker do
   end
 
   # Instance IDs are strings in a permission; a policy test record may hold the
-  # same ID as an atom (YAML values) or a number (integer keys).
-  defp id_in?(record, field, ids) do
+  # same ID as an atom (YAML values) or a number (integer keys). Ids compare as
+  # `resource`'s instance key values, as the runtime read filter compares them.
+  defp id_in?(resource, record, field, ids) do
     case Map.get(record, field) do
-      nil -> false
-      value when is_binary(value) or is_atom(value) or is_number(value) -> to_string(value) in ids
-      _ -> false
+      value when is_binary(value) or is_atom(value) or is_number(value) ->
+        Enum.any?(ids, &Evaluator.instance_id_names?(resource, &1, value))
+
+      _ ->
+        false
     end
   end
 

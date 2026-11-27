@@ -159,7 +159,9 @@ defmodule AshGrant.Calculation.CanPerform do
     # to fill after expression/2 returns.
     instance_filter =
       permissions
-      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action, action_type)
+      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action, action_type,
+        resource_module: resource
+      )
       |> AshGrant.InstanceFilter.build(resource, %{})
 
     parent_filters =

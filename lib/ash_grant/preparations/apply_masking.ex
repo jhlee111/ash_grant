@@ -150,8 +150,13 @@ defmodule AshGrant.Preparations.ApplyMasking do
   defp record_groups(%{denied?: true}, _record, _match), do: {[], []}
 
   defp record_groups(source, record, match) do
-    record_id = record |> Map.get(match.instance_key) |> to_string()
-    on_record = Enum.filter(source.instance, &(&1.instance_id == record_id))
+    record_id = Map.get(record, match.instance_key)
+
+    on_record =
+      Enum.filter(
+        source.instance,
+        &AshGrant.Evaluator.instance_id_names?(match.resource, &1.instance_id, record_id)
+      )
 
     grants =
       if Enum.any?(on_record, &AshGrant.Permission.deny?/1),

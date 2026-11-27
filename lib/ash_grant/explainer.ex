@@ -314,7 +314,7 @@ defmodule AshGrant.Explainer do
 
       Permission.matches_resource?(perm.resource, match.resource_name) ->
         perm
-        |> instance_verdict(is_deny, match.resource_name, "instance", match)
+        |> instance_verdict(is_deny, match.resource, match.resource_name, "instance", match)
         |> with_instance_scope(perm, is_deny, match.resource)
 
       through = parent_relationship(perm, match.parents) ->
@@ -323,6 +323,7 @@ defmodule AshGrant.Explainer do
         perm
         |> instance_verdict(
           is_deny,
+          parent,
           perm.resource,
           "#{perm.resource} via scope_through :#{relationship}",
           match
@@ -334,11 +335,11 @@ defmodule AshGrant.Explainer do
     end
   end
 
-  defp instance_verdict(perm, true = _is_deny, _resource_name, label, _match),
+  defp instance_verdict(perm, true = _is_deny, _resource, _resource_name, label, _match),
     do: {true, "Excludes #{label} #{perm.instance_id} (instance deny)"}
 
-  defp instance_verdict(perm, false = _is_deny, resource_name, label, match) do
-    if instance_denied?(match, resource_name, perm.instance_id) do
+  defp instance_verdict(perm, false = _is_deny, resource, resource_name, label, match) do
+    if instance_denied?(match, resource, resource_name, perm.instance_id) do
       {false, "Cancelled by an instance deny on #{perm.instance_id}"}
     else
       {true, "Grants #{label} #{perm.instance_id}"}
@@ -364,9 +365,11 @@ defmodule AshGrant.Explainer do
 
   defp with_instance_scope(verdict, _perm, _is_deny, _resource), do: verdict
 
-  defp instance_denied?(match, resource_name, instance_id) do
+  # Ids compare as `resource`'s instance key values, as the read filter does.
+  defp instance_denied?(match, resource, resource_name, instance_id) do
     Enum.any?(match.permissions, fn perm ->
-      Permission.deny?(perm) and perm.instance_id == instance_id and
+      Permission.deny?(perm) and
+        Evaluator.instance_id_names?(resource, perm.instance_id, instance_id) and
         Permission.matches_resource?(perm.resource, resource_name) and
         Permission.matches_action?(perm.action, match.action, match.action_type)
     end)
@@ -424,7 +427,9 @@ defmodule AshGrant.Explainer do
 
     instance_filter =
       permissions
-      |> Evaluator.get_matching_instance_grants(match.resource_name, action, action_type)
+      |> Evaluator.get_matching_instance_grants(match.resource_name, action, action_type,
+        resource_module: resource
+      )
       |> AshGrant.InstanceFilter.build(resource, context)
 
     parent_filters =
