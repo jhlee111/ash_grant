@@ -154,12 +154,12 @@ defmodule AshGrant.Calculation.CanPerform do
        ) do
     scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action, action_type)
 
-    # Left untyped on purpose: whether instance type wildcards (`doc:abc:@read:`)
-    # match is undecided (issue #131). The empty context leaves template refs
-    # (^actor, ^tenant) for Ash to fill after expression/2 returns.
+    # Typed, so an instance type wildcard (`doc:abc:@update:`) counts as it does in the
+    # checks (#131). The empty context leaves template refs (^actor, ^tenant) for Ash
+    # to fill after expression/2 returns.
     instance_filter =
       permissions
-      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action)
+      |> AshGrant.Evaluator.get_matching_instance_grants(resource_name, action, action_type)
       |> AshGrant.InstanceFilter.build(resource, %{})
 
     parent_filters =

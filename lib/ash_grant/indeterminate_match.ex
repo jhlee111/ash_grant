@@ -40,7 +40,7 @@ defmodule AshGrant.IndeterminateMatch do
 
   Detection is **sound**: it never flags a call whose answer the skipped wildcards could
   not have changed, because false positives would make `:strict` unusable. Rather than
-  reason about each function's return shape, `guard/6` recomputes the same result twice:
+  reason about each function's return shape, `guard/7` recomputes the same result twice:
 
     * once as the caller did — every type wildcard treated as non-matching;
     * once with those wildcards **forced to match**.
@@ -54,9 +54,10 @@ defmodule AshGrant.IndeterminateMatch do
   Forcing all wildcards at once can, in rare mixed allow/deny cases, mask a difference
   (a false *negative*); it never invents one (no false *positive*).
 
-  Only RBAC grants (`instance_id == "*"`) are forced. A type wildcard on an instance
-  permission is dead outright — `AshGrant.Permission.diagnostics/1` reports that — so it
-  is treated as non-matching in both passes, never as indeterminate.
+  A call forces only the grants it reads. The RBAC entry points force RBAC grants
+  (`instance_id == "*"`); `Evaluator.get_matching_instance_grants/4` and
+  `get_matching_instance_ids/4` force instance grants, where a type wildcard such as
+  `doc:abc:@read:` matches whenever the action type is supplied (#131).
 
   ## Fixing a reported call
 
@@ -88,7 +89,7 @@ defmodule AshGrant.IndeterminateMatch do
   Recomputes an entry point's result using the given per-permission match predicate.
 
   The predicate replaces every `Permission.matches?/4` (or `matches_action?/3`) call in
-  the function body, so `guard/6` can run the body a second time with wildcards forced.
+  the function body, so `guard/7` can run the body a second time with wildcards forced.
   """
   @type compute :: ((Permission.t() -> boolean()) -> term())
 
@@ -109,6 +110,10 @@ defmodule AshGrant.IndeterminateMatch do
   Never alters the outcome — the normal result is always what comes back. Raises
   `IndeterminateMatchError` only in `:strict` mode, and only when forcing the skipped
   type wildcards to match would change the result.
+
+  `kind` says which grants `compute` reads: `:rbac` (the default) or `:instance`.
+  Only type wildcards of that kind are forced, so forcing never adds a grant the
+  call would not have looked at.
   """
   @spec guard(
           compute(),
@@ -116,24 +121,28 @@ defmodule AshGrant.IndeterminateMatch do
           [Permission.t()],
           String.t(),
           String.t(),
-          atom() | nil
+          atom() | nil,
+          :rbac | :instance
         ) ::
           term()
+  def guard(compute, match_fn, permissions, resource, action, action_type, kind \\ :rbac)
+
   # A supplied action_type means every wildcard was evaluated — nothing to force.
-  def guard(compute, match_fn, _permissions, _resource, _action, action_type)
+  def guard(compute, match_fn, _permissions, _resource, _action, action_type, _kind)
       when not is_nil(action_type) do
     compute.(match_fn)
   end
 
-  def guard(compute, match_fn, permissions, resource, action, nil) do
+  def guard(compute, match_fn, permissions, resource, action, nil, kind) do
     normal = compute.(match_fn)
-    detect(normal, compute, match_fn, permissions, resource, action, mode())
+    detect(normal, compute, match_fn, permissions, resource, action, kind, mode())
   end
 
-  defp detect(normal, _compute, _match_fn, _permissions, _resource, _action, :off), do: normal
+  defp detect(normal, _compute, _match_fn, _permissions, _resource, _action, _kind, :off),
+    do: normal
 
-  defp detect(normal, compute, match_fn, permissions, resource, action, active_mode) do
-    case wildcards(permissions, resource) do
+  defp detect(normal, compute, match_fn, permissions, resource, action, kind, active_mode) do
+    case wildcards(permissions, resource, kind) do
       [] ->
         normal
 
@@ -142,7 +151,7 @@ defmodule AshGrant.IndeterminateMatch do
 
         if normal == forced,
           do: normal,
-          else: report(normal, offenders, resource, action, active_mode)
+          else: report(normal, offenders, resource, action, kind, active_mode)
     end
   end
 
@@ -152,35 +161,38 @@ defmodule AshGrant.IndeterminateMatch do
     fn perm -> MapSet.member?(forced, perm) or match_fn.(perm) end
   end
 
-  # RBAC type-wildcard grants for this resource — the permissions whose match could not
-  # be determined without an action_type. Instance permissions are excluded: a type
-  # wildcard there is dead (see diagnostics/1), not indeterminate.
-  defp wildcards(permissions, resource) do
-    Enum.filter(permissions, fn
-      %Permission{instance_id: "*"} = perm ->
-        Permission.type_wildcard?(perm) and Permission.matches_resource?(perm.resource, resource)
-
-      %Permission{} ->
-        false
+  # Type-wildcard grants of `kind` for this resource — the permissions whose match could
+  # not be determined without an action_type.
+  defp wildcards(permissions, resource, kind) do
+    Enum.filter(permissions, fn perm ->
+      Permission.instance_permission?(perm) == (kind == :instance) and
+        Permission.type_wildcard?(perm) and
+        Permission.matches_resource?(perm.resource, resource)
     end)
   end
 
-  defp report(_normal, offenders, resource, action, :strict) do
-    raise IndeterminateMatchError, message: message(offenders, resource, action)
+  defp report(_normal, offenders, resource, action, kind, :strict) do
+    raise IndeterminateMatchError, message: message(offenders, resource, action, kind)
   end
 
-  defp report(normal, offenders, resource, action, :warn) do
+  defp report(normal, offenders, resource, action, kind, :warn) do
     key = {resource, action, offenders |> strings() |> Enum.sort()}
 
     unless warned?(key) do
       mark_warned(key)
-      Logger.warning(message(offenders, resource, action))
+      Logger.warning(message(offenders, resource, action, kind))
     end
 
     normal
   end
 
-  defp message(offenders, resource, action) do
+  defp message(offenders, resource, action, kind) do
+    example =
+      case kind do
+        :rbac -> "has_access?"
+        :instance -> "get_matching_instance_grants"
+      end
+
     reasons =
       []
       |> maybe_reason(
@@ -199,7 +211,7 @@ defmodule AshGrant.IndeterminateMatch do
       "The call supplied no action_type, so these type wildcards could not be evaluated " <>
       "and were treated as non-matching: #{inspect(strings(offenders))}. " <>
       "#{reasons} — the result may be wrong. Supply an action_type (e.g. " <>
-      "AshGrant.Evaluator.has_access?(perms, #{inspect(resource)}, #{inspect(action)}, " <>
+      "AshGrant.Evaluator.#{example}(perms, #{inspect(resource)}, #{inspect(action)}, " <>
       ":read)), or use AshGrant.Introspect.can?/4, which resolves the action type from " <>
       "the resource module. See AshGrant.IndeterminateMatch."
   end

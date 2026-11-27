@@ -110,9 +110,7 @@ defmodule AshGrant.Check do
     against the record like an RBAC scope; an undeclared one never passes (it
     does not raise).
   - The action is matched by name, `*`, or a type wildcard (`@update`), as on
-    the read path. `AshGrant.Permission.diagnostics/1` still reports an instance
-    type wildcard as `:dead_instance_type_wildcard`; that code is retired
-    with #131.
+    the read path.
   - Creates and generic actions have no existing record, so instance grants
     never authorize them.
   - `!resource:<instance_id>:action:` cancels instance grants on that record.

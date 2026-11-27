@@ -157,6 +157,13 @@ defmodule AshGrant.InstanceWriteTest do
       assert {:ok, post} = update_as(post, actor)
       assert {:error, %Ash.Error.Forbidden{}} = Ash.destroy(post, actor: actor)
     end
+
+    test "can_update? agrees with the write check on a type wildcard (#131)" do
+      note = Ash.create!(Note, %{title: "t"}, authorize?: false)
+
+      assert can_update?(Note, note, actor(["note:#{note.id}:@update:"]))
+      refute can_update?(Note, note, actor(["note:#{note.id}:@destroy:"]))
+    end
   end
 
   describe "deny wins" do
