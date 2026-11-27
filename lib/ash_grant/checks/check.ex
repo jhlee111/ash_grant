@@ -490,17 +490,7 @@ defmodule AshGrant.Check do
 
       record ->
         record_id = Map.get(record, AshGrant.Info.instance_key(resource_module))
-
-        ids
-        |> AshGrant.Evaluator.cast_instance_ids(resource_module)
-        |> Enum.any?(&instance_id_equal?(resource_module, &1, record_id))
-    end
-  end
-
-  defp instance_id_equal?(resource_module, denied_id, record_id) do
-    case Ash.Resource.Info.attribute(resource_module, AshGrant.Info.instance_key(resource_module)) do
-      nil -> to_string(denied_id) == to_string(record_id)
-      %{type: type} -> Ash.Type.equal?(type, denied_id, record_id)
+        Enum.any?(ids, &AshGrant.Evaluator.instance_id_names?(resource_module, &1, record_id))
     end
   end
 

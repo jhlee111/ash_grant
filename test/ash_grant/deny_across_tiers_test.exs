@@ -261,8 +261,14 @@ defmodule AshGrant.DenyAcrossTiersTest do
         assert {:deny, _} = Introspect.can?(ChildComment, :read, actor),
                "allow #{allow}, deny #{deny}"
 
-        assert AshGrant.explain(ChildComment, :read, actor).decision == :deny,
-               "allow #{allow}, deny #{deny}"
+        explanation = AshGrant.explain(ChildComment, :read, actor)
+        assert explanation.decision == :deny, "allow #{allow}, deny #{deny}"
+
+        allow_line =
+          Enum.find(explanation.evaluated_permissions, &(&1.permission == "post:#{allow}:read:"))
+
+        refute allow_line.matched, "allow #{allow}, deny #{deny}"
+        assert allow_line.reason =~ "Cancelled by an instance deny"
       end
     end
 

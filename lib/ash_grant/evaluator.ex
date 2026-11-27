@@ -805,7 +805,14 @@ defmodule AshGrant.Evaluator do
   @doc false
   # Whether an instance id from a permission string names the record whose
   # instance key holds `value`: equal strings, or equal once both are cast to the
-  # key's type. Shared by the write check, field masking and the policy test checker.
+  # key's type. `value` may also be another permission string's id, so two ids
+  # naming the same record compare equal. Shared by the write check (allows and
+  # denies), field masking, the explainer and the policy test checker.
+  #
+  # Equal strings match before any cast, so an id the key's type cannot cast
+  # still names a record holding that exact string. A record only holds values
+  # that cast, so against a record this decides nothing a cast-only compare
+  # would decide differently; it only skips the cast.
   @spec instance_id_names?(Ash.Resource.t(), String.t(), term()) :: boolean()
   def instance_id_names?(_resource, _instance_id, nil), do: false
 
