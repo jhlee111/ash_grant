@@ -91,22 +91,18 @@ does match `:read`-type actions with unrelated names like `list_published`.
 Valid types are Ash's own: `@action`, `@read`, `@create`, `@update`, `@destroy`.
 Anything else silently never matches — deletion is `@destroy`, **not** `@delete`.
 
-### DON'T: Put a type wildcard on an instance permission
+### DO: Use type wildcards on instance permissions the same way
 
-Instance matching has no action type available, so a type wildcard on an instance
-permission never matches anything. The grant is dead and fails silently.
+A type wildcard on an instance permission matches by action type, like an RBAC one:
 
 ```elixir
-# DON'T — matches nothing, ever
-"blog:post_abc123:@read:"
-
-# DO — exact action name, or the catch-all wildcard
-"blog:post_abc123:read:"
-"blog:post_abc123:*:"
+"blog:post_abc123:@update:"   # every update action on this post
+"blog:post_abc123:update:"    # the :update action only
+"blog:post_abc123:*:"         # every action on this post
 ```
 
 Because permission strings live in your database rather than your source, there is
-no compile-time warning for either rule above. Find offending grants with
+no compile-time warning for the rules above. Find offending grants with
 `mix ash_grant.verify`, or audit your own store:
 
 ```elixir

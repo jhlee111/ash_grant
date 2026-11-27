@@ -553,18 +553,16 @@ defmodule AshGrant.PermissionTest do
       assert d.suggestion == "!blog:*:@read:always:sensitive"
     end
 
-    test "type wildcard on an instance permission is flagged as dead" do
-      assert [d] = Permission.diagnostics("blog:post_abc:@read:")
-
-      assert d.code == :dead_instance_type_wildcard
-      assert d.suggestion == nil
+    test "a type wildcard on an instance permission is not reported (#131)" do
+      assert Permission.diagnostics("blog:post_abc:@read:") == []
     end
 
-    test "dead instance grant is caught in both spellings" do
-      codes = fn s -> s |> Permission.diagnostics() |> Enum.map(& &1.code) end
+    test "the deprecated spelling on an instance permission suggests @read" do
+      assert [d] = Permission.diagnostics("blog:post_abc:read*:")
 
-      assert :dead_instance_type_wildcard in codes.("blog:post_abc:read*:")
-      assert :dead_instance_type_wildcard in codes.("blog:post_abc:@read:")
+      assert d.code == :deprecated_type_wildcard
+      assert d.suggestion == "blog:post_abc:@read:"
+      assert Permission.diagnostics(d.suggestion) == []
     end
 
     test "unknown action type is flagged, with @destroy suggested for delete" do
@@ -599,13 +597,6 @@ defmodule AshGrant.PermissionTest do
 
       assert deprecated.suggestion == nil
       assert unknown.suggestion == "blog:*:@destroy:always"
-    end
-
-    test "does not suggest @read for a grant that is dead either way" do
-      diagnostics = Permission.diagnostics("blog:post_abc:read*:")
-      deprecated = Enum.find(diagnostics, &(&1.code == :deprecated_type_wildcard))
-
-      assert deprecated.suggestion == nil
     end
 
     test "no suggestion is ever itself flagged" do

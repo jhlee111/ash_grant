@@ -48,6 +48,88 @@ defmodule AshGrant.IndeterminateMatchTest do
     end
   end
 
+  describe "instance entry points (#131)" do
+    setup do: set_mode(:warn)
+
+    test "an untyped call skips an instance type wildcard and says so" do
+      log =
+        capture_log(fn ->
+          assert Evaluator.get_matching_instance_ids(["m:abc:@read:"], "m", "read") == []
+        end)
+
+      assert count_signals(log) == 1
+      assert log =~ "m:abc:@read:"
+      assert log =~ "get_matching_instance_grants"
+    end
+
+    test "a typed call matches it, silently" do
+      log =
+        capture_log(fn ->
+          assert Evaluator.get_matching_instance_ids(["m:abc:@read:"], "m", "list", :read) ==
+                   ["abc"]
+
+          assert Evaluator.get_matching_instance_grants(["m:abc:@read:"], "m", "list", :read) ==
+                   [{"abc", nil}]
+        end)
+
+      refute log =~ "indeterminate"
+    end
+
+    test "silent when a literal grant already gives the same answer" do
+      perms = ["m:abc:read:", "m:abc:@read:"]
+
+      log =
+        capture_log(fn ->
+          assert Evaluator.get_matching_instance_ids(perms, "m", "read") == ["abc"]
+          assert Evaluator.get_matching_instance_grants(perms, "m", "read") == [{"abc", nil}]
+        end)
+
+      refute log =~ "indeterminate"
+    end
+
+    test "each entry point is judged on its own result" do
+      # The wildcard would add a scope to an id the call already returns: the grants
+      # change, the ids do not.
+      perms = ["m:abc:read:", "m:abc:@read:draft"]
+
+      ids_log =
+        capture_log(fn ->
+          assert Evaluator.get_matching_instance_ids(perms, "m", "read") == ["abc"]
+        end)
+
+      refute ids_log =~ "indeterminate"
+
+      grants_log =
+        capture_log(fn ->
+          assert Evaluator.get_matching_instance_grants(perms, "m", "read") == [{"abc", nil}]
+        end)
+
+      assert count_signals(grants_log) == 1
+    end
+
+    test "a skipped instance deny is reported" do
+      log =
+        capture_log(fn ->
+          assert Evaluator.get_matching_instance_ids(
+                   ["m:abc:read:", "!m:abc:@read:"],
+                   "m",
+                   "read"
+                 ) ==
+                   ["abc"]
+        end)
+
+      assert log =~ "a deny rule that may forbid it was skipped"
+    end
+
+    test ":strict raises on an untyped instance call" do
+      set_mode(:strict)
+
+      assert_raise IndeterminateMatchError, fn ->
+        Evaluator.get_matching_instance_grants(["m:abc:@read:"], "m", "read")
+      end
+    end
+  end
+
   describe ":warn — signals only when the answer could be wrong" do
     setup do: set_mode(:warn)
 
@@ -121,7 +203,7 @@ defmodule AshGrant.IndeterminateMatchTest do
     end
 
     test "silent for a type wildcard on an instance permission (not the RBAC path)" do
-      # Dead outright, and reported by Permission.diagnostics/1 instead.
+      # has_access?/4 reads RBAC grants only, so it never forces an instance grant.
       log =
         capture_log(fn ->
           assert Evaluator.has_access?(["m:m_abc123:read*:"], "m", "read") == false

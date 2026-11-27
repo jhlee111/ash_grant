@@ -59,7 +59,6 @@ defmodule AshGrant.PermissionValidation do
   | `:unknown_action` | `:action` | error | a literal action name no targeted resource has |
   | `:unknown_action_type` | `:action` | error | from `AshGrant.Permission.diagnostics/1` |
   | `:deprecated_type_wildcard` | `:action` | warning | from `AshGrant.Permission.diagnostics/1` |
-  | `:dead_instance_type_wildcard` | `:action` | warning | from `AshGrant.Permission.diagnostics/1` |
   | `:scoped_deny` | `:scope` | warning | from `AshGrant.Permission.diagnostics/1`: a deny ignores its scope |
   | `:empty_rbac_scope` | `:scope` | error | from `AshGrant.Permission.diagnostics/1`: an RBAC allow with no scope authorizes no records |
   | `:undeclared_scope` | `:scope` | error¹ | no resource the grant applies to declares the scope |
@@ -140,9 +139,6 @@ defmodule AshGrant.PermissionValidation do
 
   @diagnostic_severities %{
     deprecated_type_wildcard: :warning,
-    # A warning, not an error: the read-filter path does match these (#131), so
-    # "never matches" is not yet true everywhere.
-    dead_instance_type_wildcard: :warning,
     unknown_action_type: :error,
     # A warning: the deny still applies, just more broadly than written.
     scoped_deny: :warning,
